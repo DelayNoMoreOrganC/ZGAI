@@ -1,0 +1,9 @@
+{
+  "title": "提交李四公司仲裁申请",
+  "description": "准备仲裁申请书和证据清单",
+  "priority": "NORMAL",
+  "dueDate": "2026-04-21T23:59:59",
+  "status": "PENDING",
+  "assigneeId": 1,
+  "reminder": false
+}

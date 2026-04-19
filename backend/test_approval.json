@@ -1,0 +1,7 @@
+{
+  "approvalType": "SEAL",
+  "title": "Test Seal Application",
+  "content": "Testing seal approval flow",
+  "caseId": 10,
+  "currentApproverId": 1
+}

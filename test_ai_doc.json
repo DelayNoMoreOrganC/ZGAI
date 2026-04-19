@@ -1,0 +1,6 @@
+{
+  "caseId": 2,
+  "documentType": "COMPLAINT",
+  "customPrompt": "请求判令被告支付货款10000元及利息",
+  "additionalContext": "双方于2024年1月签订买卖合同"
+}

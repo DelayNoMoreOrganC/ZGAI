@@ -1,0 +1,11 @@
+{
+  "caseName": "测试案件UTF8",
+  "caseNumber": "UTF8-2024-001",
+  "caseType": "CIVIL",
+  "procedure": "FIRST",
+  "caseReason": "合同纠纷",
+  "court": "北京市朝阳区人民法院",
+  "level": "NORMAL",
+  "status": "CONSULTATION",
+  "ownerId": 2
+}

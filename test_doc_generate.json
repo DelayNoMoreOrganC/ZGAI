@@ -1,0 +1,6 @@
+{
+  "caseId": 5,
+  "documentType": "COMPLAINT",
+  "customPrompt": "Test document generation",
+  "additionalContext": "This is a test for AI document generation functionality"
+}

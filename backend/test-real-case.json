@@ -1,0 +1,25 @@
+{
+  "caseType": "民事",
+  "procedure": "一审",
+  "caseName": "",
+  "caseNumber": "",
+  "caseReason": "买卖合同纠纷",
+  "court": "北京市朝阳区人民法院",
+  "level": "GENERAL",
+  "ownerId": 1,
+  "deadlineDate": "2026-06-30",
+  "parties": [
+    {
+      "partyType": "INDIVIDUAL",
+      "partyRole": "PLAINTIFF",
+      "name": "测试原告",
+      "isClient": true
+    },
+    {
+      "partyType": "INDIVIDUAL",
+      "partyRole": "DEFENDANT",
+      "name": "测试被告",
+      "isClient": false
+    }
+  ]
+}

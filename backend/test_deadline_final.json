@@ -1,0 +1,13 @@
+{
+  "caseName": "Final Deadline Test",
+  "caseType": "CIVIL",
+  "procedure": "FIRST",
+  "caseReason": "Root cause verification",
+  "ownerId": 1,
+  "level": "GENERAL",
+  "status": "CONSULTATION",
+  "deadlineDate": "2026-08-30",
+  "parties": [
+    {"partyType": "INDIVIDUAL", "partyRole": "PLAINTIFF", "name": "RCATest", "phone": "13900000077"}
+  ]
+}

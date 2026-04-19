@@ -1,0 +1,7 @@
+{
+  "title": "系统测试通知",
+  "content": "这是一条测试通知，用于验证通知公告功能是否正常工作。",
+  "type": "normal",
+  "isTop": false,
+  "targetScope": "ALL"
+}

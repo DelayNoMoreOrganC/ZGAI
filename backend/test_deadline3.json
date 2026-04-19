@@ -1,0 +1,13 @@
+{
+  "caseName": "Deadline Test 3",
+  "caseType": "CIVIL",
+  "procedure": "FIRST",
+  "caseReason": "Final deadline test",
+  "ownerId": 1,
+  "level": "GENERAL",
+  "status": "CONSULTATION",
+  "deadlineDate": "2026-07-20",
+  "parties": [
+    {"partyType": "INDIVIDUAL", "partyRole": "PLAINTIFF", "name": "FinalTest", "phone": "13900000088"}
+  ]
+}

@@ -1,0 +1,87 @@
+import request from '@/utils/request'
+
+// 获取客户列表
+export function getClientList(params) {
+  return request({
+    url: '/clients',
+    method: 'get',
+    params
+  })
+}
+
+// 获取客户详情
+export function getClientDetail(id) {
+  return request({
+    url: `/clients/${id}`,
+    method: 'get'
+  })
+}
+
+// 创建客户
+export function createClient(data) {
+  return request({
+    url: '/clients',
+    method: 'post',
+    data
+  })
+}
+
+// 更新客户
+export function updateClient(id, data) {
+  return request({
+    url: `/clients/${id}`,
+    method: 'put',
+    data
+  })
+}
+
+// 删除客户
+export function deleteClient(id) {
+  return request({
+    url: `/clients/${id}`,
+    method: 'delete'
+  })
+}
+
+// 搜索客户
+export function searchClients(keyword) {
+  return request({
+    url: '/clients/search',
+    method: 'get',
+    params: { keyword }
+  })
+}
+
+// 获取客户的案件
+export function getClientCases(id) {
+  return request({
+    url: `/clients/${id}/cases`,
+    method: 'get'
+  })
+}
+
+// 获取沟通记录
+export function getCommunications(clientId, params) {
+  return request({
+    url: `/clients/${clientId}/communications`,
+    method: 'get',
+    params
+  })
+}
+
+// 创建沟通记录
+export function createCommunication(clientId, data) {
+  return request({
+    url: `/clients/${clientId}/communications`,
+    method: 'post',
+    data
+  })
+}
+
+// 利益冲突检索
+export function conflictCheck(id) {
+  return request({
+    url: `/clients/${id}/conflict-check`,
+    method: 'get'
+  })
+}

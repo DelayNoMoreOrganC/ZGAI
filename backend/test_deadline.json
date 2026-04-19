@@ -1,0 +1,13 @@
+{
+  "caseName": "Deadline Test Case",
+  "caseType": "CIVIL",
+  "procedure": "FIRST",
+  "caseReason": "Testing deadline auto-todo",
+  "ownerId": 1,
+  "level": "GENERAL",
+  "status": "CONSULTATION",
+  "deadlineDate": "2026-05-30",
+  "parties": [
+    {"partyType": "INDIVIDUAL", "partyRole": "PLAINTIFF", "name": "DeadlinePlaintiff", "phone": "13900000021"}
+  ]
+}

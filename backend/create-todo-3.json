@@ -1,0 +1,9 @@
+{
+  "title": "Submit arbitration request for Li Si company",
+  "description": "Prepare arbitration application and evidence list",
+  "priority": "NORMAL",
+  "dueDate": "2026-04-21T23:59:59",
+  "status": "PENDING",
+  "assigneeId": 1,
+  "reminder": false
+}

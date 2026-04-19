@@ -1,0 +1,9 @@
+{
+  "title": "王五案件庭前准备",
+  "description": "准备开庭陈述和证据清单",
+  "priority": "LOW",
+  "dueDate": "2026-04-25T23:59:59",
+  "status": "PENDING",
+  "assigneeId": 1,
+  "reminder": false
+}

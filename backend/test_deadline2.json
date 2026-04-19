@@ -1,0 +1,13 @@
+{
+  "caseName": "Deadline Test 2",
+  "caseType": "CIVIL",
+  "procedure": "FIRST",
+  "caseReason": "Debug deadline feature",
+  "ownerId": 1,
+  "level": "GENERAL",
+  "status": "CONSULTATION",
+  "deadlineDate": "2026-06-15",
+  "parties": [
+    {"partyType": "INDIVIDUAL", "partyRole": "PLAINTIFF", "name": "TestUser", "phone": "13900000099"}
+  ]
+}

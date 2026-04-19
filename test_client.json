@@ -1,0 +1,12 @@
+{
+  "clientType": "PERSONAL",
+  "clientName": "王小明",
+  "gender": "男",
+  "idCard": "110101198501011234",
+  "phone": "13900139000",
+  "email": "wang@example.com",
+  "address": "北京市朝阳区某某街道",
+  "status": "ACTIVE",
+  "source": "朋友介绍",
+  "notes": "潜在客户，咨询劳动争议案件"
+}

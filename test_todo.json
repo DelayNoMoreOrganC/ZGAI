@@ -1,0 +1,9 @@
+{
+  "title": "准备庭审材料",
+  "description": "整理证据清单、证人名单、代理词草稿",
+  "priority": "HIGH",
+  "dueDate": "2025-02-05T18:00:00",
+  "assigneeId": 1,
+  "caseId": 2,
+  "reminder": true
+}

@@ -1,0 +1,246 @@
+package com.lawfirm.service;
+
+import com.lawfirm.dto.UserCreateRequest;
+import com.lawfirm.dto.UserDTO;
+import com.lawfirm.dto.UserUpdateRequest;
+import com.lawfirm.entity.User;
+import com.lawfirm.entity.UserRole;
+import com.lawfirm.exception.DuplicateResourceException;
+import com.lawfirm.exception.InvalidParameterException;
+import com.lawfirm.exception.ResourceNotFoundException;
+import com.lawfirm.repository.DepartmentRepository;
+import com.lawfirm.repository.RoleRepository;
+import com.lawfirm.repository.UserRepository;
+import com.lawfirm.repository.UserRoleRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.data.domain.*;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * 用户服务
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class UserService {
+
+    private final UserRepository userRepository;
+    private final DepartmentRepository departmentRepository;
+    private final RoleRepository roleRepository;
+    private final UserRoleRepository userRoleRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    /**
+     * 创建用户
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public UserDTO createUser(UserCreateRequest request) {
+        // 检查用户名是否已存在
+        if (userRepository.existsByUsername(request.getUsername())) {
+            throw new DuplicateResourceException("用户", "username", request.getUsername());
+        }
+
+        User user = new User();
+        BeanUtils.copyProperties(request, user);
+
+        // 加密密码
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+
+        user = userRepository.save(user);
+
+        return toDTO(user);
+    }
+
+    /**
+     * 更新用户
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public UserDTO updateUser(Long userId, UserUpdateRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", userId));
+
+        if (request.getRealName() != null) {
+            user.setRealName(request.getRealName());
+        }
+        if (request.getEmail() != null) {
+            user.setEmail(request.getEmail());
+        }
+        if (request.getPhone() != null) {
+            user.setPhone(request.getPhone());
+        }
+        if (request.getDepartmentId() != null) {
+            user.setDepartmentId(request.getDepartmentId());
+        }
+        if (request.getPosition() != null) {
+            user.setPosition(request.getPosition());
+        }
+        if (request.getAvatar() != null) {
+            user.setAvatar(request.getAvatar());
+        }
+        if (request.getStatus() != null) {
+            user.setStatus(request.getStatus());
+        }
+
+        user = userRepository.save(user);
+
+        return toDTO(user);
+    }
+
+    /**
+     * 删除用户（逻辑删除）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteUser(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", userId));
+
+        user.setDeleted(true);
+        userRepository.save(user);
+    }
+
+    /**
+     * 获取用户列表
+     */
+    @Transactional(readOnly = true)
+    public Page<UserDTO> getUserList(int page, int size, String keyword, Long departmentId, Integer status) {
+        Pageable pageable = PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "id"));
+
+        // 这里可以添加更多查询条件
+        Page<User> userPage = userRepository.findAll(pageable);
+
+        return userPage.map(this::toDTO);
+    }
+
+    /**
+     * 获取用户详情
+     */
+    @Transactional(readOnly = true)
+    public UserDTO getUserDetail(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", userId));
+
+        return toDTO(user);
+    }
+
+    /**
+     * 启用/禁用用户
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void toggleUserStatus(Long userId, Integer status) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", userId));
+
+        user.setStatus(status);
+        userRepository.save(user);
+    }
+
+    /**
+     * 重置密码
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void resetPassword(Long userId, String newPassword) {
+        if (newPassword == null || newPassword.trim().isEmpty()) {
+            throw new InvalidParameterException("newPassword", "新密码不能为空");
+        }
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", userId));
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+    }
+
+    /**
+     * 修改密码
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void changePassword(Long userId, String oldPassword, String newPassword) {
+        if (oldPassword == null || oldPassword.trim().isEmpty()) {
+            throw new InvalidParameterException("oldPassword", "旧密码不能为空");
+        }
+        if (newPassword == null || newPassword.trim().isEmpty()) {
+            throw new InvalidParameterException("newPassword", "新密码不能为空");
+        }
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", userId));
+
+        if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
+            throw new InvalidParameterException("oldPassword", "原密码不正确");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+    }
+
+    /**
+     * 分配角色
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void assignRoles(Long userId, List<Long> roleIds) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", userId));
+
+        // 删除现有角色
+        userRoleRepository.deleteByUserId(userId);
+
+        // 分配新角色
+        if (roleIds != null && !roleIds.isEmpty()) {
+            List<UserRole> userRoles = roleIds.stream()
+                    .map(roleId -> {
+                        UserRole userRole = new UserRole();
+                        userRole.setUserId(userId);
+                        userRole.setRoleId(roleId);
+                        return userRole;
+                    })
+                    .collect(Collectors.toList());
+
+            userRoleRepository.saveAll(userRoles);
+        }
+    }
+
+    /**
+     * 更新最后登录时间
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateLastLoginTime(Long userId) {
+        userRepository.findById(userId).ifPresent(user -> {
+            user.setLastLoginTime(LocalDateTime.now());
+            userRepository.save(user);
+        });
+    }
+
+    // 辅助方法
+
+    private UserDTO toDTO(User user) {
+        UserDTO dto = new UserDTO();
+        BeanUtils.copyProperties(user, dto);
+
+        dto.setStatusDesc(user.getStatus() == 1 ? "启用" : "禁用");
+
+        // 设置部门名称
+        if (user.getDepartmentId() != null) {
+            departmentRepository.findById(user.getDepartmentId())
+                    .ifPresent(dept -> dto.setDepartmentName(dept.getDeptName()));
+        }
+
+        // 设置角色列表
+        List<UserRole> userRoles = userRoleRepository.findByUserId(user.getId());
+        List<String> roles = userRoles.stream()
+                .map(ur -> roleRepository.findById(ur.getRoleId())
+                        .map(role -> role.getRoleName())
+                        .orElse("未知角色"))
+                .collect(Collectors.toList());
+        dto.setRoles(roles);
+
+        return dto;
+    }
+}

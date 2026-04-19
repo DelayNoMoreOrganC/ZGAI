@@ -1,0 +1,56 @@
+### 测试数据初始化请求
+POST http://localhost:8080/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "admin123"
+}
+
+> {% client.global.set("token", response.body.data.token); %}
+
+### 创建案件
+POST http://localhost:8080/api/cases
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "caseName": "张三买卖合同纠纷",
+  "caseNumber": "CASE2024001",
+  "caseType": "民事",
+  "caseReason": "买卖合同纠纷",
+  "procedure": "一审",
+  "court": "北京市朝阳区人民法院",
+  "currentStage": "咨询",
+  "filingDate": "2026-04-01",
+  "deadlineDate": "2026-07-01"
+}
+
+### 创建待办
+POST http://localhost:8080/api/todos
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "准备张三案件材料",
+  "content": "收集合同、付款凭证等证据材料",
+  "priority": "high",
+  "dueDate": "2026-04-21",
+  "status": "pending",
+  "relatedType": "case",
+  "relatedId": 1
+}
+
+### 创建日程
+POST http://localhost:8080/api/calendar
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "张三案件庭前会议",
+  "calendarType": "hearing",
+  "startTime": "2026-04-20T09:00:00",
+  "endTime": "2026-04-20T11:00:00",
+  "location": "北京市朝阳区人民法院",
+  "caseId": 1
+}

@@ -1,0 +1,15 @@
+{
+  "caseName": "Complete Test Case",
+  "caseType": "CIVIL",
+  "procedure": "FIRST",
+  "caseReason": "Testing complete parameters",
+  "ownerId": 1,
+  "level": "GENERAL",
+  "status": "CONSULTATION",
+  "parties": [{
+    "partyType": "INDIVIDUAL",
+    "partyRole": "PLAINTIFF",
+    "name": "Test Client",
+    "phone": "13900000001"
+  }]
+}

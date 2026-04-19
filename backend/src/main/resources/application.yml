@@ -1,0 +1,130 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+  tomcat:
+    uri-encoding: UTF-8
+
+spring:
+  application:
+    name: lawfirm-backend
+
+  profiles:
+    active: dev
+
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:lawfirm;MODE=MySQL;DATABASE_TO_UPPER=false;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-time-timeout: 600000
+      max-lifetime: 1800000
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  jpa:
+    hibernate:
+      ddl-auto: create
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+        use_sql_comments: true
+        globally_quoted_identifiers: true
+    open-in-view: false
+
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+springdoc:
+  api-docs:
+    path: /docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+  show-actuator: false
+
+jwt:
+  secret: lawfirm-secret-key-2024-spring-boot-jwt-authentication
+  expiration: 86400000
+  header: Authorization
+  prefix: Bearer
+
+minio:
+  endpoint: http://localhost:9000
+  accessKey: minioadmin
+  secretKey: minioadmin
+  bucketName: lawfirm
+  connectTimeout: 10000
+  writeTimeout: 60000
+  readTimeout: 10000
+
+file:
+  upload-path: D:/ZGAI/uploads/
+  max-size: 52428800
+  allowed-types:
+    - image/jpeg
+    - image/png
+    - image/gif
+    - application/pdf
+    - application/msword
+    - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+    - application/vnd.ms-excel
+    - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+    - text/plain
+
+login:
+  max-attempts: 5
+  lock-duration: 1800000
+
+backup:
+  base-dir: D:/lawfirm/backups
+  retention-days: 180
+
+crypto:
+  secret-key: lawfirm-secret-key-2024-aes-256-encryption
+
+ai:
+  deepseek:
+    api-key: your-deepseek-api-key
+    base-url: https://api.deepseek.com/v1
+    model: deepseek-chat
+    max-tokens: 4000
+    temperature: 0.7
+
+logging:
+  level:
+    root: INFO
+    com.lawfirm: DEBUG
+    org.springframework.security: INFO
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n'
+    file: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n'
+  file:
+    name: logs/lawfirm-backend.log
+    max-size: 100MB
+    max-history: 30

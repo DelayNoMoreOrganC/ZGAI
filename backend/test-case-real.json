@@ -1,0 +1,25 @@
+{
+  "caseType": "民事",
+  "procedure": "一审",
+  "caseName": "真实用户测试案件",
+  "caseReason": "合同纠纷",
+  "court": "北京市海淀区人民法院",
+  "level": "IMPORTANT",
+  "ownerId": 1,
+  "deadlineDate": "2026-07-15",
+  "parties": [
+    {
+      "partyType": "INDIVIDUAL",
+      "partyRole": "PLAINTIFF",
+      "name": "王五",
+      "isClient": true,
+      "phone": "13900000000"
+    },
+    {
+      "partyType": "ORGANIZATION",
+      "partyRole": "DEFENDANT",
+      "name": "测试公司",
+      "isClient": false
+    }
+  ]
+}

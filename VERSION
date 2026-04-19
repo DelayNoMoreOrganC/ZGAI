@@ -1,0 +1,25 @@
+LAW FIRM CASE MANAGEMENT SYSTEM
+Version: 2.0.0
+Release Date: 2026-04-19
+Status: Production Ready
+
+Backend: Spring Boot 2.7.18 (Java 11)
+Frontend: Vue 3 + Element Plus + Vite
+Database: H2 (Dev) / MySQL 8.0 (Prod)
+
+Core Features:
+- Case Management (Complete ✅)
+- AI OCR & Document Generation
+- Workflow & Approvals
+- Knowledge Base (RAG)
+- Calendar & Todo Management
+
+Deployment:
+- Frontend: http://localhost:3017
+- Backend: http://localhost:8080/api
+- Default Account: admin / admin123
+
+Documentation:
+- PRD: PRD.md
+- Changelog: CHANGELOG.md
+- Readme: README.md

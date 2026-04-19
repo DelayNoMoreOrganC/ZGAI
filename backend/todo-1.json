@@ -1,0 +1,9 @@
+{
+  "title": "准备张三案件证据材料",
+  "description": "收集合同、付款凭证等证据材料",
+  "priority": "HIGH",
+  "dueDate": "2026-04-19T23:59:59",
+  "status": "PENDING",
+  "assigneeId": 1,
+  "reminder": false
+}

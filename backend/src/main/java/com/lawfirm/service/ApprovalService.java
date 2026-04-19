@@ -1,0 +1,385 @@
+package com.lawfirm.service;
+
+import com.lawfirm.dto.*;
+import com.lawfirm.entity.*;
+import com.lawfirm.enums.ApprovalStatus;
+import com.lawfirm.repository.*;
+import com.lawfirm.util.PageResult;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.data.domain.*;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * 审批服务
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class ApprovalService {
+
+    private final ApprovalRepository approvalRepository;
+    private final ApprovalFlowRepository approvalFlowRepository;
+    private final UserRepository userRepository;
+    private final CaseRepository caseRepository;
+    private final NotificationService notificationService;
+
+    /**
+     * 审批类型常量
+     */
+    public static final String TYPE_SEAL = "SEAL";  // 用印申请
+    public static final String TYPE_REIMBURSEMENT = "REIMBURSEMENT";  // 费用报销
+    public static final String TYPE_INVOICE = "INVOICE";  // 开票申请
+    public static final String TYPE_LEAVE = "LEAVE";  // 请假出差
+    public static final String TYPE_PURCHASE = "PURCHASE";  // 采购申请
+    public static final String TYPE_LICENSE = "LICENSE";  // 证照借用
+
+    /**
+     * 创建审批
+     */
+    @Transactional
+    public ApprovalDTO createApproval(ApprovalCreateRequest request, Long currentUserId) {
+        Approval approval = new Approval();
+        BeanUtils.copyProperties(request, approval);
+        approval.setApplicantId(currentUserId);
+        approval.setStatus(ApprovalStatus.PENDING.getCode());
+        approval.setApplyTime(LocalDateTime.now());
+
+        // 如果关联案件，验证案件是否存在
+        if (request.getCaseId() != null) {
+            Case caseEntity = caseRepository.findById(request.getCaseId())
+                    .orElseThrow(() -> new RuntimeException("案件不存在"));
+            // 可以在这里添加更多业务逻辑
+        }
+
+        approval = approvalRepository.save(approval);
+
+        // 记录流程
+        recordFlow(approval.getId(), currentUserId, "SUBMIT", "提交审批");
+
+        return toDTO(approval);
+    }
+
+    /**
+     * 同意审批
+     */
+    @Transactional
+    public void approveApproval(Long approvalId, String comments, Long approverId) {
+        Approval approval = approvalRepository.findById(approvalId)
+                .orElseThrow(() -> new RuntimeException("审批单不存在"));
+
+        // 验证审批人
+        if (!approval.getCurrentApproverId().equals(approverId)) {
+            throw new RuntimeException("您不是当前审批人");
+        }
+
+        // 验证状态
+        if (!ApprovalStatus.PENDING.getCode().equals(approval.getStatus())) {
+            throw new RuntimeException("审批单状态不正确");
+        }
+
+        // 更新审批单状态
+        approval.setStatus(ApprovalStatus.APPROVED.getCode());
+        approval.setApprovedTime(LocalDateTime.now());
+        approval.setApprovalNotes(comments);
+
+        approvalRepository.save(approval);
+
+        // 记录流程
+        recordFlow(approvalId, approverId, "APPROVE", comments);
+    }
+
+    /**
+     * 驳回审批
+     */
+    @Transactional
+    public void rejectApproval(Long approvalId, String comments, Long approverId) {
+        Approval approval = approvalRepository.findById(approvalId)
+                .orElseThrow(() -> new RuntimeException("审批单不存在"));
+
+        // 验证审批人
+        if (!approval.getCurrentApproverId().equals(approverId)) {
+            throw new RuntimeException("您不是当前审批人");
+        }
+
+        // 验证状态
+        if (!ApprovalStatus.PENDING.getCode().equals(approval.getStatus())) {
+            throw new RuntimeException("审批单状态不正确");
+        }
+
+        // 更新审批单状态
+        approval.setStatus(ApprovalStatus.REJECTED.getCode());
+        approval.setApprovedTime(LocalDateTime.now());
+        approval.setApprovalNotes(comments);
+
+        approvalRepository.save(approval);
+
+        // 记录流程
+        recordFlow(approvalId, approverId, "REJECT", comments);
+    }
+
+    /**
+     * 转审
+     */
+    @Transactional
+    public void transferApproval(Long approvalId, Long newApproverId, String comments, Long currentApproverId) {
+        Approval approval = approvalRepository.findById(approvalId)
+                .orElseThrow(() -> new RuntimeException("审批单不存在"));
+
+        // 验证当前审批人
+        if (!approval.getCurrentApproverId().equals(currentApproverId)) {
+            throw new RuntimeException("您不是当前审批人");
+        }
+
+        // 验证新审批人
+        if (!userRepository.existsById(newApproverId)) {
+            throw new RuntimeException("新审批人不存在");
+        }
+
+        // 验证状态
+        if (!ApprovalStatus.PENDING.getCode().equals(approval.getStatus())) {
+            throw new RuntimeException("审批单状态不正确");
+        }
+
+        Long oldApproverId = approval.getCurrentApproverId();
+
+        // 更新审批单
+        approval.setCurrentApproverId(newApproverId);
+        approval.setStatus(ApprovalStatus.TRANSFERRED.getCode());
+
+        approvalRepository.save(approval);
+
+        // 记录流程
+        recordFlow(approvalId, currentApproverId, "TRANSFER",
+                "转给" + getUserName(newApproverId) + "，备注：" + comments);
+
+        // 重置为待审批状态
+        approval.setStatus(ApprovalStatus.PENDING.getCode());
+        approvalRepository.save(approval);
+    }
+
+    /**
+     * 撤回审批
+     */
+    @Transactional
+    public void withdrawApproval(Long approvalId, Long applicantId) {
+        Approval approval = approvalRepository.findById(approvalId)
+                .orElseThrow(() -> new RuntimeException("审批单不存在"));
+
+        // 验证申请人
+        if (!approval.getApplicantId().equals(applicantId)) {
+            throw new RuntimeException("您不是申请人，无法撤回");
+        }
+
+        // 验证状态
+        if (!ApprovalStatus.PENDING.getCode().equals(approval.getStatus())) {
+            throw new RuntimeException("只能撤回待审批的单据");
+        }
+
+        // 更新状态
+        approval.setStatus(ApprovalStatus.WITHDRAWN.getCode());
+        approvalRepository.save(approval);
+
+        // 记录流程
+        recordFlow(approvalId, applicantId, "WITHDRAW", "申请人撤回");
+    }
+
+    /**
+     * 催办
+     */
+    @Transactional
+    public void urgeApproval(Long approvalId, Long applicantId) {
+        Approval approval = approvalRepository.findById(approvalId)
+                .orElseThrow(() -> new RuntimeException("审批单不存在"));
+
+        // 验证申请人
+        if (!approval.getApplicantId().equals(applicantId)) {
+            throw new RuntimeException("您不是申请人，无法催办");
+        }
+
+        // 验证状态
+        if (!ApprovalStatus.PENDING.getCode().equals(approval.getStatus())) {
+            throw new RuntimeException("只能催办待审批的单据");
+        }
+
+        // 记录流程（作为催办记录）
+        recordFlow(approvalId, applicantId, "URGE", "申请人催办");
+
+        // 发送催办通知
+        User applicant = userRepository.findById(applicantId).orElse(null);
+        String applicantName = applicant != null ? applicant.getRealName() : "申请人";
+        String title = "审批催办提醒";
+        String content = String.format("审批单「%s」被 %s 催办，请及时处理。", approval.getTitle(), applicantName);
+
+        notificationService.sendNotification(
+                approval.getCurrentApproverId(),
+                title,
+                content,
+                NotificationService.CATEGORY_APPROVAL,
+                approvalId,
+                "APPROVAL_URGE"
+        );
+
+        log.info("审批单 {} 已催办，通知审批人：{}", approvalId, approval.getCurrentApproverId());
+    }
+
+    /**
+     * 获取审批列表
+     */
+    public PageResult<ApprovalDTO> getApprovalList(ApprovalQueryRequest request, Long currentUserId) {
+        Pageable pageable = PageRequest.of(
+                request.getPage() - 1,
+                request.getSize(),
+                Sort.by(Sort.Direction.fromString(request.getSortDirection()), request.getSortField())
+        );
+
+        Specification<Approval> spec = (root, query, cb) -> {
+            List<javax.persistence.criteria.Predicate> predicates = new ArrayList<>();
+
+            // 基础条件
+            if (request.getApprovalType() != null) {
+                predicates.add(cb.equal(root.get("approvalType"), request.getApprovalType()));
+            }
+
+            if (request.getStatus() != null) {
+                predicates.add(cb.equal(root.get("status"), request.getStatus()));
+            }
+
+            // 权限控制：只能看到自己申请的或自己需要审批的
+            if (request.getApplicantId() != null) {
+                predicates.add(cb.equal(root.get("applicantId"), request.getApplicantId()));
+            } else if (request.getCurrentApproverId() != null) {
+                predicates.add(cb.equal(root.get("currentApproverId"), request.getCurrentApproverId()));
+            } else {
+                // 默认：查看自己相关的
+                javax.persistence.criteria.Predicate applicantCondition =
+                        cb.equal(root.get("applicantId"), currentUserId);
+                javax.persistence.criteria.Predicate approverCondition =
+                        cb.equal(root.get("currentApproverId"), currentUserId);
+                predicates.add(cb.or(applicantCondition, approverCondition));
+            }
+
+            if (request.getCaseId() != null) {
+                predicates.add(cb.equal(root.get("caseId"), request.getCaseId()));
+            }
+
+            if (request.getKeyword() != null) {
+                String keyword = "%" + request.getKeyword() + "%";
+                javax.persistence.criteria.Predicate titleCondition =
+                        cb.like(root.get("title"), keyword);
+                javax.persistence.criteria.Predicate contentCondition =
+                        cb.like(root.get("content"), keyword);
+                predicates.add(cb.or(titleCondition, contentCondition));
+            }
+
+            // 排除已删除
+            predicates.add(cb.equal(root.get("deleted"), false));
+
+            return cb.and(predicates.toArray(new javax.persistence.criteria.Predicate[0]));
+        };
+
+        Page<Approval> page = approvalRepository.findAll(spec, pageable);
+
+        List<ApprovalDTO> records = page.getContent().stream()
+                .map(this::toDTO)
+                .collect(Collectors.toList());
+
+        return PageResult.of(
+                (long) request.getPage(),
+                (long) request.getSize(),
+                page.getTotalElements(),
+                records
+        );
+    }
+
+    /**
+     * 获取审批详情
+     */
+    public ApprovalDTO getApprovalDetail(Long approvalId) {
+        Approval approval = approvalRepository.findById(approvalId)
+                .orElseThrow(() -> new RuntimeException("审批单不存在"));
+        return toDTO(approval);
+    }
+
+    /**
+     * 获取审批流程记录
+     */
+    public List<ApprovalFlow> getApprovalFlow(Long approvalId) {
+        return approvalFlowRepository.findByApprovalIdOrderByActionTimeAsc(approvalId);
+    }
+
+    /**
+     * 获取审批类型列表
+     */
+    public List<Map<String, String>> getApprovalTypes() {
+        List<Map<String, String>> types = new ArrayList<>();
+        types.add(createTypeItem(TYPE_SEAL, "用印申请"));
+        types.add(createTypeItem(TYPE_REIMBURSEMENT, "费用报销"));
+        types.add(createTypeItem(TYPE_INVOICE, "开票申请"));
+        types.add(createTypeItem(TYPE_LEAVE, "请假出差"));
+        types.add(createTypeItem(TYPE_PURCHASE, "采购申请"));
+        types.add(createTypeItem(TYPE_LICENSE, "证照借用"));
+        return types;
+    }
+
+    // 辅助方法
+
+    private void recordFlow(Long approvalId, Long approverId, String action, String comments) {
+        ApprovalFlow flow = new ApprovalFlow();
+        flow.setApprovalId(approvalId);
+        flow.setApproverId(approverId);
+        flow.setAction(action);
+        flow.setComments(comments);
+        flow.setActionTime(LocalDateTime.now());
+        approvalFlowRepository.save(flow);
+    }
+
+    private ApprovalDTO toDTO(Approval approval) {
+        ApprovalDTO dto = new ApprovalDTO();
+        BeanUtils.copyProperties(approval, dto);
+
+        dto.setApplicantName(getUserName(approval.getApplicantId()));
+        dto.setCurrentApproverName(getUserName(approval.getCurrentApproverId()));
+        dto.setStatusDesc(getStatusDesc(approval.getStatus()));
+
+        if (approval.getCaseId() != null) {
+            caseRepository.findById(approval.getCaseId()).ifPresent(c -> {
+                dto.setCaseName(c.getCaseName());
+            });
+        }
+
+        return dto;
+    }
+
+    private String getUserName(Long userId) {
+        return userRepository.findById(userId)
+                .map(User::getRealName)
+                .orElse("未知");
+    }
+
+    private String getStatusDesc(String status) {
+        if (status == null) return null;
+        switch (status) {
+            case "PENDING": return "待审批";
+            case "APPROVED": return "已同意";
+            case "REJECTED": return "已驳回";
+            case "TRANSFERRED": return "已转审";
+            case "WITHDRAWN": return "已撤回";
+            default: return status;
+        }
+    }
+
+    private Map<String, String> createTypeItem(String code, String name) {
+        Map<String, String> item = new HashMap<>();
+        item.put("code", code);
+        item.put("name", name);
+        return item;
+    }
+}

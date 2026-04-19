@@ -1,0 +1,13 @@
+{
+  "caseName": "",
+  "caseType": "CIVIL",
+  "procedure": "FIRST",
+  "caseReason": "Test case name auto-generation",
+  "ownerId": 1,
+  "level": "GENERAL",
+  "status": "CONSULTATION",
+  "parties": [
+    {"partyType": "INDIVIDUAL", "partyRole": "PLAINTIFF", "name": "TestPlaintiffA", "phone": "13900000011"},
+    {"partyType": "COMPANY", "partyRole": "DEFENDANT", "name": "TestDefendantB", "phone": "13900000012"}
+  ]
+}
