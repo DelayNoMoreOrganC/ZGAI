@@ -103,8 +103,8 @@ public class AuthController {
                 throw new AuthenticationFailedException("账号已被禁用，请联系管理员");
             }
 
-            // 生成Token
-            String token = jwtUtil.generateToken(user.getId(), user.getUsername());
+            // 生成Token（包含权限信息）
+            String token = jwtUtil.generateToken(user.getId(), user.getUsername(), authentication.getAuthorities());
 
             // 清除登录失败次数
             if (redisUtil != null) {

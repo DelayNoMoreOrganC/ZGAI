@@ -4,10 +4,12 @@ import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -36,6 +38,29 @@ public class JwtUtil {
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", userId);
         claims.put("username", username);
+        return generateToken(claims);
+    }
+
+    /**
+     * 生成JWT Token（包含权限信息）
+     *
+     * @param userId 用户ID
+     * @param username 用户名
+     * @param authorities 权限列表
+     * @return Token字符串
+     */
+    public String generateToken(Long userId, String username, Collection<? extends GrantedAuthority> authorities) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("userId", userId);
+        claims.put("username", username);
+
+        // 添加权限信息到JWT
+        if (authorities != null && !authorities.isEmpty()) {
+            claims.put("authorities", authorities.stream()
+                    .map(GrantedAuthority::getAuthority)
+                    .collect(java.util.stream.Collectors.toList()));
+        }
+
         return generateToken(claims);
     }
 
