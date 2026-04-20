@@ -17,6 +17,10 @@
           <el-icon><Edit /></el-icon>
           编辑
         </el-button>
+        <el-button type="primary" @click="showAIAssistant">
+          <el-icon><ChatDotRound /></el-icon>
+          AI助手
+        </el-button>
         <el-button @click="handleArchive">
           <el-icon><FolderOpened /></el-icon>
           归档
@@ -35,6 +39,13 @@
           </template>
         </el-dropdown>
       </div>
+
+    <!-- AI助手对话框 -->
+    <AIAssistant
+      v-model:visible="aiAssistantVisible"
+      :case-id="currentCaseId"
+      :case-mode="true"
+    />
     </div>
 
     <!-- 进度条 -->
@@ -64,6 +75,9 @@
         <el-button text type="primary" size="small" @click="handleUpdateStage">
           更新阶段
         </el-button>
+        <el-button text type="success" size="small" @click="handleViewApprovals">
+          查看审批
+        </el-button>
       </div>
     </div>
 
@@ -88,39 +102,38 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ArrowLeft, Edit, FolderOpened, ArrowDown, Select
+  ArrowLeft, Edit, FolderOpened, ArrowDown, Select, ChatDotRound
 } from '@element-plus/icons-vue'
 import { getCaseDetail, updateCaseStatus, archiveCase, deleteCase } from '@/api/case'
+import { createTodo } from '@/api/todo'
+import { getStagesByCaseType, getStageAutoTodos, generateStageTodos } from '@/config/case-lifecycle'
+import AIAssistant from '@/views/ai/assistant.vue'
 
 const route = useRoute()
 const router = useRouter()
 
 const loading = ref(false)
 const activeTab = ref('basic')
+const aiAssistantVisible = ref(false)
 const caseDetail = reactive({
   id: '',
   caseName: '',
   caseNumber: '',
   currentStage: '咨询',
   caseType: '',
-  level: ''
+  level: '',
+  ownerId: ''
 })
 
-// 案件阶段
-const caseStages = [
-  { key: 'consult', label: '咨询' },
-  { key: 'contract', label: '签约' },
-  { key: 'filing', label: '立案' },
-  { key: 'trial1', label: '一审' },
-  { key: 'trial2', label: '二审' },
-  { key: 'execution', label: '执行' },
-  { key: 'closed', label: '结案' }
-]
+// 案件阶段 - 根据案件类型动态获取
+const caseStages = computed(() => {
+  return getStagesByCaseType(caseDetail.caseType)
+})
 
 // 判断阶段是否已完成
 const isStageCompleted = (stageKey) => {
-  const stageIndex = caseStages.findIndex(s => s.key === stageKey)
-  const currentIndex = caseStages.findIndex(s => s.label === caseDetail.currentStage)
+  const stageIndex = caseStages.value.findIndex(s => s.key === stageKey)
+  const currentIndex = caseStages.value.findIndex(s => s.label === caseDetail.currentStage)
   return stageIndex < currentIndex
 }
 
@@ -131,7 +144,7 @@ const isStageActive = (stageKey) => {
 
 // 判断是否为当前阶段
 const isCurrentStage = (stageKey) => {
-  const stage = caseStages.find(s => s.key === stageKey)
+  const stage = caseStages.value.find(s => s.key === stageKey)
   return stage?.label === caseDetail.currentStage
 }
 
@@ -155,6 +168,14 @@ const handleEdit = () => {
   router.push(`/case/${caseDetail.id}/edit`)
 }
 
+// 显示AI助手
+const showAIAssistant = () => {
+  aiAssistantVisible.value = true
+}
+
+// 当前案件ID（传递给AI助手）
+const currentCaseId = computed(() => caseDetail.id)
+
 // 归档案件
 const handleArchive = async () => {
   try {
@@ -172,6 +193,14 @@ const handleArchive = async () => {
       ElMessage.error('归档失败')
     }
   }
+}
+
+// 查看审批流程
+const handleViewApprovals = () => {
+  router.push({
+    path: '/approval',
+    query: { caseId: caseDetail.id }
+  })
 }
 
 // 更多操作
@@ -207,7 +236,7 @@ const handleMoreAction = async (command) => {
         const newCase = await createCase(newCaseData)
 
         ElMessage.success('案件复制成功')
-        router.push(`/cases/${newCase.data.id}`)
+        router.push(`/case/${newCase.data.id}`)
       } catch (error) {
         if (error !== 'cancel') {
           console.error('复制案件失败:', error)
@@ -318,7 +347,7 @@ ${caseDetail.value.remark || '无'}
 // 点击阶段
 const handleStageClick = async (stage) => {
   try {
-    const currentStageKey = caseStages.find(s => s.label === caseDetail.currentStage)?.key
+    const currentStageKey = caseStages.value.find(s => s.label === caseDetail.currentStage)?.key
 
     // 检查是否是当前阶段
     if (stage.key === currentStageKey) {
@@ -327,8 +356,8 @@ const handleStageClick = async (stage) => {
     }
 
     // 检查是前进还是回退
-    const currentStageIndex = caseStages.findIndex(s => s.key === currentStageKey)
-    const targetStageIndex = caseStages.findIndex(s => s.key === stage.key)
+    const currentStageIndex = caseStages.value.findIndex(s => s.key === currentStageKey)
+    const targetStageIndex = caseStages.value.findIndex(s => s.key === stage.key)
     const isRollback = targetStageIndex < currentStageIndex
 
     let confirmMessage = `确定要将案件阶段从"${caseDetail.currentStage}"变更为"${stage.label}"吗？`
@@ -384,6 +413,9 @@ const handleStageClick = async (stage) => {
       })
 
       ElMessage.success(`已更新到"${stage.label}"阶段`)
+
+      // 自动生成该阶段的待办事项
+      await generateTodosForStage(stage.key)
     }
 
     // 刷新案件详情
@@ -396,11 +428,51 @@ const handleStageClick = async (stage) => {
   }
 }
 
+// 为新阶段自动生成待办事项
+const generateTodosForStage = async (stageKey) => {
+  try {
+    // 获取该阶段的自动待办模板
+    const autoTodos = getStageAutoTodos(caseDetail.caseType, stageKey)
+
+    if (!autoTodos || autoTodos.length === 0) {
+      return // 该阶段没有自动待办，跳过
+    }
+
+    // 生成待办事项
+    const todos = generateStageTodos(
+      caseDetail.caseType,
+      stageKey,
+      caseDetail.id,
+      caseDetail.caseName,
+      caseDetail.ownerId
+    )
+
+    // 批量创建待办
+    let createdCount = 0
+    for (const todo of todos) {
+      try {
+        await createTodo(todo)
+        createdCount++
+      } catch (error) {
+        console.error('创建待办失败:', error)
+      }
+    }
+
+    if (createdCount > 0) {
+      ElMessage.success(`已为该阶段自动创建${createdCount}个待办事项`)
+    }
+  } catch (error) {
+    console.error('自动生成待办失败:', error)
+    // 不阻塞主流程，静默失败
+  }
+}
+
 // 更新阶段（按钮触发，显示阶段选择）
 const handleUpdateStage = async () => {
   try {
+    const validStages = caseStages.value.map(s => s.label)
     const { value } = await ElMessageBox.prompt(
-      '请输入要变更到的阶段（咨询/签约/立案/一审/二审/执行/结案）',
+      `请输入要变更到的阶段（${validStages.join('、')}）`,
       '更新案件阶段',
       {
         confirmButtonText: '确定',
@@ -411,13 +483,12 @@ const handleUpdateStage = async () => {
     )
 
     // 验证输入的阶段是否有效
-    const validStages = caseStages.map(s => s.label)
     if (!validStages.includes(value)) {
       ElMessage.error(`无效的阶段，请输入：${validStages.join('、')}`)
       return
     }
 
-    const stage = caseStages.find(s => s.label === value)
+    const stage = caseStages.value.find(s => s.label === value)
     if (stage) {
       await handleStageClick(stage)
     }

@@ -3,8 +3,14 @@
     <PageHeader title="新建案件" :show-back="true" @back="$router.back()">
       <template #extra>
         <el-button @click="handleSaveDraft">保存草稿</el-button>
+        <el-button type="success" :loading="filing" @click="handleFiling">
+          确认立案
+        </el-button>
         <el-button type="primary" :loading="submitting" @click="handleSubmit">
           提交案件
+        </el-button>
+        <el-button type="warning" :loading="approving" @click="handleSubmitApproval">
+          提交审批
         </el-button>
       </template>
     </PageHeader>
@@ -31,12 +37,12 @@
             <el-col :span="12">
               <el-form-item label="案件类型" prop="caseType">
                 <el-select v-model="formData.caseType" placeholder="请选择案件类型">
-                  <el-option label="民事" value="民事" />
-                  <el-option label="商事" value="商事" />
-                  <el-option label="仲裁" value="仲裁" />
-                  <el-option label="刑事" value="刑事" />
-                  <el-option label="行政" value="行政" />
-                  <el-option label="非诉" value="非诉" />
+                  <el-option label="民事" value="CIVIL" />
+                  <el-option label="商事" value="COMMERCIAL" />
+                  <el-option label="仲裁" value="ARBITRATION" />
+                  <el-option label="刑事" value="CRIMINAL" />
+                  <el-option label="行政" value="ADMINISTRATIVE" />
+                  <el-option label="非诉" value="NON_LITIGATION" />
                 </el-select>
               </el-form-item>
             </el-col>
@@ -44,11 +50,11 @@
             <el-col :span="12">
               <el-form-item label="案件程序" prop="procedure">
                 <el-select v-model="formData.procedure" placeholder="请选择案件程序">
-                  <el-option label="一审" value="一审" />
-                  <el-option label="二审" value="二审" />
-                  <el-option label="再审" value="再审" />
-                  <el-option label="执行" value="执行" />
-                  <el-option label="其他" value="其他" />
+                  <el-option label="一审" value="FIRST_INSTANCE" />
+                  <el-option label="二审" value="SECOND_INSTANCE" />
+                  <el-option label="再审" value="RETRIAL" />
+                  <el-option label="执行" value="EXECUTION" />
+                  <el-option label="其他" value="OTHER" />
                 </el-select>
               </el-form-item>
             </el-col>
@@ -183,6 +189,12 @@
                   <el-radio label="一般">一般</el-radio>
                   <el-radio label="次要">次要</el-radio>
                 </el-radio-group>
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="12">
+              <el-form-item label="结案/归档">
+                <el-checkbox v-model="showArchiveInfo">填写结案或归档信息</el-checkbox>
               </el-form-item>
             </el-col>
 
@@ -594,7 +606,7 @@
         </div>
 
         <!-- E. 结案/归档信息 -->
-        <div class="form-section">
+        <div class="form-section" v-if="showArchiveInfo">
           <div class="section-header">
             <h3>E. 结案/归档信息</h3>
           </div>
@@ -740,23 +752,28 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, onMounted, computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Plus, MagicStick, DocumentCopy, Delete, UploadFilled
 } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import AIDocumentFill from '@/components/AIDocumentFill.vue'
-import { createCase, checkDuplicate } from '@/api/case'
+import { createCase, updateCase, checkDuplicate, getCaseDetail } from '@/api/case'
 import { searchClients } from '@/api/client'
 import { useSubmitForm } from '@/composables/useSubmitForm'
 
 const router = useRouter()
+const route = useRoute()
 const formRef = ref(null)
 const aiFillDialogVisible = ref(false)
 const duplicateDialogVisible = ref(false)
 const duplicateCases = ref([])
+
+// 判断是否为编辑模式
+const isEditMode = computed(() => !!route.params.id)
+const caseId = computed(() => route.params.id)
 
 // 转换formData为后端DTO格式
 const transformToRequest = () => {
@@ -847,16 +864,32 @@ const transformToRequest = () => {
   }
 }
 
+// 立案状态
+const filing = ref(false)
+
+// 提交审批状态
+const approving = ref(false)
+const createdCaseId = ref(null) // 记录创建的案件ID，用于审批关联
+
 // 使用表单防重复提交hook
 const { submitting, canSubmit, handleSubmit: handleFormSubmit } = useSubmitForm(
   async () => {
     await formRef.value?.validate()
     const requestData = transformToRequest()
-    await createCase(requestData)
+
+    // 根据是否为编辑模式调用不同API
+    if (isEditMode.value) {
+      await updateCase(caseId.value, requestData)
+    } else {
+      await createCase(requestData)
+    }
+
     router.push('/case/list')
   },
   {
-    successMessage: '案件创建成功',
+    get successMessage() {
+      return isEditMode.value ? '案件更新成功' : '案件创建成功'
+    },
     confirmMessage: null,
     beforeSubmit: async () => {
       // 验证至少有一个当事人
@@ -885,6 +918,66 @@ const { submitting, canSubmit, handleSubmit: handleFormSubmit } = useSubmitForm(
     }
   }
 )
+
+// 确认立案功能
+const handleFiling = async () => {
+  try {
+    // 验证表单
+    const valid = await formRef.value?.validate()
+    if (!valid) {
+      ElMessage.warning('请先完善必填信息')
+      return
+    }
+
+    // 验证至少有一个当事人
+    if (!formData.parties || formData.parties.length === 0) {
+      ElMessage.warning('请至少添加一个当事人')
+      return
+    }
+
+    // 确认立案
+    await ElMessageBox.confirm(
+      '确认立案后将正式创建案件，案件状态将变为"审理中"，是否继续？',
+      '确认立案',
+      {
+        confirmButtonText: '确认立案',
+        cancelButtonText: '取消',
+        type: 'success'
+      }
+    )
+
+    filing.value = true
+    const requestData = transformToRequest()
+
+    // 创建案件并自动立案
+    const response = await createCase(requestData)
+
+    if (response.success || response.code === 200) {
+      const caseId = response.data?.id || response.data
+
+      // 调用立案API
+      try {
+        await updateCase(caseId, { status: 'active' })
+        ElMessage.success('案件立案成功！')
+        router.push('/case/list')
+      } catch (error) {
+        console.error('立案失败:', error)
+        ElMessage.warning('案件已创建，但立案状态更新失败，请手动修改')
+        router.push(`/case/${caseId}`)
+      }
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('立案失败:', error)
+      ElMessage.error('立案失败: ' + (error.message || '未知错误'))
+    }
+  } finally {
+    filing.value = false
+  }
+}
+
+// 是否显示结案/归档信息
+const showArchiveInfo = ref(false)
 
 // 表单数据
 const formData = reactive({
@@ -1161,18 +1254,56 @@ const handleDeleteReceivable = (index) => {
   formData.receivables.splice(index, 1)
 }
 
-// 保存草稿
-const handleSaveDraft = () => {
+// 保存草稿 - 真正保存到后端数据库
+const handleSaveDraft = async () => {
   try {
-    // 保存草稿到localStorage
-    const draftData = {
-      formData: JSON.parse(JSON.stringify(formData)),
-      savedAt: new Date().toISOString()
+    // 验证基本必填项（比正式立案宽松）
+    if (!formData.caseName || formData.caseName.trim() === '') {
+      ElMessage.warning('请输入案件名称')
+      return
+    }
+    if (!formData.caseType) {
+      ElMessage.warning('请选择案件类型')
+      return
     }
 
-    localStorage.setItem('case_draft', JSON.stringify(draftData))
+    ElMessageBox.confirm(
+      '保存草稿将创建案件，状态为"咨询中"，是否继续？',
+      '保存草稿',
+      {
+        confirmButtonText: '保存',
+        cancelButtonText: '取消',
+        type: 'info'
+      }
+    ).then(async () => {
+      try {
+        const requestData = transformToRequest()
 
-    ElMessage.success('草稿已保存')
+        // 创建草稿案件（咨询状态）
+        const response = await createCase(requestData)
+        const caseData = response.data || response
+        const caseId = caseData.id || caseData.data?.id
+
+        if (!caseId) {
+          throw new Error('保存草稿失败：未获取到案件ID')
+        }
+
+        ElMessage.success('草稿已保存到数据库')
+        localStorage.removeItem('case_draft') // 清除本地草稿
+
+        // 跳转到案件详情页
+        setTimeout(() => {
+          router.push({ name: 'CaseDetail', params: { id: caseId } })
+        }, 1000)
+
+      } catch (error) {
+        console.error('保存草稿失败:', error)
+        ElMessage.error('保存草稿失败：' + (error.message || '未知错误'))
+      }
+    }).catch(() => {
+      // 用户取消
+    })
+
   } catch (error) {
     console.error('保存草稿失败:', error)
     ElMessage.error('保存草稿失败')
@@ -1184,9 +1315,112 @@ const handleSubmit = () => {
   handleFormSubmit()
 }
 
-onMounted(() => {
-  // 设置默认主办律师为当前用户
-  // formData.ownerId = getCurrentUserId()
+// 提交审批 - 保存案件后跳转到审批页面
+const handleSubmitApproval = async () => {
+  try {
+    approving.value = true
+
+    // 验证表单
+    await formRef.value?.validate()
+
+    // 验证至少有一个当事人
+    if (!formData.parties || formData.parties.length === 0) {
+      ElMessage.warning('请至少添加一个当事人')
+      return
+    }
+
+    const requestData = transformToRequest()
+
+    // 提交案件
+    let caseId
+    if (isEditMode.value) {
+      const response = await updateCase(caseId.value, requestData)
+      caseId = caseId.value
+    } else {
+      const response = await createCase(requestData)
+      // 后端返回Result<CaseDetailVO>，数据在response.data中
+      const caseData = response.data || response
+      caseId = caseData.id || caseData.data?.id
+      if (!caseId) {
+        throw new Error('创建案件失败：未获取到案件ID')
+      }
+    }
+
+    // 跳转到审批页面，并带上案件ID参数
+    ElMessage.success('案件保存成功，正在跳转到审批页面...')
+    router.push({
+      path: '/approval',
+      query: {
+        action: 'create',
+        caseId: caseId,
+        caseName: formData.caseName || '未命名案件'
+      }
+    })
+
+  } catch (error) {
+    console.error('提交审批失败:', error)
+    ElMessage.error('提交审批失败：' + (error.message || '未知错误'))
+  } finally {
+    approving.value = false
+  }
+}
+
+onMounted(async () => {
+  // 如果是编辑模式，加载案件数据
+  if (isEditMode.value) {
+    try {
+      const response = await getCaseDetail(caseId.value)
+      const caseData = response.data
+
+      // 将后端数据转换为表单数据
+      formData.caseType = caseData.caseType || ''
+      formData.procedure = caseData.procedure || ''
+      formData.caseName = caseData.caseName || ''
+      formData.caseNumber = caseData.caseNumber || ''
+      formData.caseReason = caseData.caseReason || ''
+      formData.court = caseData.court || ''
+      formData.amount = caseData.amount || null
+      formData.attorneyFee = caseData.attorneyFee || null
+      formData.filingDate = caseData.filingDate || null
+      formData.deadlineDate = caseData.deadlineDate || null
+      formData.summary = caseData.summary || ''
+
+      // 当事人数据转换
+      if (caseData.parties && caseData.parties.length > 0) {
+        formData.parties = caseData.parties.map(p => ({
+          id: p.id,
+          type: p.partyType === 'INDIVIDUAL' ? '个人' : '单位',
+          attribute: p.partyRole,
+          name: p.name,
+          phone: p.phone,
+          address: p.address
+        }))
+      }
+
+      // 应收款数据
+      if (caseData.receivables && caseData.receivables.length > 0) {
+        formData.receivables = caseData.receivables
+      }
+
+      // 关联客户和案件
+      if (caseData.relatedClients && caseData.relatedClients.length > 0) {
+        formData.relatedClients = caseData.relatedClients
+      }
+      if (caseData.relatedCases && caseData.relatedCases.length > 0) {
+        formData.relatedCases = caseData.relatedCases
+      }
+
+      // 结案/归档信息
+      if (caseData.closeDate || caseData.archiveDate) {
+        showArchiveInfo.value = true
+        formData.closeDate = caseData.closeDate || null
+        formData.archiveDate = caseData.archiveDate || null
+      }
+    } catch (error) {
+      ElMessage.error('加载案件数据失败')
+      router.push('/case/list')
+    }
+  }
 })
 </script>
 
