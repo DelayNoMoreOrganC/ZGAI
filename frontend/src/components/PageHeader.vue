@@ -6,7 +6,10 @@
       <el-tag v-if="subtitle" type="info" size="small">{{ subtitle }}</el-tag>
     </div>
     <div class="header-right">
-      <slot></slot>
+      <slot name="extra">
+        <!-- Fallback to default slot if no extra content -->
+        <slot></slot>
+      </slot>
     </div>
   </div>
 </template>
