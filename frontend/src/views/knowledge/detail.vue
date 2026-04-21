@@ -95,9 +95,13 @@ const route = useRoute()
 const loading = ref(false)
 const article = ref(null)
 
-// TODO: 从用户store获取当前用户ID，判断是否可编辑
+// 权限检查：只有创建者或管理员可以编辑
 const canEdit = computed(() => {
-  return true // 暂时允许所有人编辑
+  const userStore = useUserStore ? useUserStore() : null
+  if (!userStore || !userStore.user) return false
+  if (userStore.user.role === 'ADMIN') return true
+  if (!article.value) return false
+  return article.value.createdBy === userStore.user.id
 })
 
 // 加载文章详情

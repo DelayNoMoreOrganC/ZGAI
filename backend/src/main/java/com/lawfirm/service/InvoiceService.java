@@ -149,7 +149,7 @@ public class InvoiceService {
      * 分页查询开票记录
      */
     public com.lawfirm.util.PageResult<InvoiceDTO> getInvoices(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "billingDate"));
+        Pageable pageable = PageRequest.of(Math.max(0, page - 1), size, Sort.by(Sort.Direction.DESC, "billingDate"));
 
         // 使用 Spring Data 分页查询，避免全表加载
         org.springframework.data.domain.Page<Invoice> invoicePage = invoiceRepository.findAll(pageable);

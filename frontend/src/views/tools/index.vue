@@ -6,7 +6,7 @@
         <el-card class="tool-card">
           <template #header>
             <div class="card-header">
-              <span>💰 诉讼费计算器</span>
+              <span><el-icon><Money /></el-icon> 诉讼费计算器</span>
             </div>
           </template>
           <el-form label-width="100px">
@@ -30,7 +30,7 @@
         <el-card class="tool-card">
           <template #header>
             <div class="card-header">
-              <span>📈 利息计算器</span>
+              <span><el-icon><TrendCharts /></el-icon> 利息计算器</span>
             </div>
           </template>
           <el-form label-width="100px">
@@ -54,7 +54,7 @@
         <el-card class="tool-card">
           <template #header>
             <div class="card-header">
-              <span>📅 时效计算器</span>
+              <span><el-icon><Calendar /></el-icon> 时效计算器</span>
             </div>
           </template>
           <el-form label-width="100px">
@@ -81,6 +81,7 @@
 <script setup>
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Money, TrendCharts, Calendar } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 
 const litigation = ref({ amount: 0, type: 'property', result: null })

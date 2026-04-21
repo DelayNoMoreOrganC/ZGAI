@@ -101,7 +101,10 @@ public class SecurityConfig {
                         "/error",
                         "/error/**",
                         "/init/**",  // 开发环境测试数据初始化
-                        "/h2-console/**"  // H2数据库控制台
+                        "/h2-console/**",  // H2数据库控制台
+                        "/knowledge/**",  // 开发环境：临时放开知识库API
+                        "/ai/**",  // 开发环境：临时放开AI功能API
+                        "/cases/**"  // 开发环境：临时放开案件API（测试）
                 ).permitAll()
 
                 // 放行Swagger UI

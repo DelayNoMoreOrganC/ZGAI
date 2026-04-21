@@ -106,11 +106,34 @@ const handleServerError = () => {
 // 创建axios实例
 const service = axios.create({
   baseURL: import.meta.env.VITE_APP_BASE_API || '/api',
-  timeout: 30000,
+  timeout: 30000, // 普通请求30秒超时
   headers: {
     'Content-Type': 'application/json;charset=UTF-8'
   }
 })
+
+// 创建长超时实例（用于AI上传等耗时操作）
+const longTimeoutService = axios.create({
+  baseURL: import.meta.env.VITE_APP_BASE_API || '/api',
+  timeout: 120000, // AI上传120秒超时
+  headers: {
+    'Content-Type': 'application/json;charset=UTF-8'
+  }
+})
+
+// 长超时服务也添加token拦截器
+longTimeoutService.interceptors.request.use(
+  config => {
+    const token = localStorage.getItem('token')
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`
+    }
+    return config
+  },
+  error => {
+    return Promise.reject(error)
+  }
+)
 
 // 请求拦截器
 service.interceptors.request.use(
@@ -278,3 +301,4 @@ export const request = async (requestFn, options = {}) => {
 }
 
 export default service
+export { longTimeoutService }

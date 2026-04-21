@@ -25,21 +25,21 @@
     <!-- 文档统计 -->
     <div class="doc-stats">
       <div class="stat-card">
-        <div class="stat-icon">📄</div>
+        <div class="stat-icon"><el-icon><Files /></el-icon></div>
         <div class="stat-content">
           <div class="stat-value">{{ totalDocuments }}</div>
           <div class="stat-label">全部文档</div>
         </div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon">📁</div>
+        <div class="stat-icon"><el-icon><FolderOpened /></el-icon></div>
         <div class="stat-content">
           <div class="stat-value">{{ uniqueCases }}</div>
           <div class="stat-label">涉及案件</div>
         </div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon">💾</div>
+        <div class="stat-icon"><el-icon><Coin /></el-icon></div>
         <div class="stat-content">
           <div class="stat-value">{{ formatSize(totalSize) }}</div>
           <div class="stat-label">总大小</div>
@@ -52,7 +52,7 @@
       <el-table-column prop="documentName" label="文档名称" min-width="250">
         <template #default="{ row }">
           <div class="file-name" @click="handlePreview(row)">
-            <span class="file-icon">{{ getFileIcon(row.documentType) }}</span>
+            <el-icon class="file-icon"><component :is="getFileIcon(row.documentType)" /></el-icon>
             <span class="name-text">{{ row.documentName }}</span>
           </div>
         </template>
@@ -124,10 +124,24 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Files, FolderOpened, Coin, Document, Paperclip } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { getAllDocuments } from '@/api/document'
 import { getCaseList } from '@/api/case'
 import request from '@/utils/request'
+
+// Emoji到Element Plus图标的映射
+const emojiToIcon = {
+  '起诉状': Document,
+  '证据': Paperclip,
+  '答辩状': Document,
+  '判决书': Scale,
+  '调解书': Document
+}
+
+const getFileIcon = (type) => {
+  return emojiToIcon[type] || Document
+}
 
 const router = useRouter()
 const loading = ref(false)
@@ -191,7 +205,7 @@ const getCaseName = (caseId) => {
 
 // 跳转到案件详情
 const goToCase = (caseId) => {
-  router.push(`/case/detail/${caseId}`)
+  router.push(`/case/${caseId}`)
 }
 
 // 下载文档
@@ -242,18 +256,6 @@ const formatDate = (dateStr) => {
   if (!dateStr) return ''
   const date = new Date(dateStr)
   return date.toLocaleString('zh-CN')
-}
-
-// 获取文件图标
-const getFileIcon = (type) => {
-  const iconMap = {
-    '起诉状': '📝',
-    '证据': '📎',
-    '答辩状': '📄',
-    '判决书': '⚖️',
-    '调解书': '🤝'
-  }
-  return iconMap[type] || '📄'
 }
 
 // 分页

@@ -111,7 +111,7 @@ public class UserService {
      */
     @Transactional(readOnly = true)
     public Page<UserDTO> getUserList(int page, int size, String keyword, Long departmentId, Integer status) {
-        Pageable pageable = PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "id"));
+        Pageable pageable = PageRequest.of(Math.max(0, page - 1), size, Sort.by(Sort.Direction.DESC, "id"));
 
         // 这里可以添加更多查询条件
         Page<User> userPage = userRepository.findAll(pageable);

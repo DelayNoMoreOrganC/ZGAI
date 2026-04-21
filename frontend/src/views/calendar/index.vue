@@ -19,9 +19,9 @@
         <!-- 视图切换 -->
         <div class="view-switcher">
           <el-radio-group v-model="viewMode" @change="handleViewChange">
-            <el-radio-button label="month">月视图</el-radio-button>
-            <el-radio-button label="week">周视图</el-radio-button>
-            <el-radio-button label="day">日视图</el-radio-button>
+            <el-radio-button value="month">月视图</el-radio-button>
+            <el-radio-button value="week">周视图</el-radio-button>
+            <el-radio-button value="day">日视图</el-radio-button>
           </el-radio-group>
 
           <div class="date-navigation">
@@ -51,7 +51,7 @@
                     class="event-tag"
                     @click.stop="handleEventClick(event)"
                   >
-                    <span class="tag-icon">{{ getEventIcon(event.type) }}</span>
+                    <el-icon class="tag-icon"><component :is="getEventIcon(event.type)" /></el-icon>
                     {{ event.title }}
                   </el-tag>
                 </div>
@@ -119,7 +119,7 @@
                   @click="handleEventClick(event)"
                 >
                   <div class="event-header">
-                    <span class="event-icon">{{ getEventIcon(event.type) }}</span>
+                    <el-icon class="event-icon"><component :is="getEventIcon(event.type)" /></el-icon>
                     <span class="event-time">{{ event.startTime }} - {{ event.endTime }}</span>
                   </div>
                   <div class="event-title">{{ event.title }}</div>
@@ -408,7 +408,7 @@
 import { ref, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Plus, ArrowLeft, ArrowRight, Bell, Location, Briefcase
+  Plus, ArrowLeft, ArrowRight, Bell, Location, Briefcase, Clock, Document, Files
 } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import PriorityDot from '@/components/PriorityDot.vue'
@@ -585,13 +585,13 @@ const getEventTagType = (type) => {
 // 获取事件图标
 const getEventIcon = (type) => {
   const iconMap = {
-    'hearing': '⚖️',
-    'deadline': '⏰',
-    'filing': '📋',
-    'mediation': '🤝',
-    'evidence': '📄'
+    'hearing': Scale,
+    'deadline': Clock,
+    'filing': Document,
+    'mediation': Bell,
+    'evidence': Files
   }
-  return iconMap[type] || '📌'
+  return iconMap[type] || Bell
 }
 
 // 获取待办样式类

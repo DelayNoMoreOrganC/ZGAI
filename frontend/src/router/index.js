@@ -56,6 +56,12 @@ const routes = [
             meta: { title: '新建案件' }
           },
           {
+            path: ':id/edit',
+            name: 'CaseEdit',
+            component: () => import('@/views/case/create.vue'),
+            meta: { title: '编辑案件' }
+          },
+          {
             path: ':id',
             name: 'CaseDetail',
             component: () => import('@/views/case/detail.vue'),
@@ -126,6 +132,18 @@ const routes = [
             name: 'ClientCreate',
             component: () => import('@/views/client/create.vue'),
             meta: { title: '新建客户' }
+          },
+          {
+            path: ':id/edit',
+            name: 'ClientEdit',
+            component: () => import('@/views/client/create.vue'),
+            meta: { title: '编辑客户' }
+          },
+          {
+            path: ':id',
+            name: 'ClientDetail',
+            component: () => import('@/views/client/detail.vue'),
+            meta: { title: '客户详情' }
           }
         ]
       },
@@ -207,8 +225,22 @@ const routes = [
       {
         path: 'work-reports',
         name: 'WorkReport',
-        component: () => import('@/views/work-report/index.vue'),
-        meta: { title: '工作汇报', icon: '📝' }
+        redirect: '/work-reports/list',
+        meta: { title: '工作汇报', icon: '📝' },
+        children: [
+          {
+            path: 'list',
+            name: 'WorkReportList',
+            component: () => import('@/views/work-report/index.vue'),
+            meta: { title: '工作汇报列表' }
+          },
+          {
+            path: ':id',
+            name: 'WorkReportDetail',
+            component: () => import('@/views/work-report/index.vue'),
+            meta: { title: '工作汇报详情' }
+          }
+        ]
       },
       // 公文流转
       {

@@ -201,7 +201,7 @@ const handleSubmit = async () => {
 
     if (response.success) {
       ElMessage.success('客户创建成功')
-      router.push('/client')
+      router.push('/client/list')
     } else {
       ElMessage.error(response.message || '客户创建失败')
     }

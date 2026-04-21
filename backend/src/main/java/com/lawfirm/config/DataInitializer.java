@@ -99,23 +99,23 @@ public class DataInitializer implements CommandLineRunner {
         log.info("创建默认AI配置...");
 
         AIConfig config = new AIConfig();
-        config.setConfigName("DeepSeek默认配置");
-        config.setProviderType("DEEPSEEK_API");
-        config.setApiKey("sk-placeholder"); // 用户需要替换为真实API key
-        config.setApiUrl("https://api.deepseek.com/v1/chat/completions");
-        config.setModelName("deepseek-chat");
-        config.setTemperature(0.7);
+        config.setConfigName("Ollama本地配置");
+        config.setProviderType("ollama");
+        config.setApiKey(""); // Ollama不需要API key
+        config.setApiUrl("http://localhost:11434");
+        config.setModelName("qwen3:8b");
+        config.setTemperature(0.1);
         config.setMaxTokens(2000);
-        config.setTimeoutSeconds(30);
+        config.setTimeoutSeconds(60);
         config.setIsDefault(true);
         config.setIsEnabled(true);
         config.setCategory("DOCUMENT");
-        config.setDescription("默认AI配置，用于文书生成。请前往系统管理-AI配置中替换为真实API Key。");
+        config.setDescription("默认Ollama配置，用于本地AI文档识别。确保Ollama服务在localhost:11434运行并已拉取qwen3:8b模型。");
         config.setDeleted(false);
 
         aiConfigRepository.save(config);
 
-        log.info("默认AI配置创建成功！请前往系统管理-AI配置中替换API Key");
+        log.info("默认AI配置创建成功！使用Ollama本地模型进行文档识别。");
     }
 
     private void createTestTodos(Long userId) {

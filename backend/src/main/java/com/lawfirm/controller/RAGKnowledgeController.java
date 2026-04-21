@@ -16,7 +16,7 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/knowledge/rag")
+@RequestMapping("/knowledge/rag")
 @RequiredArgsConstructor
 public class RAGKnowledgeController {
 

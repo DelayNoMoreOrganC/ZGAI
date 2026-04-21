@@ -26,7 +26,7 @@
     <div class="stats-cards">
       <div v-for="stat in statsCards" :key="stat.key" class="stat-card">
         <div class="stat-icon" :style="{ backgroundColor: stat.color }">
-          <span>{{ stat.icon }}</span>
+          <el-icon><component :is="stat.icon" /></el-icon>
         </div>
         <div class="stat-content">
           <div class="stat-value">{{ stat.value }}</div>
@@ -46,9 +46,9 @@
         <div class="chart-header">
           <h4>案件数量趋势</h4>
           <el-radio-group v-model="caseTrendPeriod" size="small" @change="updateCaseTrendChart">
-            <el-radio-button label="month">月度</el-radio-button>
-            <el-radio-button label="quarter">季度</el-radio-button>
-            <el-radio-button label="year">年度</el-radio-button>
+            <el-radio-button value="month">月度</el-radio-button>
+            <el-radio-button value="quarter">季度</el-radio-button>
+            <el-radio-button value="year">年度</el-radio-button>
           </el-radio-group>
         </div>
         <div ref="caseTrendChartRef" class="chart-container"></div>
@@ -114,13 +114,25 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Download, CaretTop, CaretBottom } from '@element-plus/icons-vue'
+import { Download, CaretTop, CaretBottom, Document, CircleCheck, Coin } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import * as echarts from 'echarts'
 import { getStatsCards, getCaseTrend, getCaseTypeDistribution } from '@/api/statistics'
 
 const dateRange = ref([])
 const caseTrendPeriod = ref('month')
+
+// Emoji到Element Plus图标的映射
+const emojiToIcon = {
+  '⚖️': Scale,
+  '📋': Document,
+  '✅': CircleCheck,
+  '💰': Coin
+}
+
+const getIcon = (emoji) => {
+  return emojiToIcon[emoji] || Scale
+}
 const caseTypePie = ref(true)
 const feeType = ref('income')
 const performanceMetric = ref('caseCount')
@@ -150,7 +162,7 @@ const fetchStatsCards = async () => {
           key: 'totalCases',
           label: '案件总数',
           value: data.totalCases?.toString() || '0',
-          icon: '⚖️',
+          icon: Scale,
           color: '#1890ff',
           trend: 'up',
           trendValue: data.totalCasesTrend || '0%',
@@ -160,7 +172,7 @@ const fetchStatsCards = async () => {
           key: 'activeCases',
           label: '进行中',
           value: data.activeCases?.toString() || '0',
-          icon: '📋',
+          icon: Document,
           color: '#52c41a',
           trend: 'up',
           trendValue: data.activeCasesTrend || '0%',
@@ -170,7 +182,7 @@ const fetchStatsCards = async () => {
           key: 'closedCases',
           label: '已结案',
           value: data.closedCases?.toString() || '0',
-          icon: '✅',
+          icon: CircleCheck,
           color: '#67c23a',
           trend: 'down',
           trendValue: data.closedCasesTrend || '0%',
@@ -180,7 +192,7 @@ const fetchStatsCards = async () => {
           key: 'totalIncome',
           label: '总收入(万)',
           value: data.totalIncome?.toString() || '0',
-          icon: '💰',
+          icon: Coin,
           color: '#faad14',
           trend: 'up',
           trendValue: data.totalIncomeTrend || '0%',

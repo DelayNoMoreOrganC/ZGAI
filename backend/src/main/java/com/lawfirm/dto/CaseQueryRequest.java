@@ -39,6 +39,11 @@ public class CaseQueryRequest {
     private Long ownerId;
 
     /**
+     * 关联客户ID
+     */
+    private Long clientId;
+
+    /**
      * 管辖法院（模糊搜索）
      */
     private String court;

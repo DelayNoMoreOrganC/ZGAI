@@ -2,6 +2,7 @@ package com.lawfirm.controller;
 
 import com.lawfirm.dto.*;
 import com.lawfirm.service.CaseExecutionService;
+import com.lawfirm.service.CasePersonnelService;
 import com.lawfirm.service.HearingRecordService;
 import com.lawfirm.service.PropertyPreservationService;
 import com.lawfirm.security.SecurityUtils;
@@ -26,6 +27,7 @@ public class CaseUnitController {
     private final PropertyPreservationService propertyPreservationService;
     private final CaseExecutionService caseExecutionService;
     private final HearingRecordService hearingRecordService;
+    private final CasePersonnelService casePersonnelService;
     private final SecurityUtils securityUtils;
 
     // ==================== 财产保全 ====================
@@ -136,6 +138,41 @@ public class CaseUnitController {
     @PreAuthorize("hasAuthority('CASE_EDIT')")
     public Result<Void> deleteHearing(@PathVariable Long caseId, @PathVariable Long id) {
         hearingRecordService.delete(id);
+        return Result.success();
+    }
+
+    // ==================== 承办人员 ====================
+
+    @GetMapping("/personnel")
+    @PreAuthorize("hasAuthority('CASE_VIEW')")
+    public Result<List<CasePersonnelDTO>> getPersonnel(@PathVariable Long caseId) {
+        List<CasePersonnelDTO> result = casePersonnelService.getByCaseId(caseId);
+        return Result.success(result);
+    }
+
+    @PostMapping("/personnel")
+    @PreAuthorize("hasAuthority('CASE_EDIT')")
+    public Result<CasePersonnelDTO> createPersonnel(
+            @PathVariable Long caseId,
+            @Valid @RequestBody CasePersonnelDTO dto) {
+        CasePersonnelDTO result = casePersonnelService.create(caseId, dto);
+        return Result.success("承办人员创建成功", result);
+    }
+
+    @PutMapping("/personnel/{id}")
+    @PreAuthorize("hasAuthority('CASE_EDIT')")
+    public Result<CasePersonnelDTO> updatePersonnel(
+            @PathVariable Long caseId,
+            @PathVariable Long id,
+            @Valid @RequestBody CasePersonnelDTO dto) {
+        CasePersonnelDTO result = casePersonnelService.update(caseId, id, dto);
+        return Result.success("承办人员更新成功", result);
+    }
+
+    @DeleteMapping("/personnel/{id}")
+    @PreAuthorize("hasAuthority('CASE_EDIT')")
+    public Result<Void> deletePersonnel(@PathVariable Long caseId, @PathVariable Long id) {
+        casePersonnelService.delete(caseId, id);
         return Result.success();
     }
 }

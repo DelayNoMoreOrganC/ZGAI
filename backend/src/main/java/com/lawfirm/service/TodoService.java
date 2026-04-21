@@ -192,7 +192,7 @@ public class TodoService {
      * 分页查询待办（性能优化 - 使用Spring Data分页）
      */
     public com.lawfirm.util.PageResult<TodoDTO> getTodos(int page, int size, Long assigneeId) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Pageable pageable = PageRequest.of(Math.max(0, page - 1), size, Sort.by(Sort.Direction.DESC, "createdAt"));
 
         // 如果没有指定assigneeId，返回空结果
         if (assigneeId == null) {

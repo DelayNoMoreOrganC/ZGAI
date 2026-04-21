@@ -22,7 +22,9 @@
         >
           <template #default="{ node, data }">
             <div class="tree-node">
-              <span class="node-icon">{{ data.type === 'folder' ? '📁' : '📄' }}</span>
+              <el-icon class="node-icon">
+                <component :is="data.type === 'folder' ? Folder : DocumentAdd" />
+              </el-icon>
               <span class="node-label">{{ node.label }}</span>
             </div>
           </template>
@@ -319,7 +321,7 @@ import {
   moveCaseDocument
 } from '@/api/case'
 import {
-  Plus, Upload, DocumentAdd, MagicStick, Search, FolderOpened,
+  Plus, Upload, DocumentAdd, MagicStick, Search, FolderOpened, Folder,
   ArrowDown, Edit, DocumentCopy, Download
 } from '@element-plus/icons-vue'
 

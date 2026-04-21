@@ -192,13 +192,200 @@
         </div>
       </el-tab-pane>
     </el-tabs>
+
+    <!-- 财产保全对话框 -->
+    <el-dialog v-model="preservationDialogVisible" :title="preservationForm.id ? '编辑财产保全' : '添加财产保全'" width="700px">
+      <el-form :model="preservationForm" label-width="120px">
+        <el-form-item label="被申请人" required>
+          <el-input v-model="preservationForm.targetPerson" placeholder="请输入被申请人姓名" />
+        </el-form-item>
+        <el-form-item label="保全标的" required>
+          <el-input v-model="preservationForm.preservationTarget" placeholder="请输入保全标的" />
+        </el-form-item>
+        <el-form-item label="保全金额">
+          <el-input-number v-model="preservationForm.preservationAmount" :min="0" :precision="2" placeholder="请输入金额" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="保全法院">
+          <el-input v-model="preservationForm.preservationCourt" placeholder="请输入保全法院" />
+        </el-form-item>
+        <el-form-item label="保全日期">
+          <el-date-picker
+            v-model="preservationForm.preservationDate"
+            type="date"
+            placeholder="选择日期"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="保全状态">
+          <el-select v-model="preservationForm.preservationStatus" placeholder="请选择状态" style="width: 100%">
+            <el-option label="待办理" value="待办理" />
+            <el-option label="进行中" value="进行中" />
+            <el-option label="已完成" value="已完成" />
+            <el-option label="已解除" value="已解除" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="preservationForm.notes" type="textarea" :rows="3" placeholder="请输入备注" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="preservationDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleSubmitPreservation">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 执行情况对话框 -->
+    <el-dialog v-model="executionDialogVisible" :title="executionForm.id ? '编辑执行情况' : '添加执行情况'" width="700px">
+      <el-form :model="executionForm" label-width="120px">
+        <el-form-item label="执行案号" required>
+          <el-input v-model="executionForm.caseNumber" placeholder="请输入执行案号" />
+        </el-form-item>
+        <el-form-item label="法院">
+          <el-input v-model="executionForm.court" placeholder="请输入执行法院" />
+        </el-form-item>
+        <el-form-item label="申请人">
+          <el-input v-model="executionForm.applicant" placeholder="请输入申请人" />
+        </el-form-item>
+        <el-form-item label="被执行人">
+          <el-input v-model="executionForm.respondent" placeholder="请输入被执行人" />
+        </el-form-item>
+        <el-form-item label="执行标的">
+          <el-input v-model="executionForm.subject" placeholder="请输入执行标的" />
+        </el-form-item>
+        <el-form-item label="执行金额">
+          <el-input-number v-model="executionForm.amount" :min="0" :precision="2" placeholder="请输入金额" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="执行日期">
+          <el-date-picker
+            v-model="executionForm.date"
+            type="date"
+            placeholder="选择日期"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="执行状态">
+          <el-select v-model="executionForm.status" placeholder="请选择状态" style="width: 100%">
+            <el-option label="进行中" value="进行中" />
+            <el-option label="已完毕" value="已完毕" />
+            <el-option label="已终止" value="已终止" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="executionForm.notes" type="textarea" :rows="3" placeholder="请输入备注" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="executionDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleSubmitExecution">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 庭审记录对话框 -->
+    <el-dialog v-model="hearingDialogVisible" :title="hearingForm.id ? '编辑庭审记录' : '添加庭审记录'" width="700px">
+      <el-form :model="hearingForm" label-width="120px">
+        <el-form-item label="庭审日期" required>
+          <el-date-picker
+            v-model="hearingForm.date"
+            type="date"
+            placeholder="选择日期"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="庭审类型" required>
+          <el-select v-model="hearingForm.type" placeholder="请选择庭审类型" style="width: 100%">
+            <el-option label="开庭" value="开庭" />
+            <el-option label="谈话" value="谈话" />
+            <el-option label="调解" value="调解" />
+            <el-option label="证据交换" value="证据交换" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="法庭号">
+          <el-input v-model="hearingForm.courtroom" placeholder="请输入法庭号" />
+        </el-form-item>
+        <el-form-item label="审判员">
+          <el-input v-model="hearingForm.judge" placeholder="请输入审判员姓名" />
+        </el-form-item>
+        <el-form-item label="书记员">
+          <el-input v-model="hearingForm.clerk" placeholder="请输入书记员姓名" />
+        </el-form-item>
+        <el-form-item label="庭审状态">
+          <el-select v-model="hearingForm.status" placeholder="请选择状态" style="width: 100%">
+            <el-option label="进行中" value="进行中" />
+            <el-option label="已结束" value="已结束" />
+            <el-option label="已改期" value="已改期" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="hearingForm.notes" type="textarea" :rows="3" placeholder="请输入备注" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="hearingDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleSubmitHearing">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 承办人员对话框 -->
+    <el-dialog v-model="personnelDialogVisible" :title="personnelForm.id ? '编辑承办人员' : '添加承办人员'" width="600px">
+      <el-form :model="personnelForm" label-width="120px">
+        <el-form-item label="姓名" required>
+          <el-input v-model="personnelForm.name" placeholder="请输入人员姓名" />
+        </el-form-item>
+        <el-form-item label="职位" required>
+          <el-select v-model="personnelForm.position" placeholder="请选择职位" style="width: 100%">
+            <el-option label="审判员" value="审判员" />
+            <el-option label="书记员" value="书记员" />
+            <el-option label="法官助理" value="法官助理" />
+            <el-option label="执行员" value="执行员" />
+            <el-option label="其他" value="其他" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="联系电话">
+          <el-input v-model="personnelForm.phone" placeholder="请输入联系电话" />
+        </el-form-item>
+        <el-form-item label="法院">
+          <el-input v-model="personnelForm.court" placeholder="请输入法院名称" />
+        </el-form-item>
+        <el-form-item label="部门">
+          <el-input v-model="personnelForm.department" placeholder="请输入部门名称" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="personnelForm.notes" type="textarea" :rows="3" placeholder="请输入备注" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="personnelDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleSubmitPersonnel">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
+import {
+  getPreservations,
+  createPreservation,
+  updatePreservation,
+  deletePreservation,
+  getExecutions,
+  createExecution,
+  updateExecution,
+  deleteExecution,
+  getHearings,
+  createHearing,
+  updateHearing,
+  deleteHearing,
+  getPersonnel,
+  createPersonnel,
+  updatePersonnel,
+  deletePersonnel
+} from '@/api/case'
 
 const props = defineProps({
   caseData: {
@@ -212,18 +399,64 @@ const emit = defineEmits(['refresh'])
 const activeTab = ref('preservation')
 const loading = ref(false)
 
-// 财产保全列表
-const preservationList = ref([
-  {
-    id: 1,
-    target: '李四',
-    subject: '房产查封',
-    amount: 500000,
-    court: '北京市朝阳区人民法院',
-    date: '2024-03-15',
-    status: '进行中'
+// 加载受理单位数据
+const loadUnitData = async () => {
+  if (!props.caseData.id) return
+
+  try {
+    loading.value = true
+
+    // 根据当前Tab加载对应数据
+    if (activeTab.value === 'preservation') {
+      const res = await getPreservations(props.caseData.id)
+      // 映射后端字段到前端显示字段
+      preservationList.value = (res.data || []).map(item => ({
+        id: item.id,
+        target: item.targetPerson || item.target || '待填写',
+        subject: item.preservationTarget || item.subject || '',
+        amount: item.preservationAmount || item.amount || 0,
+        court: item.preservationCourt || item.court || '待填写',
+        date: item.preservationDate || item.date || '',
+        status: item.preservationStatus || item.status || '待办理'
+      }))
+    } else if (activeTab.value === 'execution') {
+      const res = await getExecutions(props.caseData.id)
+      executionList.value = res.data || []
+    } else if (activeTab.value === 'hearing') {
+      const res = await getHearings(props.caseData.id)
+      hearingList.value = res.data || []
+    } else if (activeTab.value === 'personnel') {
+      const res = await getPersonnel(props.caseData.id)
+      personnelList.value = res.data || []
+    }
+  } catch (error) {
+    console.error('加载数据失败:', error)
+    // 如果是404错误，说明后端API未实现，使用空列表
+    if (error.response?.status === 404) {
+      if (activeTab.value === 'preservation') preservationList.value = []
+      else if (activeTab.value === 'execution') executionList.value = []
+      else if (activeTab.value === 'hearing') hearingList.value = []
+      else if (activeTab.value === 'personnel') personnelList.value = []
+    } else {
+      ElMessage.error('加载数据失败')
+    }
+  } finally {
+    loading.value = false
   }
-])
+}
+
+// 监听Tab切换
+const handleTabChange = () => {
+  loadUnitData()
+}
+
+// 组件挂载时加载数据
+onMounted(() => {
+  loadUnitData()
+})
+
+// 财产保全列表
+const preservationList = ref([])
 
 // 执行情况列表
 const executionList = ref([])
@@ -233,6 +466,16 @@ const hearingList = ref([])
 
 // 承办人员列表
 const personnelList = ref([])
+
+// 监听activeTab变化，自动加载数据
+const watchActiveTab = () => {
+  loadUnitData()
+}
+
+// 添加watch监听
+watch(() => activeTab.value, () => {
+  watchActiveTab()
+})
 
 // 获取状态标签颜色
 const getStatusTagType = (status) => {
@@ -267,54 +510,80 @@ const getPositionTagType = (position) => {
   return typeMap[position] || ''
 }
 
+// 财产保全对话框
+const preservationDialogVisible = ref(false)
+const preservationForm = ref({
+  targetPerson: '',
+  preservationTarget: '',
+  preservationAmount: null,
+  preservationCourt: '',
+  preservationDate: '',
+  preservationStatus: '待办理',
+  notes: ''
+})
+
 // 财产保全操作
-const handleAddPreservation = async () => {
-  try {
-    const { value } = await ElMessageBox.prompt('请输入保全标的', '添加财产保全', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputPattern: /^.{1,100}$/,
-      inputErrorMessage: '保全标的长度为1-100个字符'
-    })
-
-    // 添加财产保全记录（本地数据，等待后端API实现）
-    preservationList.value.push({
-      id: Date.now(),
-      target: '待填写',
-      subject: value,
-      amount: 0,
-      court: '待填写',
-      date: new Date().toISOString().split('T')[0],
-      status: '待办理'
-    })
-
-    ElMessage.success('添加成功')
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('添加保全失败:', error)
-      ElMessage.error('添加保全失败')
-    }
+const handleAddPreservation = () => {
+  preservationForm.value = {
+    targetPerson: '',
+    preservationTarget: '',
+    preservationAmount: null,
+    preservationCourt: '',
+    preservationDate: new Date().toISOString().split('T')[0],
+    preservationStatus: '待办理',
+    notes: ''
   }
+  preservationDialogVisible.value = true
 }
 
-const handleEditPreservation = async (row) => {
-  try {
-    const { value } = await ElMessageBox.prompt('请输入保全标的', '编辑财产保全', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputValue: row.subject,
-      inputPattern: /^.{1,100}$/,
-      inputErrorMessage: '保全标的长度为1-100个字符'
-    })
+const handleEditPreservation = (row) => {
+  preservationForm.value = {
+    id: row.id,
+    targetPerson: row.target,
+    preservationTarget: row.subject,
+    preservationAmount: row.amount,
+    preservationCourt: row.court,
+    preservationDate: row.date,
+    preservationStatus: row.status,
+    notes: row.notes || ''
+  }
+  preservationDialogVisible.value = true
+}
 
-    // 更新财产保全记录（本地数据，等待后端API实现）
-    row.subject = value
-    ElMessage.success('更新成功')
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('编辑保全失败:', error)
-      ElMessage.error('编辑保全失败')
+const handleSubmitPreservation = async () => {
+  if (!preservationForm.value.preservationTarget) {
+    ElMessage.warning('请输入保全标的')
+    return
+  }
+  if (!preservationForm.value.targetPerson) {
+    ElMessage.warning('请输入被申请人')
+    return
+  }
+
+  try {
+    const data = {
+      targetPerson: preservationForm.value.targetPerson,
+      preservationTarget: preservationForm.value.preservationTarget,
+      preservationAmount: preservationForm.value.preservationAmount || 0,
+      preservationCourt: preservationForm.value.preservationCourt,
+      preservationDate: preservationForm.value.preservationDate,
+      preservationStatus: preservationForm.value.preservationStatus,
+      notes: preservationForm.value.notes
     }
+
+    if (preservationForm.value.id) {
+      await updatePreservation(props.caseData.id, preservationForm.value.id, data)
+      ElMessage.success('更新成功')
+    } else {
+      await createPreservation(props.caseData.id, data)
+      ElMessage.success('添加成功')
+    }
+
+    preservationDialogVisible.value = false
+    await loadUnitData()
+  } catch (error) {
+    console.error('操作失败:', error)
+    ElMessage.error('操作失败')
   }
 }
 
@@ -330,12 +599,8 @@ const handleDeletePreservation = async (row) => {
       }
     )
 
-    // 删除财产保全记录（本地数据，等待后端API实现）
-    const index = preservationList.value.findIndex(item => item.id === row.id)
-    if (index > -1) {
-      preservationList.value.splice(index, 1)
-    }
-
+    await deletePreservation(props.caseData.id, row.id)
+    await loadUnitData()
     ElMessage.success('删除成功')
   } catch (error) {
     if (error !== 'cancel') {
@@ -345,54 +610,84 @@ const handleDeletePreservation = async (row) => {
   }
 }
 
+// 执行情况对话框
+const executionDialogVisible = ref(false)
+const executionForm = ref({
+  caseNumber: '',
+  court: '',
+  applicant: '',
+  respondent: '',
+  subject: '',
+  amount: null,
+  date: '',
+  status: '进行中',
+  notes: ''
+})
+
 // 执行情况操作
-const handleAddExecution = async () => {
-  try {
-    const { value } = await ElMessageBox.prompt('请输入执行案号', '添加执行情况', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputPattern: /^.{1,50}$/,
-      inputErrorMessage: '执行案号长度为1-50个字符'
-    })
-
-    executionList.value.push({
-      id: Date.now(),
-      caseNumber: value,
-      court: '待填写',
-      applicant: '待填写',
-      respondent: '待填写',
-      subject: '待填写',
-      amount: 0,
-      date: new Date().toISOString().split('T')[0],
-      status: '进行中'
-    })
-
-    ElMessage.success('添加成功')
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('添加执行失败:', error)
-      ElMessage.error('添加执行失败')
-    }
+const handleAddExecution = () => {
+  executionForm.value = {
+    caseNumber: '',
+    court: '',
+    applicant: '',
+    respondent: '',
+    subject: '',
+    amount: null,
+    date: new Date().toISOString().split('T')[0],
+    status: '进行中',
+    notes: ''
   }
+  executionDialogVisible.value = true
 }
 
-const handleEditExecution = async (row) => {
-  try {
-    const { value } = await ElMessageBox.prompt('请输入执行案号', '编辑执行情况', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputValue: row.caseNumber,
-      inputPattern: /^.{1,50}$/,
-      inputErrorMessage: '执行案号长度为1-50个字符'
-    })
+const handleEditExecution = (row) => {
+  executionForm.value = {
+    id: row.id,
+    caseNumber: row.caseNumber,
+    court: row.court,
+    applicant: row.applicant,
+    respondent: row.respondent,
+    subject: row.subject,
+    amount: row.amount,
+    date: row.date,
+    status: row.status,
+    notes: row.notes || ''
+  }
+  executionDialogVisible.value = true
+}
 
-    row.caseNumber = value
-    ElMessage.success('更新成功')
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('编辑执行失败:', error)
-      ElMessage.error('编辑执行失败')
+const handleSubmitExecution = async () => {
+  if (!executionForm.value.caseNumber) {
+    ElMessage.warning('请输入执行案号')
+    return
+  }
+
+  try {
+    const data = {
+      caseNumber: executionForm.value.caseNumber,
+      court: executionForm.value.court,
+      applicant: executionForm.value.applicant,
+      respondent: executionForm.value.respondent,
+      subject: executionForm.value.subject,
+      amount: executionForm.value.amount || 0,
+      date: executionForm.value.date,
+      status: executionForm.value.status,
+      notes: executionForm.value.notes
     }
+
+    if (executionForm.value.id) {
+      await updateExecution(props.caseData.id, executionForm.value.id, data)
+      ElMessage.success('更新成功')
+    } else {
+      await createExecution(props.caseData.id, data)
+      ElMessage.success('添加成功')
+    }
+
+    executionDialogVisible.value = false
+    await loadUnitData()
+  } catch (error) {
+    console.error('操作失败:', error)
+    ElMessage.error('操作失败')
   }
 }
 
@@ -404,11 +699,8 @@ const handleDeleteExecution = async (row) => {
       type: 'warning'
     })
 
-    const index = executionList.value.findIndex(item => item.id === row.id)
-    if (index > -1) {
-      executionList.value.splice(index, 1)
-    }
-
+    await deleteExecution(props.caseData.id, row.id)
+    await loadUnitData()
     ElMessage.success('删除成功')
   } catch (error) {
     if (error !== 'cancel') {
@@ -418,54 +710,76 @@ const handleDeleteExecution = async (row) => {
   }
 }
 
+// 庭审记录对话框
+const hearingDialogVisible = ref(false)
+const hearingForm = ref({
+  date: '',
+  type: '开庭',
+  courtroom: '',
+  judge: '',
+  clerk: '',
+  status: '进行中',
+  notes: ''
+})
+
 // 庭审记录操作
-const handleAddHearing = async () => {
-  try {
-    const { value } = await ElMessageBox.prompt('请输入庭审类型', '添加庭审记录', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputPlaceholder: '开庭/谈话/调解/证据交换',
-      inputPattern: /^.{1,20}$/,
-      inputErrorMessage: '庭审类型长度为1-20个字符'
-    })
-
-    hearingList.value.push({
-      id: Date.now(),
-      date: new Date().toISOString().split('T')[0],
-      type: value,
-      courtroom: '待填写',
-      judge: '待填写',
-      clerk: '待填写',
-      transcript: null,
-      status: '进行中'
-    })
-
-    ElMessage.success('添加成功')
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('添加庭审失败:', error)
-      ElMessage.error('添加庭审失败')
-    }
+const handleAddHearing = () => {
+  hearingForm.value = {
+    date: new Date().toISOString().split('T')[0],
+    type: '开庭',
+    courtroom: '',
+    judge: '',
+    clerk: '',
+    status: '进行中',
+    notes: ''
   }
+  hearingDialogVisible.value = true
 }
 
-const handleEditHearing = async (row) => {
-  try {
-    const { value } = await ElMessageBox.prompt('请输入庭审类型', '编辑庭审记录', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputValue: row.type,
-      inputPattern: /^.{1,20}$/,
-      inputErrorMessage: '庭审类型长度为1-20个字符'
-    })
+const handleEditHearing = (row) => {
+  hearingForm.value = {
+    id: row.id,
+    date: row.date,
+    type: row.type,
+    courtroom: row.courtroom,
+    judge: row.judge,
+    clerk: row.clerk,
+    status: row.status,
+    notes: row.notes || ''
+  }
+  hearingDialogVisible.value = true
+}
 
-    row.type = value
-    ElMessage.success('更新成功')
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('编辑庭审失败:', error)
-      ElMessage.error('编辑庭审失败')
+const handleSubmitHearing = async () => {
+  if (!hearingForm.value.date) {
+    ElMessage.warning('请选择庭审日期')
+    return
+  }
+
+  try {
+    const data = {
+      date: hearingForm.value.date,
+      type: hearingForm.value.type,
+      courtroom: hearingForm.value.courtroom,
+      judge: hearingForm.value.judge,
+      clerk: hearingForm.value.clerk,
+      status: hearingForm.value.status,
+      notes: hearingForm.value.notes
     }
+
+    if (hearingForm.value.id) {
+      await updateHearing(props.caseData.id, hearingForm.value.id, data)
+      ElMessage.success('更新成功')
+    } else {
+      await createHearing(props.caseData.id, data)
+      ElMessage.success('添加成功')
+    }
+
+    hearingDialogVisible.value = false
+    await loadUnitData()
+  } catch (error) {
+    console.error('操作失败:', error)
+    ElMessage.error('操作失败')
   }
 }
 
@@ -477,11 +791,8 @@ const handleDeleteHearing = async (row) => {
       type: 'warning'
     })
 
-    const index = hearingList.value.findIndex(item => item.id === row.id)
-    if (index > -1) {
-      hearingList.value.splice(index, 1)
-    }
-
+    await deleteHearing(props.caseData.id, row.id)
+    await loadUnitData()
     ElMessage.success('删除成功')
   } catch (error) {
     if (error !== 'cancel') {
@@ -547,51 +858,72 @@ const handleDeleteAttachment = async (row, file) => {
   }
 }
 
+// 承办人员对话框
+const personnelDialogVisible = ref(false)
+const personnelForm = ref({
+  name: '',
+  position: '',
+  phone: '',
+  court: '',
+  department: '',
+  notes: ''
+})
+
 // 承办人员操作
-const handleAddPersonnel = async () => {
-  try {
-    const { value } = await ElMessageBox.prompt('请输入人员姓名', '添加承办人员', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputPattern: /^.{1,20}$/,
-      inputErrorMessage: '姓名长度为1-20个字符'
-    })
-
-    personnelList.value.push({
-      id: Date.now(),
-      name: value,
-      position: '待填写',
-      phone: '待填写',
-      court: '待填写',
-      notes: ''
-    })
-
-    ElMessage.success('添加成功')
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('添加人员失败:', error)
-      ElMessage.error('添加人员失败')
-    }
+const handleAddPersonnel = () => {
+  personnelForm.value = {
+    name: '',
+    position: '',
+    phone: '',
+    court: '',
+    department: '',
+    notes: ''
   }
+  personnelDialogVisible.value = true
 }
 
-const handleEditPersonnel = async (row) => {
-  try {
-    const { value } = await ElMessageBox.prompt('请输入人员姓名', '编辑承办人员', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputValue: row.name,
-      inputPattern: /^.{1,20}$/,
-      inputErrorMessage: '姓名长度为1-20个字符'
-    })
+const handleEditPersonnel = (row) => {
+  personnelForm.value = {
+    id: row.id,
+    name: row.name,
+    position: row.position,
+    phone: row.phone,
+    court: row.court,
+    department: row.department,
+    notes: row.notes || ''
+  }
+  personnelDialogVisible.value = true
+}
 
-    row.name = value
-    ElMessage.success('更新成功')
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('编辑人员失败:', error)
-      ElMessage.error('编辑人员失败')
+const handleSubmitPersonnel = async () => {
+  if (!personnelForm.value.name) {
+    ElMessage.warning('请输入人员姓名')
+    return
+  }
+
+  try {
+    const data = {
+      name: personnelForm.value.name,
+      position: personnelForm.value.position,
+      phone: personnelForm.value.phone,
+      court: personnelForm.value.court,
+      department: personnelForm.value.department,
+      notes: personnelForm.value.notes
     }
+
+    if (personnelForm.value.id) {
+      await updatePersonnel(props.caseData.id, personnelForm.value.id, data)
+      ElMessage.success('更新成功')
+    } else {
+      await createPersonnel(props.caseData.id, data)
+      ElMessage.success('添加成功')
+    }
+
+    personnelDialogVisible.value = false
+    await loadUnitData()
+  } catch (error) {
+    console.error('操作失败:', error)
+    ElMessage.error('操作失败')
   }
 }
 
@@ -603,11 +935,8 @@ const handleDeletePersonnel = async (row) => {
       type: 'warning'
     })
 
-    const index = personnelList.value.findIndex(item => item.id === row.id)
-    if (index > -1) {
-      personnelList.value.splice(index, 1)
-    }
-
+    await deletePersonnel(props.caseData.id, row.id)
+    await loadUnitData()
     ElMessage.success('删除成功')
   } catch (error) {
     if (error !== 'cancel') {

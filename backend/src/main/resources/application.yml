@@ -113,6 +113,28 @@ ai:
     model: deepseek-chat
     max-tokens: 4000
     temperature: 0.7
+  ollama:
+    base-url: http://localhost:11434
+    model: qwen3:8b
+    max-tokens: 2000
+    temperature: 0.1
+    timeout-seconds: 60
+  aliyun:
+    embedding:
+      api-key: your-aliyun-api-key
+      base-url: https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding
+      model: text-embedding-v3
+      dimension: 1024
+      timeout-seconds: 30
+
+qdrant:
+  host: localhost
+  port: 6333
+  grpc-port: 6334
+  collection-name: lawfirm-knowledge
+  vector-size: 1024
+  distance: Cosine
+  timeout-seconds: 10
 
 logging:
   level:

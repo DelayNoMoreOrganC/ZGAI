@@ -27,6 +27,21 @@
           <el-descriptions-item label="管辖法院">
             {{ caseData.court }}
           </el-descriptions-item>
+          <el-descriptions-item label="委托客户">
+            <div v-if="caseData.clientId">
+              <el-tag type="success" size="small">有委托客户</el-tag>
+              <el-button
+                type="primary"
+                size="small"
+                text
+                @click="handleViewClient"
+                style="margin-left: 8px"
+              >
+                查看客户详情
+              </el-button>
+            </div>
+            <span v-else class="text-muted">未关联客户</span>
+          </el-descriptions-item>
           <el-descriptions-item label="案件等级">
             <span v-if="caseData.level === '重要'">🔴 重要</span>
             <span v-else-if="caseData.level === '一般'">🟡 一般</span>
@@ -1076,6 +1091,15 @@ const handleSaveParty = async () => {
   } catch (error) {
     console.error('保存当事人失败:', error)
     ElMessage.error('保存失败')
+  }
+}
+
+// 查看客户详情
+const handleViewClient = () => {
+  if (props.caseData.clientId) {
+    router.push(`/client/${props.caseData.clientId}`)
+  } else {
+    ElMessage.warning('该案件未关联客户')
   }
 }
 

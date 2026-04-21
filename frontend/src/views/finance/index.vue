@@ -2,12 +2,13 @@
   <div class="finance">
     <PageHeader title="财务管理" />
 
-    <el-tabs v-model="activeTab" type="card" class="finance-tabs">
+    <el-tabs v-model="activeTab" type="card" class="finance-tabs"
+      :class="'tab-' + activeTab">
       <!-- 费用记录 -->
       <el-tab-pane label="费用记录" name="expenses">
         <div class="tab-content">
           <div class="toolbar">
-            <el-button type="primary" @click="handleAddExpense">
+            <el-button type="primary" @click="handleAddExpense" class="add-btn">
               <el-icon><Plus /></el-icon>
               添加费用
             </el-button>
@@ -22,14 +23,23 @@
             </el-select>
           </div>
 
-          <el-table :data="expenseList" border>
+          <el-table :data="expenseList" border class="finance-table"
+            :header-cell-style="{ background: '#f0f5ff', color: '#333', fontWeight: '600' }"
+            :row-class-name="tableRowClassName">
             <el-table-column prop="date" label="日期" width="120" sortable />
             <el-table-column prop="type" label="费用类型" width="120">
               <template #default="{ row }">
                 <el-tag>{{ row.type }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="caseName" label="关联案件" width="200" />
+            <el-table-column prop="caseName" label="关联案件" width="200">
+              <template #default="{ row }">
+                <el-link v-if="row.caseId" @click="goToCase(row.caseId)" type="primary">
+                  {{ row.caseName }}
+                </el-link>
+                <span v-else>{{ row.caseName || '-' }}</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="amount" label="金额(元)" width="120">
               <template #default="{ row }">
                 ¥{{ row.amount?.toLocaleString() || '0' }}
@@ -73,8 +83,17 @@
             </div>
           </div>
 
-          <el-table :data="lawyerFeeList" border>
-            <el-table-column prop="caseName" label="案件名称" width="200" />
+          <el-table :data="lawyerFeeList" border class="finance-table"
+            :header-cell-style="{ background: '#f0f5ff', color: '#333', fontWeight: '600' }"
+            :row-class-name="tableRowClassName">
+            <el-table-column prop="caseName" label="案件名称" width="200">
+              <template #default="{ row }">
+                <el-link v-if="row.caseId" @click="goToCase(row.caseId)" type="primary">
+                  {{ row.caseName }}
+                </el-link>
+                <span v-else>{{ row.caseName || '-' }}</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="clientName" label="客户" width="120" />
             <el-table-column prop="feeType" label="收费方式" width="100" />
             <el-table-column prop="totalFee" label="应收律师费(元)" width="130">
@@ -111,7 +130,7 @@
       <el-tab-pane label="收款记录" name="payments">
         <div class="tab-content">
           <div class="toolbar">
-            <el-button type="primary" @click="handleAddPayment">
+            <el-button type="primary" @click="handleAddPayment" class="add-btn">
               <el-icon><Plus /></el-icon>
               添加收款
             </el-button>
@@ -124,9 +143,18 @@
             />
           </div>
 
-          <el-table :data="paymentList" border>
+          <el-table :data="paymentList" border class="finance-table"
+            :header-cell-style="{ background: '#f0f5ff', color: '#333', fontWeight: '600' }"
+            :row-class-name="tableRowClassName">
             <el-table-column prop="date" label="收款日期" width="120" sortable />
-            <el-table-column prop="caseName" label="关联案件" width="200" />
+            <el-table-column prop="caseName" label="关联案件" width="200">
+              <template #default="{ row }">
+                <el-link v-if="row.caseId" @click="goToCase(row.caseId)" type="primary">
+                  {{ row.caseName }}
+                </el-link>
+                <span v-else>{{ row.caseName || '-' }}</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="clientName" label="付款客户" width="120" />
             <el-table-column prop="amount" label="收款金额(元)" width="130">
               <template #default="{ row }">
@@ -155,13 +183,15 @@
       <el-tab-pane label="开票记录" name="invoices">
         <div class="tab-content">
           <div class="toolbar">
-            <el-button type="primary" @click="handleAddInvoice">
+            <el-button type="primary" @click="handleAddInvoice" class="add-btn">
               <el-icon><Plus /></el-icon>
               新增开票
             </el-button>
           </div>
 
-          <el-table :data="invoiceList" border>
+          <el-table :data="invoiceList" border class="finance-table"
+            :header-cell-style="{ background: '#f0f5ff', color: '#333', fontWeight: '600' }"
+            :row-class-name="tableRowClassName">
             <el-table-column prop="invoiceDate" label="开票日期" width="120" sortable />
             <el-table-column prop="invoiceNumber" label="发票号码" width="150" />
             <el-table-column prop="type" label="发票类型" width="100">
@@ -393,11 +423,14 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { getExpenses, getPayments, getInvoices, getFinanceDashboard, createExpense, createPayment, createInvoice } from '@/api/finance'
 import { getCaseList } from '@/api/case'
+
+const router = useRouter()
 
 const activeTab = ref('expenses')
 const expenseType = ref('')
@@ -681,6 +714,11 @@ const handleTabChange = (tabName) => {
   }
 }
 
+// 跳转到案件详情
+const goToCase = (caseId) => {
+  router.push(`/case/${caseId}`)
+}
+
 onMounted(() => {
   fetchFinanceDashboard()
   fetchExpenses()
@@ -690,64 +728,201 @@ onMounted(() => {
 watch(activeTab, (newTab) => {
   handleTabChange(newTab)
 })
+
+const tableRowClassName = ({ rowIndex }) => {
+  return rowIndex % 2 === 0 ? 'even-row' : 'odd-row'
+}
 </script>
 
 <style scoped lang="scss">
 .finance {
   .finance-tabs {
     margin-top: 20px;
-    background-color: #fff;
-    padding: 20px;
-    border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    background: #fff;
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(24, 144, 255, 0.08);
+    border: 1px solid #e6f7ff;
+
+    :deep(.el-tabs__header) {
+      margin-bottom: 24px;
+      border-bottom: 2px solid #e6f7ff;
+    }
+
+    :deep(.el-tabs__item) {
+      color: #666;
+      font-weight: 500;
+      padding: 0 24px;
+      height: 40px;
+      line-height: 40px;
+      border: none;
+      transition: all 0.3s;
+
+      &:hover {
+        color: #1890ff;
+        background: #f0f5ff;
+      }
+
+      &.is-active {
+        color: #1890ff;
+        background: linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 100%);
+        border-bottom: 2px solid #1890ff;
+        font-weight: 600;
+      }
+    }
+  }
+
+  .add-btn {
+    background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3);
+    transition: all 0.3s;
+
+    &:hover {
+      background: linear-gradient(135deg, #40a9ff 0%, #1890ff 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
+    }
+  }
+
+  .finance-table {
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 12px rgba(24, 144, 255, 0.08);
+
+    :deep(.el-table__header-wrapper) {
+      th {
+        background: #f0f5ff !important;
+        color: #333 !important;
+        font-weight: 600;
+        border-bottom: 2px solid #1890ff;
+      }
+    }
+
+    :deep(.el-table__body-wrapper) {
+      .el-table__row {
+        transition: all 0.3s;
+
+        &.even-row {
+          background: #ffffff;
+
+          &:hover {
+            background: #f0f5ff !important;
+          }
+        }
+
+        &.odd-row {
+          background: #fafcfe;
+
+          &:hover {
+            background: #f0f5ff !important;
+          }
+        }
+
+        td {
+          border-bottom: 1px solid #f0f0f0;
+        }
+      }
+    }
+
+    :deep(.el-table__border) {
+      border: 1px solid #e6f7ff;
+    }
   }
 
   .tab-content {
     .toolbar {
       display: flex;
-      gap: 10px;
+      gap: 12px;
       margin-bottom: 20px;
       flex-wrap: wrap;
+      align-items: center;
+
+      :deep(.el-select) {
+        .el-select__wrapper {
+          border-radius: 8px;
+          border: 1px solid #d9d9d0;
+          transition: all 0.3s;
+
+          &:hover {
+            border-color: #1890ff;
+          }
+
+          &.is-focus {
+            border-color: #1890ff;
+            box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+          }
+        }
+      }
+
+      :deep(.el-date-editor) {
+        .el-input__wrapper {
+          border-radius: 8px;
+          border: 1px solid #d9d9d0;
+          transition: all 0.3s;
+
+          &:hover {
+            border-color: #1890ff;
+          }
+
+          &.is-focus {
+            border-color: #1890ff;
+            box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+          }
+        }
+      }
     }
 
     .fee-summary {
       display: flex;
       gap: 20px;
-      margin-bottom: 20px;
+      margin-bottom: 24px;
 
       .summary-card {
         flex: 1;
-        background-color: #f5f7fa;
-        padding: 15px 20px;
-        border-radius: 4px;
+        background: linear-gradient(135deg, #f0f5ff 0%, #ffffff 100%);
+        padding: 24px;
+        border-radius: 12px;
         display: flex;
         justify-content: space-between;
         align-items: center;
+        border: 1px solid #e6f7ff;
+        box-shadow: 0 2px 8px rgba(24, 144, 255, 0.1);
+        transition: all 0.3s;
+
+        &:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 16px rgba(24, 144, 255, 0.15);
+        }
 
         .label {
-          font-size: 14px;
+          font-size: 15px;
           color: #666;
+          font-weight: 500;
         }
 
         .value {
-          font-size: 18px;
+          font-size: 24px;
           font-weight: bold;
-          color: #333;
+          color: #1890ff;
 
           &.received {
-            color: #67c23a;
+            color: #52c41a;
           }
 
           &.pending {
-            color: #e6a23c;
+            color: #faad14;
           }
         }
       }
     }
 
     .amount {
-      color: #67c23a;
-      font-weight: 500;
+      color: #52c41a;
+      font-weight: 600;
+      font-size: 15px;
     }
   }
 }

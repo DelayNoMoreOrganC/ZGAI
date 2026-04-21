@@ -44,7 +44,7 @@
               <el-avatar v-if="message.role === 'user'" :size="32">
                 {{ userName?.charAt(0) }}
               </el-avatar>
-              <span v-else class="ai-avatar">🤖</span>
+              <el-icon v-else class="ai-avatar"><ChatDotRound /></el-icon>
             </div>
             <div class="message-content">
               <div class="message-text" v-html="formatMessage(message.content)"></div>
@@ -54,7 +54,7 @@
 
           <div v-if="loading" class="message-item assistant">
             <div class="message-avatar">
-              <span class="ai-avatar">🤖</span>
+              <el-icon class="ai-avatar"><ChatDotRound /></el-icon>
             </div>
             <div class="message-content">
               <div class="typing-indicator">
@@ -111,6 +111,7 @@
 <script setup>
 import { ref, computed, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { ChatDotRound } from '@element-plus/icons-vue'
 import { aiChat, caseChat } from '@/api/ai'
 import { useUserStore } from '@/stores/user'
 

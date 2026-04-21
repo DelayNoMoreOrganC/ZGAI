@@ -299,7 +299,9 @@ const handleDialogClose = () => {
 // 分配权限
 const handleAssignPermissions = (row) => {
   currentRole.value = row
-  // TODO: 加载角色已有的权限并设置选中状态
+  // 加载角色已有的权限并设置选中状态
+  const rolePermissions = row.permissions || []
+  selectedPermissions.value = rolePermissions.map(p => p.id)
   permissionDialogVisible.value = true
 }
 

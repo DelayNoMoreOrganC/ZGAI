@@ -109,7 +109,7 @@ const fetchArchivedCases = async () => {
 
 const handleViewDetail = (row) => {
   // 跳转到案件详情页
-  window.location.href = `/#/cases/${row.id}`
+  window.location.href = `/#/case/${row.id}`
 }
 
 const handleDownloadArchive = async (row) => {

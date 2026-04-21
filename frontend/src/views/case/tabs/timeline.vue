@@ -311,7 +311,8 @@ const handleSubmitComment = async () => {
     const { id } = props.caseData
     const data = {
       content: newComment.value,
-      mentions: mentionedUsers.value
+      mentionIds: mentionedUsers.value,
+      parentId: null
     }
 
     await createTimelineComment(id, data)

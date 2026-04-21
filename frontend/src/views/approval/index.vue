@@ -2,7 +2,7 @@
   <div class="approval">
     <PageHeader title="审批管理">
       <template #extra>
-        <el-button type="primary" @click="handleCreateApproval">
+        <el-button type="primary" @click="handleCreateApproval" class="create-btn">
           <el-icon><Plus /></el-icon>
           发起审批
         </el-button>
@@ -12,11 +12,14 @@
     <!-- 筛选器 -->
     <ApprovalFilter @search="handleSearch" @reset="handleReset" />
 
-    <el-tabs v-model="activeTab" type="card" class="approval-tabs">
+    <el-tabs v-model="activeTab" type="card" class="approval-tabs"
+      :class="'tab-' + activeTab">
       <!-- 待办 -->
       <el-tab-pane label="待办" name="pending">
         <div class="tab-content">
-          <el-table :data="pendingList" border>
+          <el-table :data="pendingList" border class="approval-table"
+            :header-cell-style="{ background: '#f0f5ff', color: '#333', fontWeight: '600' }"
+            :row-class-name="tableRowClassName">
             <el-table-column prop="title" label="审批标题" width="200" sortable />
             <el-table-column prop="type" label="审批类型" width="120">
               <template #default="{ row }">
@@ -26,7 +29,14 @@
             <el-table-column prop="applicant" label="申请人" width="100" sortable />
             <el-table-column prop="applyTime" label="申请时间" width="160" sortable />
             <el-table-column prop="currentNode" label="当前节点" width="120" />
-            <el-table-column prop="caseName" label="关联案件" width="200" />
+            <el-table-column prop="caseName" label="关联案件" width="200">
+              <template #default="{ row }">
+                <el-link v-if="row.caseId" @click="goToCase(row.caseId)" type="primary">
+                  {{ row.caseName }}
+                </el-link>
+                <span v-else>{{ row.caseName || '-' }}</span>
+              </template>
+            </el-table-column>
             <el-table-column label="操作" width="180">
               <template #default="{ row }">
                 <el-button type="success" size="small" @click="handleApprove(row)">
@@ -47,7 +57,9 @@
       <!-- 已办 -->
       <el-tab-pane label="已办" name="processed">
         <div class="tab-content">
-          <el-table :data="processedList" border>
+          <el-table :data="processedList" border class="approval-table"
+            :header-cell-style="{ background: '#f0f5ff', color: '#333', fontWeight: '600' }"
+            :row-class-name="tableRowClassName">
             <el-table-column prop="title" label="审批标题" width="200" sortable />
             <el-table-column prop="type" label="审批类型" width="120" />
             <el-table-column prop="applicant" label="申请人" width="100" sortable />
@@ -72,7 +84,9 @@
       <!-- 我发起的 -->
       <el-tab-pane label="我发起的" name="my-requests">
         <div class="tab-content">
-          <el-table :data="myRequestList" border>
+          <el-table :data="myRequestList" border class="approval-table"
+            :header-cell-style="{ background: '#f0f5ff', color: '#333', fontWeight: '600' }"
+            :row-class-name="tableRowClassName">
             <el-table-column prop="title" label="审批标题" width="200" sortable />
             <el-table-column prop="type" label="审批类型" width="120" />
             <el-table-column prop="applicant" label="申请人" width="100" sortable />
@@ -85,7 +99,14 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="caseName" label="关联案件" width="200" />
+            <el-table-column prop="caseName" label="关联案件" width="200">
+              <template #default="{ row }">
+                <el-link v-if="row.caseId" @click="goToCase(row.caseId)" type="primary">
+                  {{ row.caseName }}
+                </el-link>
+                <span v-else>{{ row.caseName || '-' }}</span>
+              </template>
+            </el-table-column>
             <el-table-column label="操作" width="200">
               <template #default="{ row }">
                 <el-button link type="primary" size="small">查看</el-button>
@@ -168,6 +189,7 @@
 
 <script setup>
 import { ref, watch, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -181,6 +203,9 @@ import {
   withdrawApproval
 } from '@/api/approval'
 import { getCaseList } from '@/api/case'
+
+const router = useRouter()
+const route = useRoute()
 
 const activeTab = ref('pending')
 const loading = ref(false)
@@ -202,9 +227,30 @@ const approvalForm = ref({
 // 案件列表
 const caseList = ref([])
 
+// 跳转到案件详情
+const goToCase = (caseId) => {
+  router.push(`/case/${caseId}`)
+}
+
 // 页面加载时获取数据
 onMounted(() => {
   fetchApprovalList()
+
+  // 检查是否需要自动创建审批（从案件页面跳转过来）
+  if (route.query.action === 'create' && route.query.caseId) {
+    // 自动加载案件列表并打开创建审批对话框
+    handleCreateApproval().then(() => {
+      // 自动填充案件信息
+      approvalForm.value.caseId = route.query.caseId
+      approvalForm.value.title = `${route.query.caseName || '案件'}相关审批`
+      approvalForm.value.description = `关于案件【${route.query.caseName || '未命名案件'}】的审批申请`
+
+      ElMessage.success('已自动关联案件，请补充审批信息')
+    })
+  } else if (route.query.caseId) {
+    // 只筛选案件的审批流程
+    ElMessage.info(`正在查看案件的审批流程`)
+  }
 })
 
 // 监听Tab切换，自动加载对应数据
@@ -388,6 +434,7 @@ const fetchApprovalList = async () => {
     const res = await getApprovalList({
       status: activeTab.value === 'pending' ? 'PENDING' :
              activeTab.value === 'processed' ? 'APPROVED' : 'ALL',
+      caseId: route.query.caseId || null,
       page: 1,
       size: 100
     })
@@ -417,16 +464,147 @@ const handleReset = () => {
   // 重置筛选条件
   ElMessage.info('筛选条件已重置')
 }
+
+const tableRowClassName = ({ rowIndex }) => {
+  return rowIndex % 2 === 0 ? 'even-row' : 'odd-row'
+}
 </script>
 
 <style scoped lang="scss">
 .approval {
   .approval-tabs {
     margin-top: 20px;
-    background-color: #fff;
-    padding: 20px;
-    border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    background: #fff;
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(24, 144, 255, 0.08);
+    border: 1px solid #e6f7ff;
+
+    :deep(.el-tabs__header) {
+      margin-bottom: 24px;
+      border-bottom: 2px solid #e6f7ff;
+    }
+
+    :deep(.el-tabs__item) {
+      color: #666;
+      font-weight: 500;
+      padding: 0 24px;
+      height: 40px;
+      line-height: 40px;
+      border: none;
+      transition: all 0.3s;
+
+      &:hover {
+        color: #1890ff;
+        background: #f0f5ff;
+      }
+
+      &.is-active {
+        color: #1890ff;
+        background: linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 100%);
+        border-bottom: 2px solid #1890ff;
+        font-weight: 600;
+      }
+    }
+  }
+
+  .create-btn {
+    background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3);
+    transition: all 0.3s;
+
+    &:hover {
+      background: linear-gradient(135deg, #40a9ff 0%, #1890ff 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
+    }
+  }
+
+  .approval-table {
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 12px rgba(24, 144, 255, 0.08);
+
+    :deep(.el-table__header-wrapper) {
+      th {
+        background: #f0f5ff !important;
+        color: #333 !important;
+        font-weight: 600;
+        border-bottom: 2px solid #1890ff;
+      }
+    }
+
+    :deep(.el-table__body-wrapper) {
+      .el-table__row {
+        transition: all 0.3s;
+
+        &.even-row {
+          background: #ffffff;
+
+          &:hover {
+            background: #f0f5ff !important;
+          }
+        }
+
+        &.odd-row {
+          background: #fafcfe;
+
+          &:hover {
+            background: #f0f5ff !important;
+          }
+        }
+
+        td {
+          border-bottom: 1px solid #f0f0f0;
+        }
+      }
+    }
+
+    :deep(.el-table__border) {
+      border: 1px solid #e6f7ff;
+    }
+
+    // 操作按钮优化
+    .el-button {
+      border-radius: 6px;
+      transition: all 0.3s;
+
+      &.el-button--success {
+        background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%);
+        border: none;
+
+        &:hover {
+          background: linear-gradient(135deg, #73d13d 0%, #52c41a 100%);
+          transform: translateY(-1px);
+          box-shadow: 0 2px 8px rgba(82, 196, 26, 0.3);
+        }
+      }
+
+      &.el-button--warning {
+        background: linear-gradient(135deg, #faad14 0%, #d46b08 100%);
+        border: none;
+
+        &:hover {
+          background: linear-gradient(135deg, #ffc53d 0%, #faad14 100%);
+          transform: translateY(-1px);
+          box-shadow: 0 2px 8px rgba(250, 173, 20, 0.3);
+        }
+      }
+
+      &.el-button--primary {
+        background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+        border: none;
+
+        &:hover {
+          background: linear-gradient(135deg, #40a9ff 0%, #1890ff 100%);
+          transform: translateY(-1px);
+          box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3);
+        }
+      }
+    }
   }
 
   .tab-content {

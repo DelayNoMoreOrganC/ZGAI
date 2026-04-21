@@ -28,7 +28,7 @@
         <template v-for="route in menuRoutes" :key="route.path">
           <el-sub-menu v-if="route.children && route.children.length > 0" :index="route.path">
             <template #title>
-              <span class="menu-icon">{{ route.meta?.icon }}</span>
+              <el-icon class="menu-icon"><component :is="getIconName(route.meta?.icon)" /></el-icon>
               <span>{{ route.meta?.title }}</span>
             </template>
             <el-menu-item
@@ -40,7 +40,7 @@
             </el-menu-item>
           </el-sub-menu>
           <el-menu-item v-else :index="route.path">
-            <span class="menu-icon">{{ route.meta?.icon }}</span>
+            <el-icon class="menu-icon"><component :is="getIconName(route.meta?.icon)" /></el-icon>
             <span>{{ route.meta?.title }}</span>
           </el-menu-item>
         </template>
@@ -127,6 +127,7 @@
     <!-- 通知面板 -->
     <NotificationPanel
       v-model="showNotificationPanel"
+      :unreadCount="unreadCount"
       @update:unreadCount="updateUnreadCount"
     />
   </el-container>
@@ -145,6 +146,28 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const appStore = useAppStore()
+
+// Emoji到Element Plus图标组件名称的映射（使用全局注册的组件名）
+const emojiToIconName = {
+  '📊': 'DataAnalysis',
+  '🔍': 'Search',
+  '📅': 'Calendar',
+  '⚖️': 'Files',
+  '👥': 'User',
+  '📁': 'FolderOpened',
+  '💰': 'Finance',
+  '✅': 'CircleCheck',
+  '🏢': 'OfficeBuilding',
+  '📚': 'Reading',
+  '📝': 'Document',
+  '📈': 'TrendCharts',
+  '🔧': 'Tools',
+  '⚙️': 'Setting'
+}
+
+const getIconName = (emoji) => {
+  return emojiToIconName[emoji] || 'Document'
+}
 
 // 响应式相关
 const windowWidth = ref(window.innerWidth)
@@ -291,7 +314,7 @@ const closeMobileSidebar = () => {
 const handleUserAction = async (command) => {
   switch (command) {
     case 'profile':
-      router.push('/profile')
+      router.push('/settings')
       break
     case 'settings':
       router.push('/settings')

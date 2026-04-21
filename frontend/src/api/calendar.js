@@ -1,11 +1,29 @@
 import request from '@/utils/request'
 
-// 获取日程列表
+// 获取日程列表（兼容前端调用）
 export function getCalendarList(params) {
+  // 判断是获取事件列表还是分页查询
+  if (params.startDate && params.endDate) {
+    // 使用事件列表接口
+    return request({
+      url: '/calendar/events',
+      method: 'get',
+      params: {
+        start: params.startDate,
+        end: params.endDate
+      }
+    })
+  }
+
+  // 使用分页接口
   return request({
     url: '/calendar',
     method: 'get',
-    params
+    params: {
+      page: params.page || 0,
+      size: params.size || 10,
+      userId: params.userId
+    }
   })
 }
 

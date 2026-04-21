@@ -72,10 +72,24 @@ public class AIDocumentRecognitionResult {
 
     /**
      * 文书类型
-     * 类型：传票/判决书/裁定书/通知书/其他
+     * 类型：传票/判决书/裁定书/通知书/起诉状/答辩状/调解书/其他
      */
     @JsonProperty("documentType")
     private String documentType;
+
+    /**
+     * 判决日期 (YYYY-MM-DD)
+     * 仅对判决书/裁定书等文书有效
+     */
+    @JsonProperty("judgmentDate")
+    private String judgmentDate;
+
+    /**
+     * 上诉期到期日 (YYYY-MM-DD)
+     * 系统自动计算，通常为判决日期+15日
+     */
+    @JsonProperty("appealDeadline")
+    private String appealDeadline;
 
     /**
      * 识别置信度 (0-1)

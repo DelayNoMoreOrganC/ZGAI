@@ -38,10 +38,25 @@
       </div>
 
       <div class="toolbar-right">
-        <el-button @click="handleExport">
-          <el-icon><Download /></el-icon>
-          导出
-        </el-button>
+        <el-dropdown @command="handleExportCommand">
+          <el-button>
+            <el-icon><Download /></el-icon>
+            导出
+            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="excel">
+                <el-icon><Document /></el-icon>
+                导出为Excel
+              </el-dropdown-item>
+              <el-dropdown-item command="word">
+                <el-icon><Document /></el-icon>
+                导出为Word
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button type="primary" @click="handleAddRecord">
           <el-icon><Plus /></el-icon>
           添加记录
@@ -212,14 +227,15 @@
 import { ref, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Search, Download, Plus, Paperclip, User, Upload
+  Search, Download, Plus, Paperclip, User, Upload, ArrowDown, Document
 } from '@element-plus/icons-vue'
 import {
   getCaseRecords,
   createCaseRecord,
   updateCaseRecord,
   deleteCaseRecord,
-  exportCaseRecords
+  exportCaseRecords,
+  exportCaseRecordsWord
 } from '@/api/case'
 
 const props = defineProps({
@@ -349,21 +365,37 @@ const handleReset = () => {
 }
 
 // 导出办案记录
-const handleExport = async () => {
+const handleExportCommand = async (command) => {
   try {
     const { id } = props.caseData
-    const response = await exportCaseRecords(id, {
-      stage: filterStage.value,
-      startDate: dateRange.value?.[0],
-      endDate: dateRange.value?.[1],
-      keyword: keyword.value
-    })
+    let response
+    let fileName
+    let fileType
+
+    if (command === 'word') {
+      response = await exportCaseRecordsWord(id, {
+        stage: filterStage.value,
+        startDate: dateRange.value?.[0],
+        endDate: dateRange.value?.[1],
+        keyword: keyword.value
+      })
+      fileName = `办案记录_${id}_${new Date().getTime()}.docx`
+      fileType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    } else {
+      response = await exportCaseRecords(id, {
+        stage: filterStage.value,
+        startDate: dateRange.value?.[0],
+        endDate: dateRange.value?.[1],
+        keyword: keyword.value
+      })
+      fileName = `办案记录_${id}_${new Date().getTime()}.xlsx`
+      fileType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    }
 
     // 创建下载链接
-    const url = window.URL.createObjectURL(new Blob([response]))
+    const url = window.URL.createObjectURL(new Blob([response], { type: fileType }))
     const link = document.createElement('a')
     link.href = url
-    const fileName = `办案记录_${id}_${new Date().getTime()}.xlsx`
     link.setAttribute('download', fileName)
     document.body.appendChild(link)
     link.click()

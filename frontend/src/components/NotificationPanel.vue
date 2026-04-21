@@ -109,6 +109,10 @@ const props = defineProps({
   modelValue: {
     type: Boolean,
     default: false
+  },
+  unreadCount: {
+    type: Number,
+    default: 0
   }
 })
 

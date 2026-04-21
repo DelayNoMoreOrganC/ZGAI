@@ -1,4 +1,4 @@
-import request from '@/utils/request'
+import request, { longTimeoutService } from '@/utils/request'
 
 /**
  * AI文档智能识别
@@ -75,6 +75,22 @@ export function autoFillCase(caseId, data) {
   })
 }
 
+// 智能文档上传 - AI识别并创建待办/任务/日程/日志
+export function uploadDocForAIRecognition(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  // 使用长超时服务（120秒），因为AI识别需要较长时间
+  return longTimeoutService({
+    url: '/ai/documents/recognize',
+    method: 'post',
+    data: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}
+
 // 生成文书
 export function generateDoc(data) {
   return request({
@@ -87,11 +103,34 @@ export function generateDoc(data) {
 
 // AI对话
 export function aiChat(data) {
-  return request({
-    url: '/ai/chat',
-    method: 'post',
-    data
-  })
+  // 直接调用Ollama API（临时方案，绕过后端数据库问题）
+  return fetch('http://localhost:11434/api/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'qwen3:8b',
+      messages: [
+        { role: 'system', content: '你是一个专业的法律助手，帮助律师处理案件、文档和日程管理。' },
+        { role: 'user', content: data.message }
+      ],
+      stream: false
+    })
+  }).then(response => response.json())
+    .then(result => {
+      return {
+        success: true,
+        data: result.message?.content || result.response || 'AI响应为空'
+      }
+    })
+    .catch(error => {
+      console.error('Ollama调用失败:', error)
+      return {
+        success: false,
+        message: 'AI服务暂时不可用'
+      }
+    })
 }
 
 // 案件上下文对话

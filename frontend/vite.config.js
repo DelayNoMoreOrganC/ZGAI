@@ -23,6 +23,20 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
-    chunkSizeWarningLimit: 1500
+    chunkSizeWarningLimit: 1000, // 降低警告阈值，强制优化
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Vue核心库单独打包
+          'vue-vendor': ['vue', 'vue-router', 'pinia'],
+          // Element Plus UI库单独打包
+          'element-plus': ['element-plus', '@element-plus/icons-vue'],
+          // PDF相关库单独打包（按需加载）
+          'pdf-vendor': ['vue-pdf-embed'],
+          // AI相关库单独打包
+          'ai-vendor': ['@/api/ai']
+        }
+      }
+    }
   }
 })

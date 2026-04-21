@@ -78,10 +78,32 @@ export function createCommunication(clientId, data) {
   })
 }
 
+// 更新沟通记录
+export function updateCommunication(clientId, communicationId, data) {
+  return request({
+    url: `/clients/${clientId}/communications/${communicationId}`,
+    method: 'put',
+    data
+  })
+}
+
+// 删除沟通记录
+export function deleteCommunication(clientId, communicationId) {
+  return request({
+    url: `/clients/${clientId}/communications/${communicationId}`,
+    method: 'delete'
+  })
+}
+
 // 利益冲突检索
 export function conflictCheck(id) {
   return request({
     url: `/clients/${id}/conflict-check`,
     method: 'get'
   })
+}
+
+// 别名函数，保持向后兼容
+export function checkConflict(id) {
+  return conflictCheck(id)
 }

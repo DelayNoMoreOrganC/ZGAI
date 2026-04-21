@@ -172,7 +172,7 @@ public class ClientService {
      * 分页查询客户
      */
     public com.lawfirm.util.PageResult<ClientDTO> getClients(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Pageable pageable = PageRequest.of(Math.max(0, page - 1), size, Sort.by(Sort.Direction.DESC, "createdAt"));
 
         // 使用数据库查询优化，只查询未删除的客户
         List<Client> allClients = clientRepository.findByDeletedFalse();

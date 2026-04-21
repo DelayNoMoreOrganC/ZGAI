@@ -42,6 +42,12 @@ public class CaseCreateRequest {
     private String tags;
     private String summary;
 
+    // 案件状态
+    private String status;
+
+    // 当前阶段
+    private String currentStage;
+
     // 金额相关
     private java.math.BigDecimal amount;
     private java.math.BigDecimal attorneyFee;

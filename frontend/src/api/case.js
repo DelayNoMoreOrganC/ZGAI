@@ -310,3 +310,205 @@ export function deleteCaseProcedure(caseId, procedureId) {
     method: 'delete'
   })
 }
+
+// ==================== 案件受理单位 ====================
+
+// 获取财产保全列表
+export function getPreservations(caseId) {
+  return request({
+    url: `/cases/${caseId}/units/preservations`,
+    method: 'get'
+  })
+}
+
+// 添加财产保全
+export function createPreservation(caseId, data) {
+  return request({
+    url: `/cases/${caseId}/units/preservations`,
+    method: 'post',
+    data
+  })
+}
+
+// 更新财产保全
+export function updatePreservation(caseId, preservationId, data) {
+  return request({
+    url: `/cases/${caseId}/units/preservations/${preservationId}`,
+    method: 'put',
+    data
+  })
+}
+
+// 删除财产保全
+export function deletePreservation(caseId, preservationId) {
+  return request({
+    url: `/cases/${caseId}/units/preservations/${preservationId}`,
+    method: 'delete'
+  })
+}
+
+// 获取执行情况列表
+export function getExecutions(caseId) {
+  return request({
+    url: `/cases/${caseId}/units/executions`,
+    method: 'get'
+  })
+}
+
+// 添加执行情况
+export function createExecution(caseId, data) {
+  return request({
+    url: `/cases/${caseId}/units/executions`,
+    method: 'post',
+    data
+  })
+}
+
+// 更新执行情况
+export function updateExecution(caseId, executionId, data) {
+  return request({
+    url: `/cases/${caseId}/units/executions/${executionId}`,
+    method: 'put',
+    data
+  })
+}
+
+// 删除执行情况
+export function deleteExecution(caseId, executionId) {
+  return request({
+    url: `/cases/${caseId}/units/executions/${executionId}`,
+    method: 'delete'
+  })
+}
+
+// 获取庭审记录列表
+export function getHearings(caseId) {
+  return request({
+    url: `/cases/${caseId}/units/hearings`,
+    method: 'get'
+  })
+}
+
+// 添加庭审记录
+export function createHearing(caseId, data) {
+  return request({
+    url: `/cases/${caseId}/units/hearings`,
+    method: 'post',
+    data
+  })
+}
+
+// 更新庭审记录
+export function updateHearing(caseId, hearingId, data) {
+  return request({
+    url: `/cases/${caseId}/units/hearings/${hearingId}`,
+    method: 'put',
+    data
+  })
+}
+
+// 删除庭审记录
+export function deleteHearing(caseId, hearingId) {
+  return request({
+    url: `/cases/${caseId}/units/hearings/${hearingId}`,
+    method: 'delete'
+  })
+}
+
+// ==================== 批量操作 ====================
+
+// 批量结案
+export function batchCloseCases(caseIds) {
+  return request({
+    url: '/cases/batch/close',
+    method: 'put',
+    data: { caseIds }
+  })
+}
+
+// 批量归档
+export function batchArchiveCases(caseIds) {
+  return request({
+    url: '/cases/batch/archive',
+    method: 'put',
+    data: { caseIds }
+  })
+}
+
+// 批量删除
+export function batchDeleteCases(caseIds) {
+  return request({
+    url: '/cases/batch',
+    method: 'delete',
+    data: { caseIds }
+  })
+}
+
+// 批量修改主办律师
+export function batchChangeOwner(caseIds, ownerId) {
+  return request({
+    url: '/cases/batch/change-owner',
+    method: 'put',
+    data: { caseIds, ownerId }
+  })
+}
+
+// 批量更新案件状态
+export function batchUpdateCases({ ids, status }) {
+  const statusMap = {
+    'CLOSED': batchCloseCases,
+    'ARCHIVED': batchArchiveCases
+  }
+
+  const batchFn = statusMap[status]
+  if (batchFn) {
+    return batchFn(ids)
+  }
+
+  return Promise.reject(new Error(`Unsupported batch status: ${status}`))
+}
+
+// 搜索法院
+export function searchCourts(keyword) {
+  return request({
+    url: '/cases/courts/search',
+    method: 'get',
+    params: { keyword }
+  })
+}
+
+// ==================== 案件承办人员 ====================
+
+// 获取承办人员列表
+export function getPersonnel(caseId) {
+  return request({
+    url: `/cases/${caseId}/units/personnel`,
+    method: 'get'
+  })
+}
+
+// 创建承办人员
+export function createPersonnel(caseId, data) {
+  return request({
+    url: `/cases/${caseId}/units/personnel`,
+    method: 'post',
+    data
+  })
+}
+
+// 更新承办人员
+export function updatePersonnel(caseId, personnelId, data) {
+  return request({
+    url: `/cases/${caseId}/units/personnel/${personnelId}`,
+    method: 'put',
+    data
+  })
+}
+
+// 删除承办人员
+export function deletePersonnel(caseId, personnelId) {
+  return request({
+    url: `/cases/${caseId}/units/personnel/${personnelId}`,
+    method: 'delete'
+  })
+}

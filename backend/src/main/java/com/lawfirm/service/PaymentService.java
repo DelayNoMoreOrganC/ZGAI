@@ -135,7 +135,7 @@ public class PaymentService {
      * 分页查询收款记录
      */
     public com.lawfirm.util.PageResult<PaymentDTO> getPayments(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "paymentDate"));
+        Pageable pageable = PageRequest.of(Math.max(0, page - 1), size, Sort.by(Sort.Direction.DESC, "paymentDate"));
 
         // 使用 Spring Data 分页查询，避免全表加载
         org.springframework.data.domain.Page<Payment> paymentPage = paymentRepository.findAll(pageable);

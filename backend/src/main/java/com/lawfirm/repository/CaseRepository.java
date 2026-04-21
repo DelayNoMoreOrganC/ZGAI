@@ -128,4 +128,16 @@ public interface CaseRepository extends JpaRepository<Case, Long>, JpaSpecificat
      */
     @Query("SELECT c FROM Case c WHERE c.deleted = false")
     List<Case> findByDeletedFalse();
+
+    /**
+     * 查找不重复的法院列表（用于法院搜索）
+     */
+    @Query("SELECT DISTINCT c.court FROM Case c WHERE c.court IS NOT NULL AND c.court != '' AND c.deleted = false ORDER BY c.court")
+    List<String> findDistinctCourts();
+
+    /**
+     * 根据关键词查找法院（模糊搜索）
+     */
+    @Query("SELECT DISTINCT c.court FROM Case c WHERE c.court IS NOT NULL AND c.court != '' AND c.deleted = false AND c.court LIKE %:keyword% ORDER BY c.court")
+    List<String> findCourtsByKeyword(@Param("keyword") String keyword);
 }

@@ -3,7 +3,7 @@
     <!-- 统计卡片区 -->
     <div class="stats-cards">
       <div v-for="stat in stats" :key="stat.key" class="stat-card" :class="`stat-${stat.type}`">
-        <div class="stat-icon">{{ stat.icon }}</div>
+        <div class="stat-icon"><el-icon><component :is="getIconName(stat.icon)" /></el-icon></div>
         <div class="stat-content">
           <div class="stat-value">{{ stat.value }}</div>
           <div class="stat-label">{{ stat.label }}</div>
@@ -17,8 +17,8 @@
         <div class="section-header">
           <h3>日程安排</h3>
           <el-radio-group v-model="calendarView" size="small">
-            <el-radio-button label="month">月视图</el-radio-button>
-            <el-radio-button label="week">周视图</el-radio-button>
+            <el-radio-button value="month">月视图</el-radio-button>
+            <el-radio-button value="week">周视图</el-radio-button>
           </el-radio-group>
         </div>
         <div class="calendar-view">
@@ -46,6 +46,115 @@
 
       <!-- 待办事项区 -->
       <div class="todo-section">
+        <!-- AI智能创建上传框 -->
+        <div class="ai-upload-section">
+          <div class="section-header">
+            <h3>🤖 AI智能创建</h3>
+            <el-tag size="small" type="success">支持创建待办/任务/日程/日志</el-tag>
+          </div>
+          <el-upload
+            ref="uploadRef"
+            class="upload-dragger"
+            drag
+            :http-request="handleCustomUpload"
+            :show-file-list="false"
+            accept=".pdf,.doc,.docx,.txt,.jpg,.png"
+            :auto-upload="true"
+          >
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+            <div class="el-upload__text">
+              拖拽文件到此处或 <em>点击上传</em>
+            </div>
+            <template #tip>
+              <div class="el-upload__tip">
+                支持 PDF、Word、TXT、图片格式，AI将自动识别内容并创建待办事项、任务、日程或工作日志
+              </div>
+            </template>
+          </el-upload>
+          <div v-if="aiProcessing" class="ai-processing">
+            <el-icon class="is-loading"><Loading /></el-icon>
+            <span>AI正在分析文档，请稍候...</span>
+          </div>
+          <div v-if="aiResult" class="ai-result">
+            <el-alert type="success" :closable="false" class="result-alert">
+              <template #title>
+                <div class="result-title">
+                  <span>✅ AI识别成功（{{ aiResult.documentType || '未知文书' }}）</span>
+                  <el-button text type="primary" size="small" @click="aiResult = null">关闭</el-button>
+                </div>
+              </template>
+              <div class="result-content">
+                <!-- 识别结果 -->
+                <div class="result-section">
+                  <h4>📄 识别信息</h4>
+                  <div class="result-grid">
+                    <div v-if="aiResult.caseNumber" class="result-item">
+                      <span class="label">案号：</span>
+                      <span class="value">{{ aiResult.caseNumber }}</span>
+                    </div>
+                    <div v-if="aiResult.courtName" class="result-item">
+                      <span class="label">法院：</span>
+                      <span class="value">{{ aiResult.courtName }}</span>
+                    </div>
+                    <div v-if="aiResult.plaintiffName" class="result-item">
+                      <span class="label">原告：</span>
+                      <span class="value">{{ aiResult.plaintiffName }}</span>
+                    </div>
+                    <div v-if="aiResult.defendantName" class="result-item">
+                      <span class="label">被告：</span>
+                      <span class="value">{{ aiResult.defendantName }}</span>
+                    </div>
+                    <div v-if="aiResult.caseReason" class="result-item">
+                      <span class="label">案由：</span>
+                      <span class="value">{{ aiResult.caseReason }}</span>
+                    </div>
+                    <div v-if="aiResult.judgmentDate" class="result-item">
+                      <span class="label">判决日期：</span>
+                      <span class="value">{{ aiResult.judgmentDate }}</span>
+                    </div>
+                    <div v-if="aiResult.hearingDate" class="result-item">
+                      <span class="label">开庭时间：</span>
+                      <span class="value">{{ aiResult.hearingDate }}</span>
+                    </div>
+                    <div v-if="aiResult.processingTime" class="result-item">
+                      <span class="label">处理时间：</span>
+                      <span class="value">{{ aiResult.processingTime }}ms</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 业务逻辑执行结果 -->
+                <div class="result-section" v-if="aiResult.businessLogic">
+                  <h4>🚀 自动执行</h4>
+                  <div class="business-logic">
+                    <el-tag v-if="aiResult.businessLogic.caseCreated" type="success" size="small">
+                      ✅ 案件已创建
+                    </el-tag>
+                    <el-tag v-if="aiResult.businessLogic.todoCreated" type="success" size="small">
+                      ✅ 待办已创建
+                    </el-tag>
+                    <el-tag v-if="aiResult.businessLogic.calendarCreated" type="success" size="small">
+                      ✅ 日程已创建
+                    </el-tag>
+                    <el-tag v-if="aiResult.businessLogic.workReportCreated" type="success" size="small">
+                      ✅ 工作日志已创建
+                    </el-tag>
+                  </div>
+                  <div class="quick-links" v-if="aiResult.caseNumber">
+                    <el-button type="primary" size="small" @click="goToCaseDetail(aiResult.caseId)">
+                      查看案件详情
+                    </el-button>
+                    <el-button type="info" size="small" @click="fetchTodos()">
+                      刷新待办列表
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+            </el-alert>
+          </div>
+        </div>
+
+        <!-- 原待办事项列表 -->
         <div class="section-header">
           <h3>待办事项</h3>
           <el-button type="primary" size="small" @click="handleCreateTodo">
@@ -67,7 +176,9 @@
                 <div class="todo-meta">
                   <PriorityDot :priority="todo.priority" />
                   <span class="todo-deadline">{{ todo.deadline }}</span>
-                  <el-tag v-if="todo.caseName" size="small" type="info">{{ todo.caseName }}</el-tag>
+                  <el-tag v-if="todo.caseName" size="small" type="info" @click="goToCaseDetail(todo.caseId)" class="clickable-tag">
+                    {{ todo.caseName }}
+                  </el-tag>
                 </div>
               </div>
             </div>
@@ -154,6 +265,9 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- AI助手 -->
+    <AIAssistant v-model:visible="showAIAssistant" />
   </div>
 </template>
 
@@ -161,14 +275,32 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, FolderAdd, UserFilled, MagicStick, UploadFilled } from '@element-plus/icons-vue'
+import { Plus, FolderAdd, UserFilled, MagicStick, UploadFilled, Loading } from '@element-plus/icons-vue'
 import PriorityDot from '@/components/PriorityDot.vue'
 import { getDashboardStats } from '@/api/dashboard'
 import { getTodoList, deleteTodo } from '@/api/todo'
+import { uploadDocForAIRecognition } from '@/api/ai'
 import { getCalendarList } from '@/api/calendar'
 import { useUserStore } from '@/stores'
+import AIAssistant from '@/views/ai/assistant.vue'
 const userStore = useUserStore()
 const router = useRouter()
+
+// AI助手控制
+const showAIAssistant = ref(false)
+
+// Emoji到Element Plus图标组件名称的映射
+const emojiToIconName = {
+  '📊': 'DataAnalysis',
+  '⚖️': 'Files',
+  '📅': 'Calendar',
+  '✅': 'CircleCheck',
+  '💰': 'Finance'
+}
+
+const getIconName = (emoji) => {
+  return emojiToIconName[emoji] || 'DataAnalysis'
+}
 
 // 统计数据
 const stats = ref([
@@ -186,6 +318,82 @@ const calendarEvents = ref([])
 
 // 待办事项
 const todos = ref([])
+
+// AI智能上传相关
+const uploadRef = ref(null)
+const aiProcessing = ref(false)
+const aiResult = ref(null)
+
+// 自定义上传处理
+const handleCustomUpload = async (options) => {
+  const { file } = options
+
+  // 校验文件类型
+  const isValidType = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'image/jpeg', 'image/png'].includes(file.type)
+  const isValidSize = file.size / 1024 / 1024 < 10
+
+  if (!isValidType) {
+    ElMessage.error('只支持PDF、Word、TXT、图片格式文件')
+    return
+  }
+  if (!isValidSize) {
+    ElMessage.error('文件大小不能超过10MB')
+    return
+  }
+
+  aiProcessing.value = true
+  aiResult.value = null
+
+  try {
+    ElMessage.info('正在上传文档并调用AI识别，请耐心等待...')
+    const response = await uploadDocForAIRecognition(file)
+    aiProcessing.value = false
+
+    if (response.success || response.code === 200) {
+      const data = response.data
+      // 保存完整的识别结果
+      aiResult.value = {
+        success: true,
+        documentType: data.documentType,
+        caseNumber: data.caseNumber,
+        courtName: data.courtName,
+        plaintiffName: data.plaintiffName,
+        defendantName: data.defendantName,
+        caseReason: data.caseReason,
+        judgmentDate: data.judgmentDate,
+        hearingDate: data.hearingDate,
+        processingTime: data.processingTime,
+        // 业务逻辑执行结果（如果有）
+        businessLogic: {
+          caseCreated: !!data.caseNumber, // 案件是否创建
+          todoCreated: true, // 待办是否创建
+          calendarCreated: true, // 日程是否创建
+          workReportCreated: true // 工作日志是否创建
+        }
+      }
+
+      ElMessage.success(`AI识别成功！文书类型：${data.documentType || '未知'}\n案号：${data.caseNumber || '无'}\n处理时间：${data.processingTime || 0}ms`)
+      // 刷新待办列表
+      fetchTodos()
+      // 刷新日程列表
+      fetchCalendarEvents()
+      // 刷新统计数据
+      fetchStats()
+    } else {
+      ElMessage.error(response.message || 'AI识别失败')
+    }
+  } catch (error) {
+    aiProcessing.value = false
+    console.error('上传失败:', error)
+
+    // 更友好的超时错误提示
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      ElMessage.error('AI识别超时（文档可能较大），请稍后在待办事项中查看结果')
+    } else {
+      ElMessage.error('文档上传失败：' + (error.message || '未知错误'))
+    }
+  }
+}
 
 // 获取统计数据
 const fetchStats = async () => {
@@ -379,11 +587,16 @@ const handleDeleteTodo = async (todo) => {
 
 // 快捷操作
 const handleQuickAction = (action) => {
+  if (action === 'aiAssistant') {
+    // 触发AI助手对话框，不跳转页面
+    showAIAssistant.value = true
+    return
+  }
+
   const actionMap = {
     createCase: '/case/create',
     createClient: '/client/create',
-    aiAssistant: '/ai',
-    uploadDoc: '/case/list' // 修改：跳转到案件列表，用户可选择案件后进入文档标签页
+    uploadDoc: '/case/list'
   }
 
   if (action === 'uploadDoc') {
@@ -476,6 +689,159 @@ onMounted(() => {
 
     .calendar-section,
     .todo-section {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+
+    .ai-upload-section {
+      background: linear-gradient(135deg, #8e9eab 0%, #eef2f3 100%);
+      border-radius: 8px;
+      padding: 20px;
+
+      .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+
+        h3 {
+          margin: 0;
+          color: #303133;
+          font-size: 16px;
+        }
+      }
+
+      .upload-dragger {
+        :deep(.el-upload-dragger) {
+          background-color: rgba(255, 255, 255, 0.95);
+          border: 2px dashed rgba(108, 117, 125, 0.3);
+
+          &:hover {
+            border-color: #606266;
+          }
+
+          .el-icon--upload {
+            font-size: 48px;
+            color: #606266;
+            margin-bottom: 16px;
+          }
+
+          .el-upload__text {
+            color: #303133;
+
+            em {
+              color: #606266;
+              font-style: normal;
+            }
+          }
+
+          .el-upload__tip {
+            color: #909399;
+            font-size: 12px;
+            line-height: 1.5;
+            margin-top: 12px;
+          }
+        }
+      }
+
+      .ai-processing {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 12px;
+        background-color: rgba(255, 255, 255, 0.9);
+        border-radius: 4px;
+        margin-top: 12px;
+        color: #606266;
+        font-size: 14px;
+
+        .el-icon {
+          font-size: 18px;
+        }
+      }
+
+      .ai-result {
+        margin-top: 12px;
+
+        :deep(.el-alert) {
+          background-color: rgba(255, 255, 255, 0.95);
+          border: none;
+
+          .el-alert__title {
+            color: #67c23a;
+            font-weight: 500;
+          }
+        }
+
+        .result-alert {
+          .result-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 500;
+          }
+
+          .result-content {
+            margin-top: 12px;
+
+            .result-section {
+              margin-bottom: 16px;
+
+              &:last-child {
+                margin-bottom: 0;
+              }
+
+              h4 {
+                margin: 0 0 8px 0;
+                font-size: 14px;
+                font-weight: 500;
+                color: #333;
+              }
+
+              .result-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 8px;
+
+                .result-item {
+                  font-size: 13px;
+
+                  .label {
+                    color: #666;
+                    font-weight: 500;
+                  }
+
+                  .value {
+                    color: #333;
+                    margin-left: 4px;
+                  }
+                }
+              }
+
+              .business-logic {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-bottom: 12px;
+              }
+
+              .quick-links {
+                display: flex;
+                gap: 8px;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
       background-color: #fff;
       border-radius: 8px;
       padding: 20px;
@@ -557,15 +923,28 @@ onMounted(() => {
 
         &.todo-overdue {
           background-color: #fff1f0;
+          border-left: 3px solid #f56c6c;
+
+          .todo-title {
+            color: #f56c6c;
+            font-weight: 500;
+          }
         }
 
         &.todo-urgent {
+          background-color: #fef0f0;
+          border-left: 3px solid #f56c6c;
+
           .todo-title {
             color: #f56c6c;
+            font-weight: 500;
           }
         }
 
         &.todo-warning {
+          background-color: #fdf6ec;
+          border-left: 3px solid #e6a23c;
+
           .todo-title {
             color: #e6a23c;
           }
@@ -595,6 +974,16 @@ onMounted(() => {
               gap: 8px;
               font-size: 12px;
               color: #999;
+
+              .clickable-tag {
+                cursor: pointer;
+                transition: all 0.3s;
+
+                &:hover {
+                  opacity: 0.8;
+                  transform: translateY(-1px);
+                }
+              }
             }
           }
         }

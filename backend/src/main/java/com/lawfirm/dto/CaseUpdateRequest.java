@@ -61,6 +61,16 @@ public class CaseUpdateRequest {
     private String tags;
 
     /**
+     * 案件状态
+     */
+    private String status;
+
+    /**
+     * 当前阶段
+     */
+    private String currentStage;
+
+    /**
      * 案件简述
      */
     private String summary;

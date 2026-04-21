@@ -142,9 +142,9 @@
       >
         <el-table-column prop="level" label="等级" width="60" align="center">
           <template #default="{ row }">
-            <span v-if="row.level === '重要'">🔴</span>
-            <span v-else-if="row.level === '一般'">🟡</span>
-            <span v-else>⚪</span>
+            <el-icon v-if="row.level === '重要'" color="#f56c6c"><Star /></el-icon>
+            <el-icon v-else-if="row.level === '一般'" color="#e6a23c"><Warning /></el-icon>
+            <el-icon v-else color="#909399"><CircleCheck /></el-icon>
           </template>
         </el-table-column>
 
@@ -231,7 +231,9 @@
             >
               <div class="card-header">
                 <span class="level-indicator" :class="caseItem.level">
-                  {{ caseItem.level === '重要' ? '🔴' : caseItem.level === '一般' ? '🟡' : '⚪' }}
+                  <el-icon v-if="caseItem.level === '重要'" color="#f56c6c"><Star /></el-icon>
+                  <el-icon v-else-if="caseItem.level === '一般'" color="#e6a23c"><Warning /></el-icon>
+                  <el-icon v-else color="#909399"><CircleCheck /></el-icon>
                 </span>
                 <el-tag size="small" :type="getTypeTagType(caseItem.caseType)">
                   {{ caseItem.caseType }}
@@ -261,16 +263,25 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Plus, List, Grid, ArrowDown, Refresh, User, Calendar
+  Plus, List, Grid, ArrowDown, Refresh, User, Calendar, Star, Warning, CircleCheck
 } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import DataTable from '@/components/DataTable.vue'
-import { getCaseList, deleteCase, archiveCase } from '@/api/case'
+import {
+  getCaseList,
+  deleteCase,
+  archiveCase,
+  batchCloseCases,
+  batchArchiveCases,
+  batchDeleteCases,
+  batchChangeOwner
+} from '@/api/case'
 
 const router = useRouter()
+const route = useRoute()
 
 // 筛选表单
 const filterForm = reactive({
@@ -279,6 +290,7 @@ const filterForm = reactive({
   level: '',
   ownerId: '',
   court: '',
+  clientId: null, // 客户ID筛选
   dateRange: []
 })
 
@@ -326,6 +338,7 @@ const fetchCaseList = async () => {
       level: filterForm.level,
       ownerId: filterForm.ownerId,
       court: filterForm.court,
+      clientId: filterForm.clientId,
       startDate: filterForm.dateRange?.[0] || null,
       endDate: filterForm.dateRange?.[1] || null
     }
@@ -559,28 +572,16 @@ const handleBatchAction = async (command) => {
           }
         )
 
-        let successCount = 0
-        let failCount = 0
+        // 使用批量操作API
+        const caseIds = selectedCases.value.map(c => c.id)
+        await batchCloseCases({ caseIds })
 
-        for (const caseItem of selectedCases.value) {
-          try {
-            await updateCase(caseItem.id, { status: 'CLOSED' })
-            successCount++
-          } catch (error) {
-            console.error(`案件 ${caseItem.caseName} 结案失败:`, error)
-            failCount++
-          }
-        }
-
-        if (successCount > 0) {
-          ElMessage.success(`成功结案 ${successCount} 个案件` + (failCount > 0 ? `，失败 ${failCount} 个` : ''))
-          await loadCases()
-        } else {
-          ElMessage.error('结案失败')
-        }
+        ElMessage.success(`成功结案 ${selectedCases.value.length} 个案件`)
+        selectedCases.value = []
+        await loadCases()
       } catch (error) {
         if (error !== 'cancel') {
-          console.error('批量结案失败:', error)
+          ElMessage.error('批量结案失败: ' + (error.message || '未知错误'))
         }
       }
       break
@@ -599,29 +600,16 @@ const handleBatchAction = async (command) => {
 
         if (!value) return
 
-        const archiveLocation = value
-        let successCount = 0
-        let failCount = 0
+        // 使用批量操作API
+        const caseIds = selectedCases.value.map(c => c.id)
+        await batchArchiveCases({ caseIds, reason: value })
 
-        for (const caseItem of selectedCases.value) {
-          try {
-            await archiveCase(caseItem.id, { archiveLocation })
-            successCount++
-          } catch (error) {
-            console.error(`案件 ${caseItem.caseName} 归档失败:`, error)
-            failCount++
-          }
-        }
-
-        if (successCount > 0) {
-          ElMessage.success(`成功归档 ${successCount} 个案件` + (failCount > 0 ? `，失败 ${failCount} 个` : ''))
-          await loadCases()
-        } else {
-          ElMessage.error('归档失败')
-        }
+        ElMessage.success(`成功归档 ${selectedCases.value.length} 个案件`)
+        selectedCases.value = []
+        await loadCases()
       } catch (error) {
         if (error !== 'cancel') {
-          console.error('批量归档失败:', error)
+          ElMessage.error('批量归档失败: ' + (error.message || '未知错误'))
         }
       }
       break
@@ -640,49 +628,53 @@ const handleBatchAction = async (command) => {
 
         if (!value) return
 
-        const newOwnerId = parseInt(value)
-        let successCount = 0
-        let failCount = 0
+        // 使用批量操作API
+        const caseIds = selectedCases.value.map(c => c.id)
+        await batchChangeOwner({ caseIds, ownerId: parseInt(value) })
 
-        for (const caseItem of selectedCases.value) {
-          try {
-            await updateCase(caseItem.id, { ownerId: newOwnerId })
-            successCount++
-          } catch (error) {
-            console.error(`案件 ${caseItem.caseName} 修改失败:`, error)
-            failCount++
-          }
-        }
-
-        if (successCount > 0) {
-          ElMessage.success(`成功修改 ${successCount} 个案件` + (failCount > 0 ? `，失败 ${failCount} 个` : ''))
-          await loadCases()
-        } else {
-          ElMessage.error('修改失败')
-        }
+        ElMessage.success(`成功修改 ${selectedCases.value.length} 个案件的主办律师`)
+        selectedCases.value = []
+        await loadCases()
       } catch (error) {
         if (error !== 'cancel') {
-          console.error('修改主办律师失败:', error)
+          ElMessage.error('修改主办律师失败: ' + (error.message || '未知错误'))
         }
       }
       break
     case 'delete':
       try {
-        await ElMessageBox.confirm(`确定要删除选中的 ${selectedCases.value.length} 个案件吗?`, '提示', {
+        await ElMessageBox.confirm(`确定要删除选中的 ${selectedCases.value.length} 个案件吗？此操作不可恢复！`, '批量删除', {
           confirmButtonText: '确定',
           cancelButtonText: '取消',
           type: 'warning'
         })
-        ElMessage.success('批量删除成功')
+
+        // 使用批量操作API
+        const caseIds = selectedCases.value.map(c => c.id)
+        await batchDeleteCases({ caseIds })
+
+        ElMessage.success(`成功删除 ${selectedCases.value.length} 个案件`)
+        selectedCases.value = []
         fetchCaseList()
-      } catch {
-        // 用户取消
+      } catch (error) {
+        if (error !== 'cancel') {
+          ElMessage.error('批量删除失败: ' + (error.message || '未知错误'))
+        }
       }
       break
   }
 }
 
 onMounted(() => {
+  // 检查是否有客户筛选参数
+  if (route.query.clientId) {
+    filterForm.clientId = route.query.clientId
+    // 可选：在页面顶部显示筛选信息
+    if (route.query.clientName) {
+      ElMessage.info(`正在查看客户"${route.query.clientName}"的关联案件`)
+    }
+  }
+
   fetchCaseList()
 })
 </script>

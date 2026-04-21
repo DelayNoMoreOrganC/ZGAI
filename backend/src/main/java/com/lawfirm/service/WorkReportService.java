@@ -173,7 +173,7 @@ public class WorkReportService {
     @Transactional(readOnly = true)
     public Page<WorkReportVO> getMyReports(int page, int size) {
         Long userId = getCurrentUserId();
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "reportDate"));
+        Pageable pageable = PageRequest.of(Math.max(0, page - 1), size, Sort.by(Sort.Direction.DESC, "reportDate"));
         Page<WorkReport> reports = workReportRepository.findByReporterIdAndDeletedFalseOrderByReportDateDesc(userId, pageable);
         return reports.map(this::toVO);
     }
@@ -183,7 +183,7 @@ public class WorkReportService {
      */
     @Transactional(readOnly = true)
     public Page<WorkReportVO> getPendingReports(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "reportDate"));
+        Pageable pageable = PageRequest.of(Math.max(0, page - 1), size, Sort.by(Sort.Direction.DESC, "reportDate"));
         Page<WorkReport> reports = workReportRepository.findByStatusAndDeletedFalseOrderByReportDateDesc("SUBMITTED", pageable);
         return reports.map(this::toVO);
     }

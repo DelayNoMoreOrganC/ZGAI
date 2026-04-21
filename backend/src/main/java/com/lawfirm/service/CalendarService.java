@@ -154,7 +154,7 @@ public class CalendarService {
      * 分页查询日程
      */
     public com.lawfirm.util.PageResult<CalendarDTO> getCalendars(int page, int size, Long userId) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "startTime"));
+        Pageable pageable = PageRequest.of(Math.max(0, page - 1), size, Sort.by(Sort.Direction.DESC, "startTime"));
 
         // 使用数据库查询优化，避免全表加载和手动过滤
         long totalCount = calendarRepository.countByUser(userId);

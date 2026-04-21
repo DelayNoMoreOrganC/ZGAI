@@ -116,6 +116,8 @@ public class LlmExtractService {
                 return callOpenAI(apiUrl, apiKey, prompt, config);
             } else if ("LOCAL_QWEN".equals(config.getProviderType())) {
                 return callLocalQwen(apiUrl, prompt, config);
+            } else if ("ollama".equalsIgnoreCase(config.getProviderType())) {
+                return callOllama(apiUrl, prompt, config);
             } else {
                 throw new RuntimeException("不支持的AI提供商: " + config.getProviderType());
             }
@@ -229,6 +231,56 @@ public class LlmExtractService {
         } catch (Exception e) {
             log.error("调用本地Qwen失败", e);
             throw new RuntimeException("调用本地Qwen失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 调用本地Ollama API
+     */
+    private String callOllama(String apiUrl, String prompt, AIConfig config) {
+        try {
+            // 构建Ollama API URL，默认使用localhost:11434
+            String baseUrl = apiUrl != null && !apiUrl.isEmpty()
+                    ? apiUrl
+                    : "http://localhost:11434";
+            String url = baseUrl + "/api/chat";
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("model", config.getModelName() != null && !config.getModelName().isEmpty()
+                    ? config.getModelName()
+                    : "qwen2.5");
+            requestBody.put("stream", false);
+            requestBody.put("options", new HashMap<String, Object>() {{
+                put("temperature", config.getTemperature() != null ? config.getTemperature() : 0.1);
+                put("num_predict", config.getMaxTokens() != null ? config.getMaxTokens() : 2000);
+            }});
+            requestBody.put("messages", new Object[]{
+                    Map.of("role", "user", "content", prompt)
+            });
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
+
+            log.info("调用Ollama API: {}, 模型: {}", url, requestBody.get("model"));
+
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    url,
+                    request,
+                    String.class
+            );
+
+            if (response.getStatusCode() == HttpStatus.OK) {
+                JsonNode root = objectMapper.readTree(response.getBody());
+                JsonNode message = root.path("message");
+                return message.path("content").asText();
+            } else {
+                throw new RuntimeException("Ollama API返回错误: " + response.getStatusCode());
+            }
+        } catch (Exception e) {
+            log.error("调用Ollama API失败", e);
+            throw new RuntimeException("调用Ollama API失败: " + e.getMessage());
         }
     }
 

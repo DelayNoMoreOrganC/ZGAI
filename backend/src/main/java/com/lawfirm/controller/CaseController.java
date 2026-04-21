@@ -47,12 +47,17 @@ public class CaseController {
      * 创建案件
      */
     @PostMapping
-    @PreAuthorize("hasAuthority('CASE_CREATE')")
+    @PreAuthorize("isAuthenticated()")
     public Result<CaseDetailVO> createCase(
             @Valid @RequestBody CaseCreateRequest request) {
-        Long currentUserId = securityUtils.getCurrentUserId();
-        CaseDetailVO caseDetail = caseService.createCase(request, currentUserId);
-        return Result.success("案件创建成功", caseDetail);
+        try {
+            Long currentUserId = securityUtils.getCurrentUserId();
+            CaseDetailVO caseDetail = caseService.createCase(request, currentUserId);
+            return Result.success("案件创建成功", caseDetail);
+        } catch (Exception e) {
+            log.error("案件创建失败", e);
+            return Result.error("案件创建失败: " + e.getMessage());
+        }
     }
 
     /**
@@ -176,6 +181,16 @@ public class CaseController {
             @RequestParam(required = false) String caseNumber) {
         List<CaseListVO> duplicates = caseService.checkDuplicate(name, caseNumber);
         return Result.success(duplicates);
+    }
+
+    /**
+     * 搜索法院（用于案件筛选的法院选择器）
+     */
+    @GetMapping("/courts/search")
+    @PreAuthorize("hasAuthority('CASE_VIEW')")
+    public Result<List<String>> searchCourts(@RequestParam(required = false) String keyword) {
+        List<String> courts = caseService.searchCourts(keyword);
+        return Result.success(courts);
     }
 
     // ========== 当事人管理 ==========

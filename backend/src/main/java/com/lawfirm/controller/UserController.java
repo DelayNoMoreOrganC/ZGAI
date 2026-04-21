@@ -79,7 +79,7 @@ public class UserController {
      */
     @GetMapping
     public Result<Page<UserDTO>> getUserList(
-            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Long departmentId,

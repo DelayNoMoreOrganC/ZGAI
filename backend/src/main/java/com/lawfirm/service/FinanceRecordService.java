@@ -141,7 +141,7 @@ public class FinanceRecordService {
      * 分页查询财务记录
      */
     public com.lawfirm.util.PageResult<FinanceRecordDTO> getFinanceRecords(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "transactionDate"));
+        Pageable pageable = PageRequest.of(Math.max(0, page - 1), size, Sort.by(Sort.Direction.DESC, "transactionDate"));
 
         // 使用 Spring Data 分页查询，避免全表加载
         org.springframework.data.domain.Page<FinanceRecord> recordPage = financeRecordRepository.findAll(pageable);

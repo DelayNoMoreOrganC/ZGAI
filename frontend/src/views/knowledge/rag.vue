@@ -78,7 +78,7 @@ import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
-import request from '@/utils/request'
+import { searchKnowledge, askAI } from '@/api/knowledge'
 
 const question = ref('')
 const answer = ref('')
@@ -93,7 +93,10 @@ const exampleQuestions = [
   '合同违约责任认定',
   '刑事案件辩护要点',
   '如何收集证据',
-  '诉讼时效计算'
+  '诉讼时效计算',
+  '离婚案件财产分割',
+  '交通事故赔偿标准',
+  '借款合同利息计算'
 ]
 
 const formattedAnswer = computed(() => {
@@ -116,54 +119,37 @@ const handleSearch = async () => {
   loading.value = true
   answer.value = ''
   sources.value = []
+  hasAnswer.value = false
+  documentCount.value = 0
 
   try {
-    // MVP实现：1. 搜索知识库 2. 构造上下文 3. 调用AI生成答案
-
     // 步骤1: 搜索相关文档
-    const { data: searchData } = await request({
-      url: '/knowledge/list',
-      method: 'get',
-      params: { page: 1, size: 5 }
-    })
-
-    const relevantDocs = searchData.records || []
+    const searchResponse = await searchKnowledge(question.value, { size: 5 })
+    const relevantDocs = searchResponse.data?.records || searchResponse.data || []
 
     if (relevantDocs.length === 0) {
-      answer.value = '抱歉，知识库中没有找到相关内容。请尝试其他关键词或联系律师。'
+      answer.value = `抱歉，知识库中没有找到与"${question.value}"相关的内容。
+
+建议：
+1. 尝试使用不同的关键词
+2. 检查输入是否有误
+3. 联系专业律师咨询`
       hasAnswer.value = false
       loading.value = false
       return
     }
 
-    // 步骤2: 构造上下文
-    const context = relevantDocs.map((doc, index) =>
-      `[文档${index + 1}] ${doc.title}\n分类：${doc.category}\n摘要：${doc.summary || doc.content?.substring(0, 200)}...\n`
-    ).join('\n')
-
-    // 步骤3: 调用AI生成答案（使用AI聊天接口）
-    const prompt = `你是专业法律助手。请基于以下知识库文档回答问题。
-
-${context}
-
-问题：${question.value}
-
-要求：
-1. 只基于文档回答，不要编造
-2. 回答要准确、专业、易懂
-3. 引用文档内容时注明来源
-
-请回答：`
-
-    // 调用AI聊天API（如果存在）或使用模拟答案
+    // 步骤2: 尝试调用AI生成答案
     try {
-      const { data: aiResponse } = await request({
-        url: '/ai/assist',
-        method: 'post',
-        data: { message: prompt }
+      const aiResponse = await askAI(question.value, {
+        context: relevantDocs.map(doc => ({
+          id: doc.id,
+          title: doc.title,
+          content: doc.content || doc.summary
+        }))
       })
 
-      answer.value = aiResponse || generateMockAnswer(relevantDocs)
+      answer.value = aiResponse.data?.answer || generateMockAnswer(relevantDocs)
       hasAnswer.value = true
       documentCount.value = relevantDocs.length
 
@@ -171,12 +157,12 @@ ${context}
         id: doc.id,
         title: doc.title,
         category: doc.category,
-        summary: doc.summary || doc.content?.substring(0, 100) + '...'
+        summary: doc.summary || (doc.content?.substring(0, 100) + '...')
       }))
 
     } catch (aiError) {
-      // AI接口不可用，使用模拟答案
-      console.warn('AI接口不可用，使用模拟答案', aiError)
+      // AI接口不可用，使用增强的模拟答案
+      console.warn('AI接口不可用，使用增强答案', aiError)
       answer.value = generateMockAnswer(relevantDocs)
       hasAnswer.value = true
       documentCount.value = relevantDocs.length
@@ -185,7 +171,7 @@ ${context}
         id: doc.id,
         title: doc.title,
         category: doc.category,
-        summary: doc.summary || doc.content?.substring(0, 100) + '...'
+        summary: doc.summary || (doc.content?.substring(0, 100) + '...')
       }))
     }
 
@@ -199,19 +185,38 @@ ${context}
   }
 }
 
-// 生成模拟答案（当AI不可用时）
+// 生成增强的模拟答案（当AI不可用时）
 const generateMockAnswer = (docs) => {
-  const doc = docs[0]
-  return `根据知识库文档《${doc.title}》：
+  if (!docs || docs.length === 0) {
+    return '抱歉，没有找到相关信息。'
+  }
 
-${doc.summary || doc.content?.substring(0, 300) || '暂无摘要'}
+  const topDoc = docs[0]
+  let answer = `根据知识库检索结果，找到以下相关信息：\n\n`
 
-这仅是基于检索结果的简单展示。要获得更准确的答案，建议：
-1. 查看完整文档内容
-2. 咨询专业律师
-3. 配置真实的AI服务（DeepSeek或OpenAI）
+  // 添加最相关的文档内容
+  answer += `**${topDoc.title}**\n\n`
+  if (topDoc.summary) {
+    answer += `${topDoc.summary}\n\n`
+  } else if (topDoc.content) {
+    answer += `${topDoc.content.substring(0, 400)}...\n\n`
+  }
 
-相关文档：${docs.map(d => d.title).join('、')}`
+  // 如果有多个相关文档，列出其他文档
+  if (docs.length > 1) {
+    answer += `其他相关文档：\n`
+    docs.slice(1, 4).forEach((doc, index) => {
+      answer += `${index + 1}. ${doc.title}\n`
+    })
+  }
+
+  answer += `\n💡 **提示**：`
+  answer += `\n- 以上结果来自知识库文档检索`
+  answer += `\n- 建议查看完整文档获取详细信息`
+  answer += `\n- 如需更准确的解答，请咨询专业律师`
+  answer += `\n- 配置AI服务可获得智能问答功能`
+
+  return answer
 }
 
 const viewDocument = (id) => {
