@@ -10,6 +10,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * AI配置控制器
@@ -89,5 +90,16 @@ public class AIConfigController {
     public Result<List<AIConfig>> getConfigsByProvider(@PathVariable String providerType) {
         List<AIConfig> configs = aiConfigService.getConfigsByProvider(providerType);
         return Result.success(configs);
+    }
+
+    /**
+     * 测试AI配置连接
+     * POST /api/ai/config/test/{id}
+     */
+    @PostMapping("/test/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public Result<Map<String, Object>> testConnection(@PathVariable Long id) {
+        Map<String, Object> result = aiConfigService.testConnection(id);
+        return Result.success(result);
     }
 }

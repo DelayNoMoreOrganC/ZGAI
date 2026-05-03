@@ -11,6 +11,7 @@ export default defineConfig({
     }
   },
   server: {
+    host: '0.0.0.0', // 允许局域网访问
     port: 3017,
     strictPort: true, // 强制使用3017，不尝试其他端口
     proxy: {

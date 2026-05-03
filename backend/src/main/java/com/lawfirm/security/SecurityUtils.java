@@ -64,6 +64,24 @@ public class SecurityUtils {
     /**
      * 获取当前用户的角色编码列表
      */
+    /**
+     * 获取当前用户名
+     */
+    public String getCurrentUsername() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return "system";
+        }
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof org.springframework.security.core.userdetails.UserDetails) {
+            return ((org.springframework.security.core.userdetails.UserDetails) principal).getUsername();
+        }
+        if (principal instanceof String) {
+            return (String) principal;
+        }
+        return String.valueOf(principal);
+    }
+
     public Set<String> getCurrentUserRoles() {
         Long userId = getCurrentUserId();
         return userRoleRepository.findByUserId(userId)

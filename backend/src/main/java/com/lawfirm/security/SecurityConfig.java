@@ -104,7 +104,8 @@ public class SecurityConfig {
                         "/h2-console/**",  // H2数据库控制台
                         "/knowledge/**",  // 开发环境：临时放开知识库API
                         "/ai/**",  // 开发环境：临时放开AI功能API
-                        "/cases/**"  // 开发环境：临时放开案件API（测试）
+                        "/cases/**",  // 开发环境：临时放开案件API（测试）
+                        "/external/**"  // 外部功能集成API（省时宝、AC精算）
                 ).permitAll()
 
                 // 放行Swagger UI

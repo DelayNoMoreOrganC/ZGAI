@@ -110,13 +110,14 @@
             <artifactId>lombok</artifactId>
         </dependency>
 
-        <!-- Spring Boot DevTools -->
+        <!-- Spring Boot DevTools （开发环境禁用，避免自动重启导致建表冲突） 
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-devtools</artifactId>
             <scope>runtime</scope>
             <optional>true</optional>
         </dependency>
+        -->
 
         <!-- Apache Commons Lang3 -->
         <dependency>

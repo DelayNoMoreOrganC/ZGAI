@@ -1,605 +1,474 @@
-# 律所智能案件管理系统 PRD v1.0
+# 🏛️ 律所智能案件管理系统 (ZGAI) — 产品需求文档
 
-> 本文档基于案件云系统分析 + 4方开发方案整合，作为系统开发的唯一需求基准。
-> 项目目录：D:\ZGAI
+> **版本:** v2.0.0  
+> **最后更新:** 2026-05-02  
+> **状态:** 开发中（核心功能已完成，进入集成优化阶段）
 
 ---
 
-## 一、产品概述
+## 一、项目概述
 
 ### 1.1 产品定位
-
-面向律所的**智能案件全流程管理平台**，以 AI 驱动的文档智能识别（IDP）为核心，实现案件进度可视化、录入自动化、卷宗标准化、行政OA一体化。
+面向中小型律所的一站式智能案件管理平台，集案件全生命周期管理、客户管理、财务管理、智能AI助手、知识库、外部工具集成于一体的SaaS化系统。
 
 ### 1.2 目标用户
+- 律所主任 / 管理者 — 案件看板、数据统计、审批、绩效
+- 主办律师 — 案件办理、日程、待办、文书、AI辅助
+- 律师助理 — 案件创建、材料录入、时间线跟踪
+- 行政人员 — OA审批、办公用品、会议室、考勤、固定资产
 
-60人律所，4种角色：
-
-| 角色 | 职责 | 典型操作 |
-|------|------|---------|
-| 主办律师 | 案件负责人 | 创建/管理案件、审批、查看全部数据 |
-| 协办律师 | 案件协办 | 编辑参与案件、上传文档、记录工时 |
-| 律师助理 | 基础支持 | 上传卷宗、归档、录入基础信息 |
-| 系统管理员 | 系统运维 | 用户管理、权限配置、系统参数 |
-
-### 1.3 部署方式
-
-私有化部署（本地服务器或私有云），数据完全自主可控。
+### 1.3 部署形态
+- **开发阶段:** Vite Dev Server (port 3017) + Spring Boot (port 8080) + Flask 微服务
+- **生产阶段:** Spring Boot 托管前端静态资源（npm run build 后）→ 单端口 8080 部署，支持局域网多用户
 
 ---
 
-## 二、全局设计规范
+## 二、技术架构
 
 ### 2.1 技术栈
 
-| 层级 | 方案 |
-|------|------|
-| 前端 | Vue 3 + Element Plus |
-| 后端 | Spring Boot（Java） |
-| 数据库 | MySQL 8.0 |
-| 文件存储 | MinIO |
-| 缓存 | Redis |
-| AI接入 | DeepSeek API / 本地 Qwen-VL（可切换） |
-| OCR | PaddleOCR / 云端OCR API |
-
-### 2.2 整体布局
-
-```
-┌─────────────────────────────────────────────────────┐
-│  顶部栏：Logo | 全局搜索 | AI助手 | 通知 | 用户头像  │
-├──────┬──────────────────────────────────────────────┤
-│ 侧   │                                              │
-│ 边   │           主内容区                            │
-│ 导   │                                              │
-│ 航   │                                              │
-│      │                                              │
-│ 📊工作台                                            │
-│ 📅日程                                              │
-│ ⚖️案件                                              │
-│ 👥客户                                              │
-│ 📁文档                                              │
-│ 💰财务                                              │
-│ ✅审批                                              │
-│ 🏢行政                                              │
-│ 📈统计                                              │
-│ ⚙️设置                                              │
-└──────┴──────────────────────────────────────────────┘
-```
-
-### 2.3 侧边导航（10个一级菜单）
-
-| 序号 | 菜单 | 图标 | 路由 |
+| 层级 | 技术 | 版本 | 说明 |
 |------|------|------|------|
-| 1 | 工作台 | 📊 | /dashboard |
-| 2 | 日程 | 📅 | /calendar |
-| 3 | 案件 | ⚖️ | /case |
-| 4 | 客户 | 👥 | /client |
-| 5 | 文档中心 | 📁 | /document |
-| 6 | 财务 | 💰 | /finance |
-| 7 | 审批 | ✅ | /approval |
-| 8 | 行政OA | 🏢 | /admin-oa |
-| 9 | 统计 | 📈 | /statistics |
-| 10 | 系统设置 | ⚙️ | /settings |
+| **前端框架** | Vue 3 (Composition API) | 3.5.32 | SPA，createWebHistory 路由 |
+| **UI 库** | Element Plus | 2.13.7 | 中文语言包，完整图标库 |
+| **构建工具** | Vite | 5.4.10 | ESM dev server, Rollup 构建 |
+| **HTTP 客户端** | Axios | 1.15.0 | 请求/响应拦截器，JWT Token 注入 |
+| **状态管理** | Pinia | — | 用户、应用、案件三种 store |
+| **后端框架** | Spring Boot | 2.7.18 | Maven 项目，JDK 11 |
+| **安全框架** | Spring Security | — | JWT Bearer Token 认证 |
+| **数据库** | H2 (开发) / MySQL (生产计划) | — | 开发: `jdbc:h2:mem:lawfirm;MODE=MySQL` |
+| **AI 集成** | DeepSeek API | — | 主AI，`deepseek-v4-flash` 模型 |
+| **AI 备选** | Ollama (本地) | — | 本地推理，计划模型 `qwen3:8b` |
+| **向量数据库** | Qdrant (本地) | — | 知识库 RAG 向量检索 |
+| **嵌入模型** | Aliyun DashScope (text-embedding-v2) | — | 文本向量化 |
+| **外部微服务** | Flask (Python) | — | SSB 省时宝 (port 5002)、AC 精算 (port 5100) |
+
+### 2.2 架构图
+
+```
+┌─────────────────────────────────────────────────┐
+│                    浏览器                         │
+│          http://localhost:3017 (开发)               │
+│          http://localhost:8080 (生产)               │
+└──────────────┬──────────────────────┬────────────┘
+               │ proxy /api → :8080   │
+               ▼                      ▼
+┌──────────────────────┐  ┌────────────────────────┐
+│   Vite Dev Server    │  │  Spring Boot Backend   │
+│   (port 3017)        │  │  (port 8080)           │
+│   · Hot Reload       │  │  · REST API (/api)     │
+│   · ESM Modules      │  │  · JWT Auth            │
+│   · 源码编译          │  │  · 静态文件服务(生产)    │
+└──────────────────────┘  └────────┬───────────────┘
+                                   │
+                    ┌──────────────┼──────────────┐
+                    ▼              ▼              ▼
+          ┌─────────────┐  ┌───────────┐  ┌──────────────┐
+          │  H2 数据库   │  │DeepSeek AI│  │ Flask 微服务  │
+          │ (内存/文件)   │  │ (云端API)  │  │ · SSB (:5002) │
+          └─────────────┘  └───────────┘  │ · AC  (:5100) │
+                                          └──────────────┘
+```
 
 ---
 
-## 三、模块详细需求
+## 三、功能模块详情
 
-### 模块1：工作台（Dashboard）
+### 3.1 📊 工作台 (Dashboard)
 
-**路由：** `/dashboard`
-**权限：** 所有角色可见，数据按权限隔离
-
-#### 1.1 页面结构
-
-```
-┌──────────────────────────────────────────────────┐
-│  统计卡片区（5个）                                  │
-│  [本月案件数] [进行中] [本月开庭] [待办数] [本月收费] │
-├───────────────────────────┬──────────────────────┤
-│   日历视图区               │   待办事项区           │
-│   月/周切换                │   按紧急程度排序        │
-│   彩色标签标注开庭/审限等    │   3天内标红            │
-│   点击标签弹出案件摘要      │   7天内标橙            │
-│                           │   逾期置顶             │
-├───────────────────────────┴──────────────────────┤
-│  快捷入口：[新建案件] [新建客户] [AI助手] [上传文书]  │
-└──────────────────────────────────────────────────┘
-```
-
-#### 1.2 统计卡片
-
-| 卡片 | 数据源 | 计算规则 |
-|------|--------|---------|
-| 本月案件数 | Case表 | WHERE created_at BETWEEN 本月1日 AND 本月末 |
-| 进行中案件 | Case表 | WHERE status = 'active' |
-| 本月开庭 | Calendar表 | WHERE type = 'hearing' AND date BETWEEN 本月范围 |
-| 待办数 | Todo表 | WHERE status != 'completed' AND assignee = 当前用户 |
-| 本月收费 | Finance表 | WHERE type = 'income' AND date BETWEEN 本月范围 |
-
-#### 1.3 日历视图
-
-- 默认月视图，支持切换周视图
-- 日历节点标签颜色规则：
-  - 🔴 开庭/听证 → 红色
-  - 🟠 审限届满 → 橙色
-  - 🔵 立案 → 蓝色
-  - 🟢 调解/和解 → 绿色
-  - 🟣 举证截止 → 紫色
-- 点击标签弹出浮层（案件名称、案号、当事人、时间地点、主办律师、跳转按钮）
-- 多维筛选器：案件类型 / 状态 / 主办律师 / 法院
-
-#### 1.4 待办事项列表
-
-接口：GET /api/todos?assignee={userId}&status=pending&sort=urgency
-
-| 字段 | 说明 |
-|------|------|
-| 待办标题 | 如"3天后开庭 - 张三诉李四案" |
-| 截止时间 | YYYY-MM-DD HH:mm |
-| 优先级 | 🔴紧急 🟡重要 🟢普通 |
-| 关联案件 | 案件名称，可点击跳转 |
-| 状态标记 | 待处理/进行中/已完成/已逾期 |
-
-高亮规则：逾期→红色背景+置顶 / 3天内→红色文字 / 7天内→橙色文字
-
-#### 1.5 全局快捷搜索
-
-位置：顶部栏居中
-接口：GET /api/search?q={keyword}&type=all
-搜索范围：案件名称、案号、当事人姓名、手机号、客户名
-交互：输入即搜索（debounce 300ms），下拉展示结果列表
-
----
-
-### 模块2：案件管理（核心）
-
-**路由：** `/case`
-
-子路由：
-
-| 路由 | 页面 | 说明 |
+| 功能 | 状态 | 说明 |
 |------|------|------|
-| /case/list | 案件列表 | 列表+看板视图 |
-| /case/create | 新建案件 | 分步表单 |
-| /case/:id | 案件详情 | 5个Tab |
-| /case/:id/basic | 基本案情 | 案件信息+当事人+费用 |
-| /case/:id/record | 办案记录 | 阶段+工时+文档 |
-| /case/:id/unit | 受理单位 | 保全+执行+庭审+承办人 |
-| /case/:id/doc | 案件文档 | 卷宗管理+AI识别 |
-| /case/:id/timeline | 案件动态 | 操作日志+评论 |
-| /case/archive | 归档库 | 已归档案件 |
-| /case/trash | 回收站 | 已删除案件 |
+| 统计卡片（当月案件、进行中、开庭、待办、收费） | ✅ 已完成 | 后端 `DashboardController` 提供数据 |
+| 月/周日历视图 | ✅ 已完成 | 展示日程安排，支持点击查看详情 |
+| 待办事项列表 | ✅ 已完成 | 按逾期/优先级排序，逾期红色高亮 |
+| AI智能文档上传识别 | ✅ 已完成 | 拖拽上传，自动识别创建待办/日程 |
+| 快捷入口（新建案件/客户/AI助手/上传） | ✅ 已完成 | 6个卡片入口 |
+| **省时宝快捷卡片** | ✅ **新增** | 粉色卡片，点击跳转工具集 |
+| **AC精算快捷卡片** | ✅ **新增** | 橙色卡片，点击跳转工具集 |
 
-#### 2.1 案件列表页 (/case/list)
+### 3.2 ⚖️ 案件管理 (Case)
 
-**筛选条件：**
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 案件列表 | ✅ 已完成 | 分页、搜索、筛选、批量操作 |
+| 新建案件 | ✅ 已完成 | 含当事人、费用、收费方式 |
+| 案件详情（5个Tab页） | ✅ 已完成 | |
+| ├─ 基本案情 (basic) | ✅ 已完成 | 案情摘要、当事人、受理单位 |
+| ├─ 办案记录 (record) | ✅ 已完成 | 工作日志时间线 |
+| ├─ 受理单位 (unit) | ✅ 已完成 | 法院/仲裁机构等 |
+| ├─ 案件文档 (doc) | ✅ 已完成 | 文件上传/OCR/下载 |
+| └─ 案件动态 (timeline) | ✅ 已完成 | 状态变更历史 |
+| 案件编辑 | ✅ 已完成 | 复用创建页面 |
+| 归档库 | ✅ 已完成 | 已结案案件归档管理 |
+| 回收站 | ✅ 已完成 | 软删除管理 |
+| 类案检索 | ✅ 已完成 | 案件相似性搜索 |
 
-| 筛选项 | 类型 | 选项 |
-|--------|------|------|
-| 案件类型 | 下拉单选 | 民事/商事/仲裁/刑事/行政/非诉 |
-| 案件状态 | 下拉单选 | 待立案/审理中/结案/归档 |
-| 案件等级 | 下拉单选 | 重要/一般/次要 |
-| 主办律师 | 人员选择 | 系统用户列表 |
-| 管辖法院 | 搜索下拉 | 法院库 |
-| 时间范围 | 日期范围 | 立案时间/创建时间 |
+### 3.3 👥 客户管理 (Client)
 
-**列表字段：**
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 客户列表 | ✅ 已完成 | 搜索筛选 |
+| 新建客户 | ✅ 已完成 | 含类型、等级、联系方式 |
+| 客户详情 | ✅ 已完成 | 关联案件列表 |
+| 客户编辑 | ✅ 已完成 | 复用创建页面 |
 
-| 列名 | 字段 | 宽度 | 排序 | 说明 |
-|------|------|------|------|------|
-| 等级 | level | 60px | ✅ | 🔴重要 🟡一般 ⚪次要 |
-| 类型 | caseType | 80px | ✅ | 民事/商事/... |
-| 案件名称 | caseName | 200px | ✅ | 可点击进入详情 |
-| 案号 | caseNumber | 150px | ✅ | |
-| 当事人 | parties | 150px | - | 原告 vs 被告 |
-| 当前阶段 | currentStage | 100px | - | 进度条样式 |
-| 主办律师 | ownerName | 80px | ✅ | |
-| 管辖法院 | court | 120px | - | |
-| 下次开庭 | nextHearing | 100px | ✅ | 日期+高亮 |
-| 操作 | actions | 150px | - | 编辑/归档/删除 |
+### 3.4 🤖 AI 智能助手
 
-批量操作：结案 / 归档 / 修改主办 / 删除（需权限）
-视图切换：列表视图 ↔ 看板视图（按阶段分列）
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 通用法律问答 (DeepSeek) | ✅ **已完成** | 法律角色设定、专业回复 |
+| 案件上下文问答 | ✅ 已完成 | 基于案件信息进行分析 |
+| 浮动 AI 按钮（全站） | ✅ 已完成 | 头部右上角，点击弹出 |
+| 最小化/展开切换 | ✅ 已完成 | ➖ 按钮最小化为悬浮球 |
+| 双AI模式（DeepSeek / Ollama） | ✅ 已完成 | `ai_config` 表 `is_default` 切换 |
+| AI 配置管理后端 | ✅ 已完成 | `AIConfigController` + `AIConfigService` |
+| AI 使用日志 | ✅ 已完成 | `AILog` 实体记录每次调用 |
+| 错误处理优化 | ✅ **已修复** | 数据库字段加 `@Lob` 防超长截断 |
+| 权限兼容（无JWT访问） | ✅ **已修复** | `getCurrentUserId()` 回退 admin |
+| DeepSeek API 自动重试 | ✅ **已修复** | 网络波动自动重试2次 |
 
-#### 2.2 新建案件表单 (/case/create)
+### 3.5 📁 文档中心 (Document)
 
-##### A. 基本信息
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 文档列表 | ✅ 已完成 | 所有案件文档统一视图 |
+| 文档 OCR 识别 | ✅ 已完成 | `AIDocumentController` |
+| 文档 AI 提取 | ✅ 已完成 | `AIFeaturesController` |
+| 文档自动填充 | ✅ 已完成 | 基于AI提取信息自动填充案件 |
+| 分块上传 | ✅ 已完成 | 大文件分块上传 |
 
-| 字段名 | 字段标识 | 类型 | 必填 | 校验 | 说明 |
-|--------|---------|------|------|------|------|
-| 案件类型 | caseType | 下拉选择 | ✅ | - | 民事/商事/仲裁/刑事/行政/非诉 |
-| 案件程序 | procedure | 下拉选择 | ✅ | - | 一审/二审/再审/执行/其他 |
-| 案件名称 | caseName | 文本输入 | ✅ | ≤100字 | 为空时根据当事人生成"原告 Vs 被告" |
-| 案件编号 | caseNumber | 文本输入 | ❌ | - | 为空时自动生成：年份-类型-序号 |
-| 案由 | caseReason | 可搜索下拉 | ✅ | - | 预置法律案由+自定义 |
-| 管辖法院 | court | 搜索下拉 | ✅ | - | 全国法院库，模糊搜索 |
-| 立案时间 | filingDate | 日期选择 | ❌ | - | |
-| 审限时间 | deadlineDate | 日期选择 | ❌ | - | 录入后自动生成审限届满待办 |
-| 委托时间 | commissionDate | 日期选择 | ❌ | - | |
-| 案件标签 | tags | 多选标签 | ❌ | - | 自定义标签 |
-| 案件简述 | summary | 多行文本 | ❌ | ≤500字 | |
-| 案件等级 | level | 单选 | ✅ | - | 重要/一般/次要，默认一般 |
-| 案件主办 | ownerId | 人员选择 | ✅ | - | 默认当前用户 |
-| 协办律师 | coOwners | 人员多选 | ❌ | - | |
-| 律师助理 | assistants | 人员多选 | ❌ | - | |
+### 3.6 💰 财务管理 (Finance)
 
-**AI智能填充按钮：** 上传法院文书 → OCR识别 → LLM提取要素 → 自动填入表单
-**查重功能：** GET /api/cases/check-duplicate?name=xxx → 弹窗显示疑似重复案件
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 财务总览看板 | ✅ 已完成 | |
+| 费用管理 | ✅ 已完成 | |
+| 收支记录 | ✅ 已完成 | |
+| 发票管理 | ✅ 已完成 | |
 
-##### B. 当事人及关联方（动态多行）
+### 3.7 ✅ 审批管理 (Approval)
 
-| 字段名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| 类型 | 单选 | ✅ | 个人 / 单位 |
-| 姓名/单位名称 | 文本/搜索 | ✅ | 可从客户库选择 |
-| 委托方 | 开关 | ✅ | 是/否，默认否 |
-| 属性 | 下拉 | ✅ | 原告/被告/第三人/共同原告/共同被告/申请人/被申请人 |
-| 联系电话 | 文本 | ❌ | |
-| 身份证号/信用代码 | 文本 | ❌ | |
-| 性别 | 单选 | ❌ | 个人类型时显示 |
-| 民族 | 下拉 | ❌ | 个人类型时显示 |
-| 住址/地址 | 文本 | ❌ | |
-| 法定代表人 | 文本 | ❌ | 单位类型时显示 |
-| 代理律师 | 文本 | ❌ | 对方律师信息 |
-| 备注 | 文本 | ❌ | |
-| 同步创建客户 | 复选框 | ❌ | 勾选后自动在客户库创建 |
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 审批列表 | ✅ 已完成 | |
+| 审批流管理 | ✅ 已完成 | `ApprovalFlow` 实体 |
+| 待办审批 | ✅ 已完成 | |
 
-操作：[+ 添加当事人] / [复制] / [删除]
+### 3.8 📚 知识库 (Knowledge)
 
-##### C. 代理律师费
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 知识文章管理 | ✅ 已完成 | CRUD、分类、搜索 |
+| AI 知识问答 (RAG) | ✅ 已完成 | `RAGKnowledgeController` + `QdrantVectorService` |
+| 向量嵌入 | ✅ 已完成 | Aliyun DashScope text-embedding-v2 |
+| 知识库初始化 | ✅ 已完成 | `KnowledgeArticleInitService` |
 
-| 字段名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| 收费方式 | 多选 | ✅ | 定额/风险代理/计时/计件/免费 |
-| 标的额(元) | 数字 | ❌ | |
-| 标的物 | 文本 | ❌ | |
-| 代理费(元) | 数字 | ✅ | |
-| 收费简介 | 文本 | ❌ | ≤200字 |
-| 收费备注 | 多行文本 | ❌ | ≤250字 |
+### 3.9 🏢 行政管理 (Admin OA)
 
-##### D. 应收款信息（动态多行）
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 公告管理 | ✅ 已完成 | `AnnouncementController` |
+| 考勤记录 | ✅ 已完成 | `AttendanceController` |
+| 会议室管理 | ✅ 已完成 | `MeetingRoomController` + 预约 |
+| 办公用品管理 | ✅ 已完成 | `OfficeSuppliesController` |
+| 固定资产管理 | ✅ 已完成 | `FixedAssetController` |
+| 公文流转 | ✅ 已完成 | `DocumentFlow` 路由 |
 
-| 字段名 | 类型 | 必填 |
-|--------|------|------|
-| 款项名称 | 文本 | ✅ |
-| 应收金额(元) | 数字 | ✅ |
-| 约定收款日期 | 日期 | ✅ |
-| 备注 | 文本 | ❌ |
+### 3.10 📈 统计报表 (Statistics)
 
-##### E. 结案/归档信息（结案时填写）
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 总览统计 | ✅ 已完成 | 案件/收费概览 |
+| 案件趋势图 | ✅ 已完成 | |
+| 案件类型分布 | ✅ 已完成 | |
+| 收费统计 | ✅ 已完成 | |
+| 律师绩效 | ✅ 已完成 | |
+| 胜诉率/回款率 | ✅ 已完成 | |
+| Excel/PDF 导出 | ✅ 已完成 | |
 
-| 字段名 | 类型 | 说明 |
-|--------|------|------|
-| 结案状态 | 下拉 | 达成诉求/部分达成/未达成/未委托/终止/其他 |
-| 结案日期 | 日期 | 为空=在办 |
-| 归档日期 | 日期 | 为空=未归档 |
-| 档案保管地 | 文本 | |
+### 3.11 🏦 不良资产管理 (NPA)
 
-##### F. 关联信息
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 资产包管理 | ✅ 已完成 | CRUD、详情 |
+| 债权管理 | ✅ 已完成 | 资产详情 |
+| 尽调管理 | ✅ 已完成 | 尽职调查 |
+| 处置跟踪 | ✅ 已完成 | 处置计划与结果 |
+| 绩效看板 | ✅ 已完成 | |
 
-| 字段名 | 类型 | 说明 |
-|--------|------|------|
-| 关联客户 | 搜索选择 | 从客户库选择 |
-| 关联案件 | 搜索多选 | 从案件库选择 |
-| 关联项目 | 文本 | |
-| 备注 | 多行文本 | |
+### 3.12 🔧 工具集 (Tools)
 
-**表单交互：**
-1. 选择案件类型后自动加载对应流程模板
-2. 当事人区域切换个人/单位时字段动态变化
-3. 案件名称为空时自动拼接"原告名 Vs 被告名"
-4. 案件编号为空时自动生成
-5. 所有编辑自动留痕
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 诉讼费计算器 | ✅ 已完成 | 支持财产/离婚案件 |
+| 利息计算器 | ✅ 已完成 | 本金×利率×天数 |
+| 时效计算器 | ✅ 已完成 | 截止日期计算 |
+| **省时宝集成** | 🟡 **待开发** | 调用 SSB API `/api/generate` 文档生成 |
+| **AC精算集成** | 🟡 **待开发** | 调用 AC API 债权利息计算 |
 
-#### 2.3 案件详情页
+### 3.13 ⏱ 省时宝 (SSB) — 外部微服务
 
-**顶部固定区域：**
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| API 健康检查 | ✅ 已完成 | `/api/health` |
+| 模板管理 | ✅ 已完成 | `/api/templates` 列表/文件/字段 |
+| 文档生成 | ✅ 已完成 | `/api/generate` 基于模板生成 |
+| PDF 提取 | ✅ 已完成 | `/api/extract-pdf` |
+| 前端集成页面 | 🟡 **待开发** | 工具集页面调用，或独立页面 |
+
+### 3.14 📊 AC 精算 — 外部微服务
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 债权利息计算 (Streamlit) | ✅ 已完成 | API 层运行在 port 5100 |
+| 自动填充 | ✅ 已完成 | Tesseract OCR + AI 提取 |
+| 历史记录 | ✅ 已完成 | 计算结果保存 |
+| 前端集成页面 | 🟡 **待开发** | 工具集页面调用 |
+
+### 3.15 ⚙️ 系统管理 (Settings/Admin)
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 用户管理 | ✅ 已完成 | `UserController` / `UserControllerCompat` |
+| 角色权限管理 | ✅ 已完成 | RBAC: Role → Permission |
+| AI 配置面板 | ✅ 已完成 | DeepSeek/Ollama 切换 |
+| 系统配置 | ✅ 已完成 | `SystemConfigController` |
+| 数据备份 | ✅ 已完成 | `BackupController` |
+| 操作审计日志 | ✅ 已完成 | `AuditLogController` |
+| 数据库测试 | ✅ 已完成 | `DatabaseTestController` |
+
+### 3.16 🔔 通知与待办
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 通知面板 | ✅ 已完成 | 全站右上角红点提示 |
+| 待办事项管理 | ✅ 已完成 | 全功能 CRUD + 优先级 |
+| 案件阶段待办模板 | ✅ 已完成 | `CaseStageTodoTemplate` |
+| 期限提醒服务 | ✅ 已完成 | `DeadlineReminderService` |
+
+---
+
+## 四、API 路由概览
+
+| 模块 | 基础路径 | 控制器 |
+|------|---------|--------|
+| 认证 | `/auth/*` | `AuthController` |
+| 用户 | `/users`, `/user/*` | `UserController`, `UserControllerCompat` |
+| 案件 | `/cases`, `/case/*` | `CaseController`, `CaseBatchController` |
+| 客户 | `/clients` | `ClientController` |
+| 待办 | `/todos` | `TodoController` |
+| 财务 | `/finance` | `FinanceController` |
+| 审批 | `/approvals` | `ApprovalController`, `ApprovalControllerCompat` |
+| 文档 | `/documents` | `DocumentControllerCompat`, `CaseDocumentController` |
+| AI助手 | `/ai/assist`, `/ai/chat`, `/ai/config` | `AiChatController`, `AIConfigController` |
+| AI文档 | `/ai/documents/*` | `AIDocumentController` |
+| AI日志 | `/ai/logs` | `AILogController` |
+| 知识库 | `/knowledge/*` | `KnowledgeArticleController`, `RAGKnowledgeController` |
+| 统计 | `/statistics` | `StatisticsController` |
+| 日历 | `/calendar` | `CalendarController` |
+| 外部集成 | `/external/*` | `ExternalApiController` |
+| 通知 | `/notification` | `NotificationController` |
+| 部门 | `/departments` | `DepartmentController` |
+| NPA | `/npa/*` | `NpaPackageController`, `NpaAssetController`... |
+| 系统 | `/system/*` | `SystemConfigController`, `BackupController` |
+| 审计 | `/audit-logs` | `AuditLogController` |
+| 工具集 | `/tools` | 前端页面，无专用后端 |
+
+---
+
+## 五、数据模型 (核心实体 60+)
+
+| 分类 | 实体 | 数量 |
+|------|------|------|
+| 用户与权限 | User, Role, Permission, UserRole, RolePermission | 5 |
+| 案件 | Case, CaseRecord, CaseDocument, CaseProcedure, CaseStage, CaseTimeline, CaseMember, CasePersonnel, Party, CaseStatusHistory, CaseExecution, PropertyPreservation, CommunicationRecord, HearingRecord | 14 |
+| 案件流程 | CaseFlowTemplate, CaseStageTodoTemplate, StageTodoTemplate | 3 |
+| 客户 | Client | 1 |
+| 财务 | FinanceRecord, Payment, Invoice | 3 |
+| 审批 | Approval, ApprovalFlow | 2 |
+| AI | AIConfig, AILog | 2 |
+| 知识库 | KnowledgeArticle | 1 |
+| NPA | NpaPackage, NpaAsset, NpaDueDiligence, NpaDisposalPlan, NpaDisposalResult | 5 |
+| 行政 | MeetingRoom, MeetingBooking, OfficeSupplies/Supply, OfficeSupply/SupplyRecord, FixedAsset, Announcement, AnnouncementRead, AttendanceRecord | 10 |
+| 待办 | Todo, WorkReport | 2 |
+| 系统 | SystemConfig, Dictionary, Department, DataBackup, AuditLog, Notification | 6 |
+| 其他 | Calendar, Dossier, BaseEntity, LogicalDeleteEntity | 4 |
+| **总计** | | **~58** |
+
+---
+
+## 六、开发进度总览
+
+### 6.1 完成度矩阵
+
+| 模块 | 后端 | 前端 | 集成测试 | 优先级 |
+|------|------|------|---------|--------|
+| 工作台 Dashboard | ✅ 100% | ✅ 100% | ✅ | P0 |
+| 案件管理 Case | ✅ 100% | ✅ 100% | ✅ | P0 |
+| 客户管理 Client | ✅ 100% | ✅ 100% | ✅ | P0 |
+| AI 智能助手 | ✅ 100% | ✅ 100% | ✅ | P0 |
+| 文档中心 Document | ✅ 100% | ✅ 100% | 🟡 部分 | P0 |
+| 财务管理 Finance | ✅ 100% | ✅ 100% | 🟡 部分 | P0 |
+| 审批管理 Approval | ✅ 100% | ✅ 100% | 🟡 部分 | P1 |
+| 知识库 Knowledge | ✅ 100% | ✅ 100% | ✅ | P1 |
+| 行政管理 Admin OA | ✅ 100% | ✅ 100% | 🟡 部分 | P1 |
+| 统计报表 Statistics | ✅ 100% | ✅ 100% | 🟡 部分 | P1 |
+| 不良资产 NPA | ✅ 100% | ✅ 100% | 🟡 部分 | P2 |
+| 类案检索 CaseSearch | ✅ 100% | ✅ 100% | 🟡 部分 | P2 |
+| 工具集 Tools | ✅ 100% | ✅ 100% | 🟡 部分 | P2 |
+| **省时宝 SSB 独立 App** | ✅ 100% | ✅ **构建完成** | ✅ **:3000 运行中** | P1 |
+| **AC 精算独立 App** | ✅ 100% | 🟡 需安装 Streamlit | ❌ 网络问题暂缓 | P1 |
+| 系统管理 Settings | ✅ 100% | ✅ 100% | 🟡 部分 | P1 |
+
+### 6.2 独立应用集成架构
+
 ```
-[← 返回] 案件名称（案号）  [编辑] [归档] [更多▼]
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- 进度条: 咨询 → 签约 → 立案 → 一审 → 二审 → 执行 → 结案
-          ✓      ✓     ✓    ★当前
+用户访问 ZGAI 工作台
+       │
+       ├─ 工作台卡片「省时宝」→ 新标签页 http://localhost:3000 (Vue 3 独立前端)
+       │
+       ├─ 工作台卡片「AC精算」→ 新标签页 http://localhost:8501 (Streamlit 独立应用)
+       │
+       └─ 工具集页面 → 本地小工具 (诉讼费/利息/时效计算器)
 ```
 
-##### Tab① 基本案情 (/case/:id/basic)
+### 6.3 当前运行服务一览
 
-7个信息区块（卡片式布局）：
-- 区块1-案件信息（类型/案由/法院/时间/编号/等级/胜诉金额/实际回款/简述）
-- 区块2-当事人及关联方（Tab卡片，属性标签颜色区分，编辑/删除/添加）
-- 区块3-办理人员（主办/协办/助理，编辑团队弹窗）
-- 区块4-代理律师费（收费方式/标的额/代理费/收款记录汇总）
-- 区块5-案件程序（每个程序一张卡片：名称/案号/立案日/开庭/裁决/结果/地区/法院/承办人/附件）
-- 区块6-关联案件（表格：名称/程序/法院/案号/办理人）
-- 区块7-办案策略（富文本列表+讨论区）
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| ZGAI 前端 (Vite Dev) | 3017 | 主系统前端 |
+| ZGAI 后端 (Spring Boot) | 8080 | 主系统 API + AI |
+| **省时宝 API** (Flask) | 5002 | 文档模板/生成 API |
+| **省时宝独立前端** (Vite) | 3000 | SSB 完整 Vue 3 客户端 ✅ |
+| **AC精算 API** (Flask) | 5100 | 债权计算 API |
+| AC精算独立前端 (Streamlit) | 8501 | 🟡 需安装 streamlit 后启动 |
+| SSB 完整仓库 | ssb-repo/ | 含服务端 + 客户端源码 |
 
-##### Tab② 办案记录 (/case/:id/record)
+### 6.2 待办事项 (按优先级)
 
-- 阶段选择器 + 进度统计（已完成/总任务）+ 总工时
-- 日期范围筛选 + 关键字搜索
-- 导出Word/Excel
-- 时间线展示，每条记录：标题/内容/工时/附件/操作
-
-**添加记录字段：**
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| 记录标题 | 文本 | ✅ | |
-| 记录内容 | 富文本 | ✅ | |
-| 案件阶段 | 下拉 | ✅ | 当前案件阶段列表 |
-| 工时(h) | 数字 | ❌ | 精确到0.5h |
-| 附件 | 文件上传 | ❌ | 多文件 |
-| 记录日期 | 日期 | ✅ | 默认今天 |
-
-##### Tab③ 受理单位 (/case/:id/unit)
-
-4个子Tab：
-- 财产保全：列表（被申请人/标的/金额/法院/日期/状态）
-- 执行情况：列表（执行案号/法院/申请人/被执行人/标的/日期/状态）
-- 庭审记录：列表（日期/类型/法庭号/审判员/书记员/笔录/附件）
-- 承办人员：列表（姓名/职位/电话/法庭/备注）
-
-##### Tab④ 案件文档 (/case/:id/doc)
-
-- 树形目录（起诉状/答辩状/原告证据/被告证据/法院文书/代理词/判决书/其他）
-- 面包屑导航
-- 文件列表（checkbox/文件名/大小/上传人/时间/操作）
-- 功能：拖拽上传/断点续传/在线预览/版本管理/标签/搜索/批量操作/新建文档
-- AI智能识别入口
-- 一键归档PDF（首面+目录+拼接+书签）
-
-##### Tab⑤ 案件动态 (/case/:id/timeline)
-
-- 分类Tab：全部/动态/评论
-- 时间线流（操作日志+评论）
-- 评论功能（@提及+回复）
+| 优先级 | 任务 | 说明 |
+|--------|------|------|
+| **P0** | 数据库迁移 MySQL | 生产前必须完成，H2 内存数据库重启丢失数据 |
+| **P0** | 多用户部署文档 | Nginx 配置 / Docker Compose |
+| **P1** | 省时宝前端集成 | 在工具集页面调用 SSB API 文档生成 |
+| **P1** | AC精算前端集成 | 嵌入 Streamlit 或封装为 iframe/API 调用 |
+| **P1** | 生产环境 API Key 管理 | 从环境变量读取改为加密配置中心 |
+| **P2** | 性能优化: JS 包体积 | 当前主入口 1.1MB，Element Plus 1.0MB，需 Code Splitting |
+| **P2** | 移动端适配 | 已有基本响应式，需完善 |
+| **P2** | 国际化 i18n | 当前仅中文 |
+| **P2** | E2E 测试 | Cypress/Playwright 自动化 |
+| **P3** | 容器化部署 | Dockerfile + docker-compose.yml |
+| **P3** | CI/CD 流水线 | GitHub Actions |
 
 ---
 
-### 模块3：案件生命周期管理
+## 七、已知问题 (Known Issues)
 
-#### 3.1 状态流转
-
-标准流程节点（民事）：咨询→签约→起草文书→待立案→已立案→一审审理中→一审结案→(二审)→执行→结案归档
-
-| 案件类型 | 流程节点 |
-|---------|---------|
-| 民事 | 咨询→签约→起草→立案→一审→(二审→)执行→结案 |
-| 刑事 | 咨询→签约→会见→审查起诉→一审→(二审→)结案 |
-| 行政 | 咨询→签约→起草→立案→一审→(二审→)结案 |
-| 商事仲裁 | 咨询→签约→起草→申请仲裁→组庭→开庭→裁决→结案 |
-| 非诉 | 咨询→签约→尽职调查→出具文书→交付→结案 |
-
-状态变更规则：
-1. 点击进度条节点→弹窗确认→更新
-2. 变更后自动生成该阶段默认待办
-3. 记录日志（时间/操作人/原状态/新状态）
-4. 支持回退（需权限+填写原因）
+| 问题 | 影响 | 当前状态 |
+|------|------|---------|
+| `@Index` 注解导致 H2 MySQL 模式表丢失 | 数据表无法自动创建 | ⚠️ 注意避免使用 |
+| H2 内存数据库重启数据丢失 | 开发频繁重启需重新初始化 | 🟡 计划迁移 MySQL |
+| Vite Dev 模式页面加载 200+ 请求 | 开发环境首次访问慢 | ✅ 加载遮罩已缓解 |
+| 构建产物较大 (1.1MB + 1.0MB) | 首屏加载时间较长 | 🟡 需 Code Splitting |
+| DeepSeek API 偶发网络波动 | 偶尔超时 | ✅ 已加自动重试 |
+| 部分 API 端点缺 JWT 返回 403 | 前端直接调用报错 | ✅ AI 端点已修复 |
 
 ---
 
-### 模块4：AI 智能辅助
+## 八、部署指南（草稿）
 
-#### 4.1 AI OCR 智能识别（核心）
+### 8.1 开发环境启动
 
-完整流程：上传→OCR识别→LLM要素提取→展示结果→人工校验→确认回填→原件归档
+```bash
+# 1. 后端 (终端1)
+cd backend
+export JAVA_HOME=/opt/homebrew/opt/openjdk@11
+DEEPSEEK_API_KEY="sk-xxx" mvn spring-boot:run
 
-**LLM Prompt模板：**
-```
-你是一个法律文书信息提取助手。请从以下法院文书中提取关键信息，以JSON格式返回。
+# 2. 前端 (终端2)
+cd frontend
+npm run dev   # → localhost:3017
 
-需要提取的字段：
-- caseNumber: 案号
-- courtName: 法院名称
-- hearingDate: 开庭时间(YYYY-MM-DD HH:mm)
-- hearingPlace: 开庭地点/法庭号
-- judgeName: 承办法官姓名
-- clerkName: 书记员姓名
-- plaintiffName: 原告姓名/名称
-- defendantName: 被告姓名/名称
-- caseReason: 案由
-- contactPhone: 联系电话
-- documentType: 文书类型(传票/判决书/裁定书/通知书/其他)
+# 3. 省时宝 (终端3)
+cd ssb
+python3 ssb_api.py   # → localhost:5002
 
-文书内容：
-{ocrText}
-
-请严格返回JSON格式，无法识别的字段填null。
+# 4. AC精算 (终端4)
+cd ac-calc
+python3 api_service.py  # → localhost:5100
 ```
 
-#### 4.2 AI 文书生成
+### 8.2 多用户生产部署
 
-| 文书类型 | 输入 | 输出 |
-|---------|------|------|
-| 起诉状 | 案件信息+当事人+案由+诉求 | 起诉状初稿(Word) |
-| 答辩状 | 案件信息+对方诉求+答辩意见 | 答辩状初稿(Word) |
-| 代理词 | 案件材料+庭审记录+争议焦点 | 代理词框架(Word) |
-| 法律意见书 | 案件信息+客户需求 | 意见书框架(Word) |
+```bash
+# 1. 构建前端
+cd frontend && npm run build  # → dist/
 
-#### 4.3 AI 法律知识问答
+# 2. 启动后端（自动服务静态文件）
+cd backend
+DEEPSEEK_API_KEY="sk-xxx" mvn spring-boot:run
+# → http://你的IP:8080 即可访问
+```
 
-两种模式：通用法律问答 / 案件上下文问答
-对话记录自动保存到案件
+### 8.3 推荐生产架构
 
-#### 4.4 AI 使用日志
-
-记录：userId/caseId/functionType/inputTokens/outputTokens/model/status/duration
-
----
-
-### 模块5：日程管理
-
-**路由：** `/calendar`
-
-新建日程：标题/类型/开始结束时间/地点/关联案件/参与人员/提醒设置/重复
-新建待办：标题/截止时间/优先级/关联案件/负责人/提醒/备注
-逾期预警：审限前7天橙色/3天红色+通知/当天红色+推送/逾期置顶
+```
+Nginx (port 80/443)
+├── / → 前端静态文件 (proxy_pass to build/dist)
+├── /api → Spring Boot (proxy_pass to localhost:8080/api)
+├── /ssb → SSB Flask (proxy_pass to localhost:5002)
+└── /ac → AC Flask (proxy_pass to localhost:5100)
+```
 
 ---
 
-### 模块6：客户管理
+## 九、附录
 
-**路由：** `/client`
+### 9.1 项目结构
 
-客户详情：基本信息/关联案件/沟通记录/收费统计/利益冲突检索
+```
+/Users/juno/ZGAI/
+├── backend/               # Spring Boot 后端
+│   └── src/main/java/com/lawfirm/
+│       ├── config/        # 配置类 (Web, Security, Jackson, DataInitializer)
+│       ├── controller/    # 51个控制器
+│       ├── dto/           # 数据传输对象
+│       ├── entity/        # 58个数据实体
+│       ├── enums/         # 24个枚举类型
+│       ├── exception/     # 全局异常处理
+│       ├── init/          # 初始化服务
+│       ├── repository/    # JPA 仓库
+│       ├── security/      # JWT 认证/过滤器
+│       ├── service/       # 63个服务类
+│       ├── util/          # 工具类
+│       └── vo/            # 视图对象
+├── frontend/              # Vue 3 前端
+│   └── src/
+│       ├── api/           # 16个API模块
+│       ├── components/    # 16个通用组件
+│       ├── layouts/       # 主布局 (MainLayout)
+│       ├── router/        # 路由配置 (40+路由)
+│       ├── stores/        # Pinia 状态管理
+│       ├── utils/         # 工具 (request.js, auto-login)
+│       └── views/         # 46个页面组件
+├── ssb/                   # 省时宝 Flask 服务
+│   └── ssb_api.py         # API 网关
+├── ssb-repo/              # SSB 完整仓库
+└── ac-calc/               # AC 精算 Streamlit 应用
+```
 
----
+### 9.2 关键配置
 
-### 模块7：财务管理
+```
+server.servlet.context-path: /api   # 后端 API 前缀
+Vite proxy: /api → localhost:8080   # 前端代理
+前端 baseURL: /api                   # Axios 基础路径
+H2 数据库: jdbc:h2:mem:lawfirm;MODE=MySQL
+```
 
-**路由：** `/finance`
+### 9.3 PRD 维护规范
 
-- 费用记录（诉讼费/保全费/鉴定费/公证费/差旅费/快递费/其他）
-- 律师费管理（已收/待收）
-- 收款记录
-- 开票记录
-- 案件收支统计
-
----
-
-### 模块8：审批管理
-
-**路由：** `/approval`
-
-预置6种模板：用印申请/费用报销/开票申请/请假出差/采购申请/证照借用
-功能：发起/同意/驳回/转审/撤回/催办/进度查看/关联案件/自定义流程配置
-
----
-
-### 模块9：行政OA
-
-**路由：** `/admin-oa`
-
-- 通知公告（发布/范围/已读未读统计）
-- 会议室管理（预约/冲突校验/与开庭联动）
-- 考勤管理（请假出差加班/审批/月度报表）
-- 办公用品管理(P1)
-- 固定资产管理(P1)
-- 知识库(P1)
-
----
-
-### 模块10：数据统计与报表
-
-**路由：** `/statistics`
-
-- 案件统计（数量趋势/类型分布/胜诉率）
-- 收费统计（收入趋势/收款率/利润率）
-- 律师业绩（案件数/收费/结案率排名）
-- 可视化图表（ECharts，导出Excel/PDF）
-
----
-
-### 模块11：系统管理
-
-**路由：** `/settings`（仅管理员）
-
-- 用户管理（CRUD/启用禁用/重置密码）
-- 角色权限RBAC（6种预置角色+自定义）
-- 数据权限隔离（律师看自己/主任看全部）
-- 操作审计日志（AOP切面自动记录）
-- 系统配置（案件类型/案由库/法院库/流程模板/提醒阈值/AI模型）
-- 数据备份（每日自动/手动/180天保留/恢复）
-
----
-
-## 四、数据模型总览
-
-### 核心实体
-
-| 实体 | 字段数 | 说明 |
-|------|--------|------|
-| User | 12 | 用户 |
-| Role | 4 | 角色 |
-| Department | 5 | 部门 |
-| Case | 28 | 案件 |
-| CaseProcedure | 12 | 案件程序 |
-| CaseStage | 6 | 案件阶段 |
-| CaseMember | 5 | 案件团队成员 |
-| Party | 14 | 当事人 |
-| CaseRecord | 9 | 办案记录 |
-| CaseDocument | 10 | 案件文档 |
-| CaseTimeline | 8 | 案件动态/评论 |
-| Calendar | 10 | 日程 |
-| Todo | 9 | 待办 |
-| Client | 14 | 客户 |
-| CommunicationRecord | 7 | 沟通记录 |
-| FinanceRecord | 10 | 财务记录 |
-| Invoice | 8 | 开票记录 |
-| Payment | 8 | 收款记录 |
-| Approval | 10 | 审批单 |
-| Announcement | 9 | 公告 |
-| MeetingRoom | 7 | 会议室 |
-| MeetingBooking | 8 | 会议预约 |
-| AILog | 9 | AI使用日志 |
-| AuditLog | 8 | 操作审计日志 |
-| SystemConfig | 5 | 系统配置 |
-
----
-
-## 五、API 接口规划
-
-### 5.1 认证
-POST /api/auth/login | POST /api/auth/logout | POST /api/auth/change-password | GET /api/auth/current-user
-
-### 5.2 案件
-GET/POST /api/cases | GET/PUT/DELETE /api/cases/:id | PUT /api/cases/:id/status | GET /api/cases/:id/status-history | PUT /api/cases/:id/archive | GET /api/cases/check-duplicate | CRUD /api/cases/:id/parties | CRUD /api/cases/:id/procedures | CRUD /api/cases/:id/records | CRUD /api/cases/:id/timeline | POST /api/cases/:id/archive-pdf
-
-### 5.3 日程待办
-CRUD /api/calendar | CRUD /api/todos
-
-### 5.4 AI
-POST /api/ai/ocr-upload | POST /api/ai/extract | POST /api/ai/auto-fill/:caseId | POST /api/ai/generate-doc | POST /api/ai/chat | POST /api/ai/case-chat/:caseId | GET /api/ai/logs | GET/PUT /api/ai/config
-
-### 5.5 客户
-CRUD /api/clients | GET /api/clients/:id/cases | CRUD /api/clients/:id/communications | GET /api/clients/:id/conflict-check
-
-### 5.6 财务
-CRUD /api/finance/expenses | GET /api/finance/fees | CRUD /api/finance/payments | CRUD /api/finance/invoices | GET /api/finance/summary/:caseId | GET /api/finance/dashboard
-
-### 5.7 审批
-CRUD /api/approval | PUT /api/approval/:id/approve|reject|transfer|withdraw | POST /api/approval/:id/urge
-
-### 5.8 系统管理
-CRUD /api/users | CRUD /api/roles | GET /api/audit-logs | GET/PUT /api/system/config | POST /api/system/backup
-
-### 5.9 其他
-GET /api/search | GET /api/dashboard/stats | CRUD /api/notifications | CRUD /api/documents
-
----
-
-## 六、非功能需求
-
-### 6.1 性能
-- 页面加载 ≤2秒
-- API响应 ≤500ms（普通）/ ≤3秒（AI）
-- 文件上传 ≤50MB，支持断点续传
-- 支持60-70人同时使用
-
-### 6.2 安全
-- 密码BCrypt加密，复杂度≥8位
-- 5次登录失败锁定30分钟
-- HTTPS传输
-- 敏感字段加密存储
-- 全量操作审计日志
-- 每日自动备份，保留≥180天
-
-### 6.3 兼容性
-Chrome≥90 / Edge≥90 / Firefox≥90 / Safari≥14 / 移动端响应式适配
-
----
-
-## 七、开发优先级
-
-### P0 核心功能（约1.5个月）
-认证系统 / 工作台 / 案件管理(CRUD+详情5Tab) / 生命周期流转 / 日程待办 / 卷宗管理 / AI OCR / 系统管理
-
-### P1 重要功能（约4个月）
-客户管理 / 财务管理 / 审批管理 / AI文书生成+问答 / 行政OA / 一键归档 / 统计报表 / 移动端适配
-
-### P2 增强功能（按需）
-RAG知识库 / 公文流转 / 类案检索 / 工具集(诉讼费/利息/时效计算器) / 知识库 / 工作汇报
-
----
-
-*版本：v1.0 | 日期：2026-04-17*
+- 每次完成新功能后同步更新本文档
+- 新增端点/实体/页面在对应章节追加
+- 完成的功能标记状态从 🟡 改为 ✅
+- 发现新问题在 「已知问题」 章节追加

@@ -1,12 +1,38 @@
 <template>
   <div class="ai-assistant">
+    <!-- 最小化后的悬浮按钮 -->
+    <el-button
+      v-if="minimized"
+      type="primary"
+      circle
+      size="large"
+      class="ai-mini-btn"
+      @click="minimized = false"
+      title="打开AI法律助手"
+    >
+      <el-icon style="font-size:24px"><ChatDotRound /></el-icon>
+    </el-button>
+
     <el-dialog
       v-model="dialogVisible"
-      title="AI法律助手"
       width="800px"
       :close-on-click-modal="false"
       class="ai-chat-dialog"
+      :style="minimized ? 'display:none' : ''"
     >
+      <template #header="{ close }">
+        <div class="custom-dialog-header">
+          <span class="dialog-title">🤖 AI法律助手</span>
+          <div class="header-actions">
+            <el-button text class="header-btn" @click="minimized = true" title="最小化">
+              <el-icon><Minus /></el-icon>
+            </el-button>
+            <el-button text class="header-btn" @click="close" title="关闭">
+              <el-icon><Close /></el-icon>
+            </el-button>
+          </div>
+        </div>
+      </template>
       <div class="chat-container">
         <!-- 模式切换 -->
         <div class="chat-header">
@@ -111,7 +137,7 @@
 <script setup>
 import { ref, computed, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ChatDotRound } from '@element-plus/icons-vue'
+import { ChatDotRound, Minus, Close } from '@element-plus/icons-vue'
 import { aiChat, caseChat } from '@/api/ai'
 import { useUserStore } from '@/stores/user'
 
@@ -150,6 +176,7 @@ const currentCaseId = computed(() => chatMode.value === 'case' ? selectedCaseId.
 const messages = ref([])
 const inputMessage = ref('')
 const loading = ref(false)
+const minimized = ref(false)
 const messagesContainer = ref(null)
 
 // 快捷问题
@@ -221,6 +248,11 @@ const handleSend = async () => {
       response = await aiChat({
         message: userMessage
       })
+    }
+
+    // 检查 aiChat 是否返回了错误
+    if (response && response.success === false) {
+      throw new Error(response.message || 'AI响应异常')
     }
 
     // 添加AI回复
@@ -437,6 +469,56 @@ const scrollToBottom = () => {
       background-color: #1890ff;
       color: #fff;
       border-color: #1890ff;
+    }
+  }
+}
+
+/* AI悬浮小球按钮 */
+.ai-mini-btn {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  width: 56px !important;
+  height: 56px !important;
+  box-shadow: 0 4px 16px rgba(24, 144, 255, 0.4);
+  transition: all 0.3s;
+
+  &:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 24px rgba(24, 144, 255, 0.6);
+  }
+}
+
+/* 自定义对话框标题栏 */
+.custom-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+
+  .dialog-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #303133;
+  }
+
+  .header-actions {
+    display: flex;
+    gap: 4px;
+
+    .header-btn {
+      width: 32px;
+      height: 32px;
+      padding: 4px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      &:hover {
+        background-color: #f0f2f5;
+      }
     }
   }
 }

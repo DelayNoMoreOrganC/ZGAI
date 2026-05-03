@@ -53,6 +53,19 @@ public class PageResult<T> implements Serializable {
     public PageResult() {
     }
 
+    /**
+     * 从 Spring Data Page 构建
+     */
+    public PageResult(org.springframework.data.domain.Page<?> page) {
+        this.page = (long) page.getNumber();
+        this.size = (long) page.getSize();
+        this.total = page.getTotalElements();
+        this.records = (List<T>) page.getContent();
+        this.totalPages = (long) page.getTotalPages();
+        this.hasPrevious = page.hasPrevious();
+        this.hasNext = page.hasNext();
+    }
+
     public PageResult(Long page, Long size, Long total, List<T> records) {
         this.page = page;
         this.size = size;

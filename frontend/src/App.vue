@@ -1,18 +1,63 @@
 <template>
-  <router-view v-slot="{ Component, route }">
-    <transition :name="transitionName" mode="out-in" @before-enter="handleBeforeEnter" @after-enter="handleAfterEnter">
-      <keep-alive :include="keepAliveComponents">
-        <component :is="Component" :key="route.path" />
-      </keep-alive>
+  <div id="app-root">
+    <!-- 路由切换加载遮罩 -->
+    <transition name="fade">
+      <div v-if="routeLoading" class="route-loading-overlay">
+        <div class="loading-spinner">
+          <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+          <span>页面加载中...</span>
+        </div>
+      </div>
     </transition>
-  </router-view>
+    <router-view v-slot="{ Component, route }">
+      <transition :name="transitionName" mode="out-in" @before-enter="handleBeforeEnter" @after-enter="handleAfterEnter">
+        <keep-alive :include="keepAliveComponents">
+          <component :is="Component" :key="route.path" />
+        </keep-alive>
+      </transition>
+    </router-view>
+  </div>
 </template>
 
 <script setup>
 import { ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { Loading } from '@element-plus/icons-vue'
 
 const route = useRoute()
+const router = useRouter()
+
+// 路由加载状态 - 防止页面切换时出现空白
+const routeLoading = ref(false)
+let loadingTimer = null
+
+router.beforeEach((to, from) => {
+  // 缓存过的页面不显示加载遮罩
+  const keepAliveList = ['Dashboard', 'CaseList', 'Calendar', 'Client', 'Document', 'Finance']
+  const toName = to.name
+  const fromName = from?.name
+  
+  // 没有离开页面（首次加载）且目标非缓存页 → 显示加载
+  if (!fromName && toName && !keepAliveList.includes(toName)) {
+    routeLoading.value = true
+  }
+  // 缓存页切换到非缓存页 → 显示加载
+  else if (fromName && keepAliveList.includes(fromName) && toName && !keepAliveList.includes(toName)) {
+    routeLoading.value = true
+  }
+  // 非缓存页切换 → 显示加载
+  else if (fromName && !keepAliveList.includes(fromName)) {
+    routeLoading.value = true
+  }
+})
+
+router.afterEach(() => {
+  // 延迟隐藏加载遮罩，确保组件已渲染
+  if (loadingTimer) clearTimeout(loadingTimer)
+  loadingTimer = setTimeout(() => {
+    routeLoading.value = false
+  }, 300)
+})
 
 // 过渡动画名称
 const transitionName = ref('fade-transform')
@@ -171,5 +216,33 @@ body {
 
 .page-loading {
   animation: page-loading 0.3s ease-out;
+}
+
+/* 路由加载遮罩 */
+.route-loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  background-color: rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(2px);
+}
+
+.loading-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: #409eff;
+  font-size: 14px;
+}
+
+.loading-spinner .el-icon {
+  font-size: 40px;
 }
 </style>

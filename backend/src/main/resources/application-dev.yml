@@ -10,10 +10,10 @@ spring:
   application:
     name: lawfirm-backend
 
-  # H2文件数据库配置（持久化存储）
+  # H2内存数据库配置（开发环境，有DataInitializer自动创建测试数据）
   datasource:
     driver-class-name: org.h2.Driver
-    url: jdbc:h2:file:./data/lawfirm;MODE=MySQL;DB_CLOSE_ON_EXIT=FALSE
+    url: jdbc:h2:mem:lawfirm;MODE=MySQL;DATABASE_TO_UPPER=false;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
     username: sa
     password:
     hikari:
@@ -31,7 +31,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: create
     show-sql: true
     properties:
       hibernate:
@@ -40,11 +40,12 @@ spring:
         use_sql_comments: true
         globally_quoted_identifiers: true
     open-in-view: false
+    defer-datasource-initialization: true
 
-  # 启用SQL脚本初始化（仅在首次）
+# 启用SQL脚本初始化（首次启动时插入测试数据）
   sql:
     init:
-      mode: embedded
+      mode: never
 
   # 完全禁用Redis（开发环境）
   autoconfigure:

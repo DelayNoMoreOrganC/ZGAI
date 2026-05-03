@@ -1,6 +1,6 @@
 package com.lawfirm.config;
-
 import com.lawfirm.entity.*;
+import com.lawfirm.enums.AIProviderType;
 import com.lawfirm.repository.*;
 import com.lawfirm.repository.AIConfigRepository;
 import lombok.RequiredArgsConstructor;
@@ -98,24 +98,43 @@ public class DataInitializer implements CommandLineRunner {
     private void createDefaultAIConfig() {
         log.info("创建默认AI配置...");
 
-        AIConfig config = new AIConfig();
-        config.setConfigName("Ollama本地配置");
-        config.setProviderType("ollama");
-        config.setApiKey(""); // Ollama不需要API key
-        config.setApiUrl("http://localhost:11434");
-        config.setModelName("qwen3:8b");
-        config.setTemperature(0.1);
-        config.setMaxTokens(2000);
-        config.setTimeoutSeconds(60);
-        config.setIsDefault(true);
-        config.setIsEnabled(true);
-        config.setCategory("DOCUMENT");
-        config.setDescription("默认Ollama配置，用于本地AI文档识别。确保Ollama服务在localhost:11434运行并已拉取qwen3:8b模型。");
-        config.setDeleted(false);
+        // ========== 1. Ollama 本地配置 ==========
+        AIConfig ollamaConfig = new AIConfig();
+        ollamaConfig.setConfigName("Ollama本地配置");
+        ollamaConfig.setProviderType(AIProviderType.LOCAL_QWEN.name());
+        ollamaConfig.setApiKey(""); // Ollama不需要API key
+        ollamaConfig.setApiUrl("http://localhost:11434");
+        ollamaConfig.setModelName("qwen3:8b");
+        ollamaConfig.setTemperature(0.1);
+        ollamaConfig.setMaxTokens(4096);
+        ollamaConfig.setTimeoutSeconds(60);
+        ollamaConfig.setIsDefault(false);
+        ollamaConfig.setIsEnabled(true);
+        ollamaConfig.setCategory("DOCUMENT");
+        ollamaConfig.setDescription("Ollama本地模型，用于本地AI文档识别。确保Ollama服务在localhost:11434运行并已拉取qwen3:8b模型。");
+        ollamaConfig.setDeleted(false);
+        aiConfigRepository.save(ollamaConfig);
+        log.info("✅ Ollama本地AI配置创建完成");
 
-        aiConfigRepository.save(config);
-
-        log.info("默认AI配置创建成功！使用Ollama本地模型进行文档识别。");
+        // ========== 2. DeepSeek API 配置（设为默认） ==========
+        AIConfig deepseekConfig = new AIConfig();
+        deepseekConfig.setConfigName("DeepSeek API（云端）");
+        deepseekConfig.setProviderType(AIProviderType.DEEPSEEK_API.name());
+        // 优先从环境变量读取，否则用空字符串（用户可在设置页填写）
+        String envKey = System.getenv("DEEPSEEK_API_KEY");
+        deepseekConfig.setApiKey(envKey != null ? envKey : "");
+        deepseekConfig.setApiUrl("https://api.deepseek.com/v1/chat/completions");
+        deepseekConfig.setModelName("deepseek-v4-flash");
+        deepseekConfig.setTemperature(0.3);
+        deepseekConfig.setMaxTokens(8192);
+        deepseekConfig.setTimeoutSeconds(60);
+        deepseekConfig.setIsDefault(true); // DeepSeek 默认激活
+        deepseekConfig.setIsEnabled(true);
+        deepseekConfig.setCategory("LEGAL_CHAT");
+        deepseekConfig.setDescription("DeepSeek云端API，用于智能法律问答和文档分析。需要在设置中填写API Key。");
+        deepseekConfig.setDeleted(false);
+        aiConfigRepository.save(deepseekConfig);
+        log.info("✅ DeepSeek云端AI配置创建完成（默认模式）");
     }
 
     private void createTestTodos(Long userId) {

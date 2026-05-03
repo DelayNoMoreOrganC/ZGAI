@@ -29,12 +29,14 @@ public class AILog {
     private String functionType;
 
     @Column(name = "input_content")
+    @Lob
     private String inputContent;
 
     @Column(name = "input_tokens")
     private Integer inputTokens;
 
     @Column(name = "output_content")
+    @Lob
     private String outputContent;
 
     @Column(name = "output_tokens")
@@ -50,6 +52,7 @@ public class AILog {
     private Integer duration;
 
     @Column(name = "error_message")
+    @Lob
     private String errorMessage;
 
     @Column(name = "created_at", nullable = false, updatable = false)

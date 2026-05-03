@@ -213,6 +213,17 @@
         <el-icon :size="32" color="#faad14"><UploadFilled /></el-icon>
         <span>上传文书</span>
       </div>
+      <!-- 外部工具 -->
+<div class="action-item tool-card-ssb" @click="handleQuickAction('tools')">
+        <el-icon :size="36" color="#eb2f96"><Timer /></el-icon>
+        <span class="tool-badge">⏱ 省时宝</span>
+        <small class="tool-desc">法律文书生成</small>
+      </div>
+      <div class="action-item tool-card-ac" @click="handleQuickAction('tools')">
+        <el-icon :size="36" color="#fa541c"><DataAnalysis /></el-icon>
+        <span class="tool-badge">📊 AC精算</span>
+        <small class="tool-desc">债权利息计算</small>
+      </div>
     </div>
 
     <!-- 案件详情浮层对话框 -->
@@ -275,7 +286,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, FolderAdd, UserFilled, MagicStick, UploadFilled, Loading } from '@element-plus/icons-vue'
+import { Plus, FolderAdd, UserFilled, MagicStick, UploadFilled, Loading, Timer, DataAnalysis } from '@element-plus/icons-vue'
 import PriorityDot from '@/components/PriorityDot.vue'
 import { getDashboardStats } from '@/api/dashboard'
 import { getTodoList, deleteTodo } from '@/api/todo'
@@ -588,7 +599,6 @@ const handleDeleteTodo = async (todo) => {
 // 快捷操作
 const handleQuickAction = (action) => {
   if (action === 'aiAssistant') {
-    // 触发AI助手对话框，不跳转页面
     showAIAssistant.value = true
     return
   }
@@ -604,6 +614,17 @@ const handleQuickAction = (action) => {
   }
 
   router.push(actionMap[action])
+}
+
+// 打开省时宝独立应用（新标签页）
+const openSsbApp = () => {
+  window.open('http://localhost:3000', '_blank')
+}
+
+// 打开AC精算独立应用（新标签页）
+const openAcApp = () => {
+  // Streamlit 应用（需先安装并启动: pip install streamlit && cd ac-calc && streamlit run app.py）
+  window.open('http://localhost:8501', '_blank')
 }
 
 onMounted(() => {
@@ -1024,6 +1045,30 @@ onMounted(() => {
       span {
         font-size: 14px;
         color: #333;
+      }
+
+      small.tool-desc {
+        font-size: 11px;
+        color: #999;
+        margin-top: -8px;
+      }
+
+      &.tool-card-ssb {
+        border-color: #ffd6e7;
+        background: linear-gradient(135deg, #fff0f6 0%, #ffffff 100%);
+        &:hover {
+          border-color: #eb2f96;
+          background: linear-gradient(135deg, #fff0f6 0%, #ffe0ef 100%);
+        }
+      }
+
+      &.tool-card-ac {
+        border-color: #ffd8bf;
+        background: linear-gradient(135deg, #fff7e6 0%, #ffffff 100%);
+        &:hover {
+          border-color: #fa541c;
+          background: linear-gradient(135deg, #fff7e6 0%, #ffe6d5 100%);
+        }
       }
     }
   }

@@ -15,7 +15,7 @@ import java.time.LocalDate;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Entity
-@Table(name = "case", indexes = {
+@Table(name = "\"case\"", indexes = {
     @Index(name = "idx_case_name", columnList = "case_name"),
     @Index(name = "idx_case_status", columnList = "status"),
     @Index(name = "idx_case_owner", columnList = "owner_id"),

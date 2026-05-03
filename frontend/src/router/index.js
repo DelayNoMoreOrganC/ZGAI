@@ -263,6 +263,63 @@ const routes = [
         component: () => import('@/views/tools/index.vue'),
         meta: { title: '工具集', icon: '🔧' }
       },
+      // ===== 不良资产管理 =====
+      {
+        path: 'npa',
+        name: 'NPA',
+        redirect: '/npa/packages',
+        meta: { title: '不良资产', icon: '🏦' },
+        children: [
+          {
+            path: 'packages',
+            name: 'NPAPackages',
+            component: () => import('@/views/npa/packages/index.vue'),
+            meta: { title: '资产包管理' }
+          },
+          {
+            path: 'packages/create',
+            name: 'NPAPackageCreate',
+            component: () => import('@/views/npa/packages/create.vue'),
+            meta: { title: '新建资产包' }
+          },
+          {
+            path: 'packages/:id',
+            name: 'NPAPackageDetail',
+            component: () => import('@/views/npa/packages/detail.vue'),
+            meta: { title: '资产包详情' }
+          },
+          {
+            path: 'assets',
+            name: 'NPAAssets',
+            component: () => import('@/views/npa/assets/index.vue'),
+            meta: { title: '债权管理' }
+          },
+          {
+            path: 'assets/:id',
+            name: 'NPAAssetDetail',
+            component: () => import('@/views/npa/assets/detail.vue'),
+            meta: { title: '债权详情' }
+          },
+          {
+            path: 'diligence',
+            name: 'NPADiligence',
+            component: () => import('@/views/npa/diligence/index.vue'),
+            meta: { title: '尽调管理' }
+          },
+          {
+            path: 'disposal',
+            name: 'NPADisposal',
+            component: () => import('@/views/npa/disposal/index.vue'),
+            meta: { title: '处置跟踪' }
+          },
+          {
+            path: 'performance',
+            name: 'NPAPerformance',
+            component: () => import('@/views/npa/performance/index.vue'),
+            meta: { title: '绩效看板' }
+          }
+        ]
+      },
       // 办公用品管理
       {
         path: 'office-supplies',

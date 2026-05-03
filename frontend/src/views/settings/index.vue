@@ -220,26 +220,18 @@
               </el-form-item>
             </div>
 
-            <div class="config-section">
-              <h4>AI配置</h4>
-              <el-form-item label="AI模型">
-                <el-select v-model="systemConfig.aiModel">
-                  <el-option label="DeepSeek" value="deepseek" />
-                  <el-option label="通义千问" value="qwen" />
-                  <el-option label="本地模型" value="local" />
-                </el-select>
-              </el-form-item>
-
-              <el-form-item label="API Key">
-                <el-input v-model="systemConfig.apiKey" placeholder="请输入API Key" />
-              </el-form-item>
-            </div>
-
             <el-form-item>
               <el-button type="primary" @click="handleSaveConfig">保存配置</el-button>
               <el-button @click="handleResetConfig">重置</el-button>
             </el-form-item>
           </el-form>
+        </div>
+      </el-tab-pane>
+
+      <!-- AI配置 -->
+      <el-tab-pane label="AI配置" name="ai">
+        <div class="tab-content">
+          <AIConfigPanel />
         </div>
       </el-tab-pane>
 
@@ -465,6 +457,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Download, Upload } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
+import AIConfigPanel from '@/components/AIConfigPanel.vue'
 import { createUser, updateUser, deleteUser, getUserList, toggleUserStatus } from '@/api/user'
 import { getRoleList } from '@/api/role'
 import request from '@/utils/request'
@@ -653,9 +646,7 @@ const systemConfig = reactive({
   caseReasons: '买卖合同纠纷,借款合同纠纷,离婚纠纷',
   courts: '北京市朝阳区人民法院,北京市海淀区人民法院',
   deadlineReminder: 7,
-  hearingReminder: 3,
-  aiModel: 'deepseek',
-  apiKey: ''
+  hearingReminder: 3
 })
 
 // 备份列表

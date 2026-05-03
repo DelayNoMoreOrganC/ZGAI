@@ -47,6 +47,25 @@ data/
 .env.local
 .env.*.local
 
+# === Python 缓存 ===
+__pycache__/
+*.pyc
+*.pyo
+
+# === 虚拟环境 ===
+venv/
+.venv/
+ENV/
+
+# === Hermes Agent ===
+.hermes/
+
+# === Windows 路径残留 ===
+backend/D:/
+
+# === SSB 外部仓库 ===
+ssb-repo/
+
 # === 测试覆盖率 ===
 coverage/
 *.lcov

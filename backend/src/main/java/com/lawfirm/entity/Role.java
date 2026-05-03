@@ -12,7 +12,7 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Entity
-@Table(name = "role")
+@Table(name = "\"role\"")
 public class Role extends LogicalDeleteEntity {
 
     @Id

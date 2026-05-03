@@ -232,6 +232,7 @@ const menuRoutes = computed(() => {
     { path: '/approval', meta: { title: '审批', icon: '✅' } },
     { path: '/admin-oa', meta: { title: '行政', icon: '🏢' } },
     { path: '/statistics', meta: { title: '统计', icon: '📈' } },
+    { path: '/tools', meta: { title: '工具集', icon: '🔧' } },
     { path: '/settings', meta: { title: '设置', icon: '⚙️' } }
   ]
   return routes

@@ -101,36 +101,32 @@ export function generateDoc(data) {
   })
 }
 
-// AI对话
+// AI对话 - 通过后端代理调用（自动使用默认AI模式）
 export function aiChat(data) {
-  // 直接调用Ollama API（临时方案，绕过后端数据库问题）
-  return fetch('http://localhost:11434/api/chat', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'qwen3:8b',
-      messages: [
-        { role: 'system', content: '你是一个专业的法律助手，帮助律师处理案件、文档和日程管理。' },
-        { role: 'user', content: data.message }
-      ],
-      stream: false
-    })
-  }).then(response => response.json())
-    .then(result => {
-      return {
-        success: true,
-        data: result.message?.content || result.response || 'AI响应为空'
-      }
-    })
-    .catch(error => {
-      console.error('Ollama调用失败:', error)
-      return {
-        success: false,
-        message: 'AI服务暂时不可用'
-      }
-    })
+  return request({
+    url: '/ai/assist',
+    method: 'post',
+    data
+  }).then(response => {
+    // response = {code: 200, message, data: "AI回复内容"}
+    // 提取 AI 回复文本
+    const reply = typeof response === 'string' ? response : (response.data || response)
+    return {
+      success: true,
+      data: reply || 'AI响应为空'
+    }
+  }).catch(error => {
+    console.error('AI调用失败:', error)
+    const msg = (error.response?.data?.message || error.message || '未知错误')
+    // 如果是401，不弹错误（拦截器会处理登录跳转）
+    if (msg.includes('401') || msg.includes('登录')) {
+      return { success: false, message: '请先登录' }
+    }
+    return {
+      success: false,
+      message: 'AI服务暂时不可用: ' + msg
+    }
+  })
 }
 
 // 案件上下文对话

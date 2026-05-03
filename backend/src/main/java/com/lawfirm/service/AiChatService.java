@@ -29,7 +29,16 @@ public class AiChatService {
     private final CaseRepository caseRepository;
     private final CaseRecordService caseRecordService;
     private final CaseTimelineService caseTimelineService;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate = createRestTemplate();
+
+    private RestTemplate createRestTemplate() {
+        RestTemplate rt = new RestTemplate();
+        rt.setRequestFactory(new org.springframework.http.client.SimpleClientHttpRequestFactory() {{
+            setConnectTimeout(15000);   // 连接超时 15 秒
+            setReadTimeout(60000);      // 读取超时 60 秒
+        }});
+        return rt;
+    }
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -299,44 +308,63 @@ public class AiChatService {
     }
 
     /**
-     * 调用DeepSeek API
+     * 调用DeepSeek API（含自动重试）
      */
     private String callDeepSeek(String apiUrl, String apiKey, String prompt, AIConfig config) {
-        try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(apiKey);
+        int maxRetries = 2;
+        int retryDelay = 1000;
+        Exception lastException = null;
 
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("model", config.getModelName() != null ? config.getModelName() : "deepseek-chat");
-            requestBody.put("messages", new Object[]{
-                    Map.of("role", "user", "content", prompt)
-            });
-            requestBody.put("temperature", config.getTemperature());
-            requestBody.put("max_tokens", config.getMaxTokens());
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                headers.setBearerAuth(apiKey);
 
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
+                Map<String, Object> requestBody = new HashMap<>();
+                requestBody.put("model", config.getModelName() != null ? config.getModelName() : "deepseek-chat");
+                requestBody.put("messages", new Object[]{
+                        Map.of("role", "user", "content", prompt)
+                });
+                requestBody.put("temperature", config.getTemperature());
+                requestBody.put("max_tokens", config.getMaxTokens());
 
-            ResponseEntity<String> response = restTemplate.postForEntity(
-                    apiUrl != null ? apiUrl : "https://api.deepseek.com/v1/chat/completions",
-                    request,
-                    String.class
-            );
+                HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
 
-            if (response.getStatusCode() == HttpStatus.OK) {
-                JsonNode root = objectMapper.readTree(response.getBody());
-                JsonNode choices = root.path("choices");
-                if (choices != null && choices.isArray() && choices.size() > 0) {
-                    return choices.get(0).path("message").path("content").asText();
+                ResponseEntity<String> response = restTemplate.postForEntity(
+                        apiUrl != null ? apiUrl : "https://api.deepseek.com/v1/chat/completions",
+                        request,
+                        String.class
+                );
+
+                if (response.getStatusCode() == HttpStatus.OK) {
+                    JsonNode root = objectMapper.readTree(response.getBody());
+                    JsonNode choices = root.path("choices");
+                    if (choices != null && choices.isArray() && choices.size() > 0) {
+                        return choices.get(0).path("message").path("content").asText();
+                    }
+                    return "";
+                } else {
+                    throw new RuntimeException("DeepSeek API返回错误: " + response.getStatusCode());
                 }
-                return "";
-            } else {
-                throw new RuntimeException("DeepSeek API返回错误: " + response.getStatusCode());
+            } catch (Exception e) {
+                lastException = e;
+                String msg = e.getMessage() != null ? e.getMessage() : "";
+                // 只在可重试的错误时重试（网络波动、服务端断开）
+                boolean retryable = msg.contains("Unexpected end of file")
+                        || msg.contains("Read timed out")
+                        || msg.contains("Connection refused")
+                        || msg.contains("Connection reset");
+                if (retryable && attempt < maxRetries) {
+                    log.warn("DeepSeek API调用失败(第{}次)，即将重试: {}", attempt + 1, msg);
+                    try { Thread.sleep(retryDelay * (attempt + 1)); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                    continue;
+                }
+                log.error("调用DeepSeek API失败(已重试{}次)", attempt, e);
+                throw new RuntimeException("调用DeepSeek API失败: " + e.getMessage());
             }
-        } catch (Exception e) {
-            log.error("调用DeepSeek API失败", e);
-            throw new RuntimeException("调用DeepSeek API失败: " + e.getMessage());
         }
+        throw new RuntimeException("调用DeepSeek API失败: " + lastException.getMessage());
     }
 
     /**
