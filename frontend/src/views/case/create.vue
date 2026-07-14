@@ -34,24 +34,23 @@
               <el-form-item label="案件类型" prop="caseType">
                 <el-select v-model="formData.caseType" placeholder="请选择案件类型">
                   <el-option label="民事" value="CIVIL" />
-                  <el-option label="商事" value="COMMERCIAL" />
-                  <el-option label="仲裁" value="ARBITRATION" />
                   <el-option label="刑事" value="CRIMINAL" />
                   <el-option label="行政" value="ADMINISTRATIVE" />
                   <el-option label="非诉" value="NON_LITIGATION" />
+                  <el-option label="顾问" value="CONSULTANT" />
                 </el-select>
               </el-form-item>
             </el-col>
 
             <el-col :span="12">
-              <el-form-item label="案件程序" prop="procedure">
-                <el-select v-model="formData.procedure" placeholder="请选择案件程序">
-                  <el-option label="一审" value="FIRST_INSTANCE" />
-                  <el-option label="二审" value="SECOND_INSTANCE" />
-                  <el-option label="再审" value="RETRIAL" />
-                  <el-option label="执行" value="EXECUTION" />
-                  <el-option label="其他" value="OTHER" />
-                </el-select>
+              <el-form-item label="收案日期" prop="acceptanceDate">
+                <el-date-picker
+                  v-model="formData.acceptanceDate"
+                  type="date"
+                  placeholder="选择收案日期"
+                  value-format="YYYY-MM-DD"
+                  style="width: 100%"
+                />
               </el-form-item>
             </el-col>
 
@@ -70,9 +69,22 @@
               <el-form-item label="案件编号" prop="caseNumber">
                 <el-input
                   v-model="formData.caseNumber"
-                  placeholder="为空时自动生成"
+                  placeholder="行政审批通过后自动生成"
+                  disabled
                   @blur="handleCheckDuplicate"
                 />
+              </el-form-item>
+            </el-col>
+
+            <el-col v-if="formData.caseType === 'CRIMINAL'" :span="12">
+              <el-form-item label="犯罪嫌疑人" prop="suspectName">
+                <el-input v-model="formData.suspectName" placeholder="请输入犯罪嫌疑人" maxlength="100" />
+              </el-form-item>
+            </el-col>
+
+            <el-col v-if="formData.caseType === 'NON_LITIGATION'" :span="12">
+              <el-form-item label="涉案主体/标的物" prop="subjectMatter">
+                <el-input v-model="formData.subjectMatter" placeholder="请输入涉案主体或标的物" maxlength="100" />
               </el-form-item>
             </el-col>
 
@@ -99,7 +111,42 @@
             </el-col>
 
             <el-col :span="12">
-              <el-form-item label="管辖法院" prop="court">
+              <el-form-item label="业务类型" prop="businessType">
+                <el-select v-model="formData.businessType" placeholder="请选择业务类型" filterable>
+                  <el-option
+                    v-for="type in currentBusinessTypes"
+                    :key="type"
+                    :label="type"
+                    :value="type"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+
+            <el-col v-if="showAgencyType" :span="12">
+              <el-form-item label="代理类型" prop="agencyType">
+                <el-select v-model="formData.agencyType" placeholder="请选择代理类型">
+                  <el-option label="原告" value="原告" />
+                  <el-option label="被告" value="被告" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+
+            <el-col v-if="showTrialStages" :span="24">
+              <el-form-item label="审级" prop="trialStages">
+                <el-select v-model="formData.trialStages" multiple placeholder="请选择审级" style="width: 100%">
+                  <el-option
+                    v-for="stage in currentTrialStages"
+                    :key="stage"
+                    :label="stage"
+                    :value="stage"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+
+            <el-col v-if="showCourtFields" :span="12">
+              <el-form-item label="受理法院" prop="court">
                 <el-select
                   v-model="formData.court"
                   filterable
@@ -117,35 +164,44 @@
               </el-form-item>
             </el-col>
 
-            <el-col :span="8">
-              <el-form-item label="立案时间" prop="filingDate">
+            <el-col v-if="showCourtFields" :span="12">
+              <el-form-item label="法院案号" prop="courtCaseNumber">
+                <el-input v-model="formData.courtCaseNumber" placeholder="请输入法院案号" />
+              </el-form-item>
+            </el-col>
+
+            <el-col v-if="showCourtFields" :span="12">
+              <el-form-item label="开庭日期" prop="hearingDate">
                 <el-date-picker
-                  v-model="formData.filingDate"
+                  v-model="formData.hearingDate"
                   type="date"
-                  placeholder="选择日期"
+                  placeholder="选择开庭日期"
                   value-format="YYYY-MM-DD"
+                  style="width: 100%"
                 />
               </el-form-item>
             </el-col>
 
-            <el-col :span="8">
-              <el-form-item label="审限时间" prop="deadlineDate">
+            <el-col v-if="formData.caseType === 'CONSULTANT'" :span="12">
+              <el-form-item label="服务开始时间" prop="serviceStartDate">
                 <el-date-picker
-                  v-model="formData.deadlineDate"
+                  v-model="formData.serviceStartDate"
                   type="date"
-                  placeholder="选择日期"
+                  placeholder="选择开始日期"
                   value-format="YYYY-MM-DD"
+                  style="width: 100%"
                 />
               </el-form-item>
             </el-col>
 
-            <el-col :span="8">
-              <el-form-item label="委托时间" prop="commissionDate">
+            <el-col v-if="formData.caseType === 'CONSULTANT'" :span="12">
+              <el-form-item label="服务结束时间" prop="serviceEndDate">
                 <el-date-picker
-                  v-model="formData.commissionDate"
+                  v-model="formData.serviceEndDate"
                   type="date"
-                  placeholder="选择日期"
+                  placeholder="选择结束日期"
                   value-format="YYYY-MM-DD"
+                  style="width: 100%"
                 />
               </el-form-item>
             </el-col>
@@ -170,12 +226,12 @@
             </el-col>
 
             <el-col :span="24">
-              <el-form-item label="案件简述" prop="summary">
+              <el-form-item label="案情简介" prop="summary">
                 <el-input
                   v-model="formData.summary"
                   type="textarea"
                   :rows="3"
-                  placeholder="请输入案件简述"
+                  placeholder="请输入案情简介"
                   maxlength="500"
                   show-word-limit
                 />
@@ -310,6 +366,10 @@
                     <el-option label="共同被告" value="共同被告" />
                     <el-option label="申请人" value="申请人" />
                     <el-option label="被申请人" value="被申请人" />
+                    <el-option label="上诉人" value="上诉人" />
+                    <el-option label="被上诉人" value="被上诉人" />
+                    <el-option label="管理人" value="管理人" />
+                    <el-option label="债权人" value="债权人" />
                   </el-select>
                 </el-form-item>
               </el-col>
@@ -457,30 +517,27 @@
             <el-col :span="24">
               <el-form-item label="收费方式" prop="feeMethod">
                 <el-radio-group v-model="formData.feeMethod">
-                  <el-radio label="固定收费">固定收费</el-radio>
-                  <el-radio label="风险收费">风险收费</el-radio>
-                  <el-radio label="基础+风险">基础+风险</el-radio>
-                  <el-radio label="其他">其他</el-radio>
+                  <el-radio
+                    v-for="method in currentFeeMethods"
+                    :key="method"
+                    :label="method"
+                  >
+                    {{ method }}
+                  </el-radio>
                 </el-radio-group>
               </el-form-item>
             </el-col>
 
             <el-col :span="12">
-              <el-form-item label="标的额(元)" prop="amount">
+              <el-form-item label="涉案标的(万元)" prop="amount">
                 <el-input-number
                   v-model="formData.amount"
                   :min="0"
                   :precision="2"
-                  :step="1000"
+                  :step="10"
                   controls-position="right"
                   style="width: 100%"
                 />
-              </el-form-item>
-            </el-col>
-
-            <el-col :span="12">
-              <el-form-item label="标的物" prop="subjectMatter">
-                <el-input v-model="formData.subjectMatter" placeholder="请输入标的物" />
               </el-form-item>
             </el-col>
 
@@ -497,15 +554,41 @@
               </el-form-item>
             </el-col>
 
-            <el-col :span="24">
-              <el-form-item label="收费简介" prop="feeSummary">
+            <el-col v-if="isRiskFee" :span="12">
+              <el-form-item label="风险费用(元)" prop="riskFee">
+                <el-input-number
+                  v-model="formData.riskFee"
+                  :min="0"
+                  :precision="2"
+                  :step="100"
+                  controls-position="right"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+
+            <el-col v-if="isRiskFee" :span="12">
+              <el-form-item label="风险比例(%)" prop="riskRatio">
+                <el-input-number
+                  v-model="formData.riskRatio"
+                  :min="0"
+                  :max="18"
+                  :precision="2"
+                  controls-position="right"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+
+            <el-col v-if="formData.feeMethod === '免费代理'" :span="24">
+              <el-form-item label="免费理由" prop="freeReason">
                 <el-input
-                  v-model="formData.feeSummary"
+                  v-model="formData.freeReason"
                   type="textarea"
                   :rows="2"
-                  maxlength="200"
+                  maxlength="300"
                   show-word-limit
-                  placeholder="请输入收费简介"
+                  placeholder="请输入免费代理申请理由"
                 />
               </el-form-item>
             </el-col>
@@ -522,40 +605,69 @@
                 />
               </el-form-item>
             </el-col>
+
+            <el-col :span="8">
+              <el-form-item label="案源比例(%)" prop="allocation.sourceRatio">
+                <el-input-number
+                  v-model="formData.allocation.sourceRatio"
+                  :min="0"
+                  :max="100"
+                  :precision="2"
+                  controls-position="right"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="8">
+              <el-form-item label="部门比例(%)" prop="allocation.departmentRatio">
+                <el-input-number
+                  v-model="formData.allocation.departmentRatio"
+                  :min="0"
+                  :max="100"
+                  :precision="2"
+                  controls-position="right"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="8">
+              <el-form-item label="律所比例(%)" prop="allocation.firmRatio">
+                <el-input-number
+                  v-model="formData.allocation.firmRatio"
+                  :min="0"
+                  :max="100"
+                  :precision="2"
+                  controls-position="right"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
           </el-row>
         </div>
 
-        <!-- D. 应收款信息 -->
+        <!-- D. 收费情况 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>D. 应收款信息</h3>
+            <h3>D. 收费情况</h3>
             <el-button type="primary" size="small" @click="handleAddReceivable">
               <el-icon><Plus /></el-icon>
-              添加应收款
+              添加收费记录
             </el-button>
           </div>
 
           <div v-if="formData.receivables.length === 0" class="empty-tip">
-            <el-empty description="暂无应收款，请添加" />
+            <el-empty description="暂无收费记录，请添加" />
           </div>
 
           <div v-for="(receivable, index) in formData.receivables" :key="index" class="receivable-item">
             <el-row :gutter="20">
               <el-col :span="6">
                 <el-form-item
-                  label="款项名称"
-                  :prop="`receivables.${index}.name`"
-                  :rules="{ required: true, message: '请输入款项名称', trigger: 'blur' }"
-                >
-                  <el-input v-model="receivable.name" placeholder="请输入款项名称" />
-                </el-form-item>
-              </el-col>
-
-              <el-col :span="6">
-                <el-form-item
-                  label="应收金额(元)"
+                  label="回款金额(元)"
                   :prop="`receivables.${index}.amount`"
-                  :rules="{ required: true, message: '请输入应收金额', trigger: 'blur' }"
+                  :rules="{ required: true, message: '请输入回款金额', trigger: 'blur' }"
                 >
                   <el-input-number
                     v-model="receivable.amount"
@@ -569,9 +681,9 @@
 
               <el-col :span="8">
                 <el-form-item
-                  label="约定收款日期"
+                  label="收费日期"
                   :prop="`receivables.${index}.dueDate`"
-                  :rules="{ required: true, message: '请选择收款日期', trigger: 'change' }"
+                  :rules="{ required: true, message: '请选择收费日期', trigger: 'change' }"
                 >
                   <el-date-picker
                     v-model="receivable.dueDate"
@@ -580,6 +692,30 @@
                     value-format="YYYY-MM-DD"
                     style="width: 100%"
                   />
+                </el-form-item>
+              </el-col>
+
+              <el-col :span="5">
+                <el-form-item label="发票号码" :prop="`receivables.${index}.invoiceNumber`">
+                  <el-input v-model="receivable.invoiceNumber" placeholder="请输入发票号码" />
+                </el-form-item>
+              </el-col>
+
+              <el-col :span="5">
+                <el-form-item label="开票日期" :prop="`receivables.${index}.invoiceDate`">
+                  <el-date-picker
+                    v-model="receivable.invoiceDate"
+                    type="date"
+                    placeholder="选择日期"
+                    value-format="YYYY-MM-DD"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+              </el-col>
+
+              <el-col :span="20">
+                <el-form-item label="备注" :prop="`receivables.${index}.notes`">
+                  <el-input v-model="receivable.notes" placeholder="请输入备注" />
                 </el-form-item>
               </el-col>
 
@@ -741,7 +877,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -768,8 +904,12 @@ const caseId = computed(() => route.params.id)
 const transformToRequest = () => {
   const feeMethodMap = {
     '固定收费': 'FIXED',
+    '固定': 'FIXED',
     '风险收费': 'CONTINGENT',
+    '固定+风险': 'BASE_PLUS_CONTINGENT',
     '基础+风险': 'BASE_PLUS_CONTINGENT',
+    '免费代理': 'FREE',
+    '未确定': 'UNDETERMINED',
     '其他': 'OTHER'
   }
 
@@ -786,7 +926,11 @@ const transformToRequest = () => {
     '被申请人': 'RESPONDENT',
     '第三人': 'THIRD_PARTY',
     '上诉人': 'APPELLANT',
-    '被上诉人': 'APPELLEE'
+    '被上诉人': 'APPELLEE',
+    '共同原告': 'CO_PLAINTIFF',
+    '共同被告': 'CO_DEFENDANT',
+    '管理人': 'ADMINISTRATOR',
+    '债权人': 'CREDITOR'
   }
 
   // 转换当事人数据
@@ -816,9 +960,19 @@ const transformToRequest = () => {
     caseNumber: formData.caseNumber,
     caseReason: formData.caseReason,
     court: formData.court,
+    acceptanceDate: formData.acceptanceDate || null,
     filingDate: formData.filingDate || null,
     deadlineDate: formData.deadlineDate || null,
     commissionDate: formData.commissionDate || null,
+    suspectName: formData.suspectName || null,
+    subjectMatter: formData.subjectMatter || null,
+    businessType: formData.businessType || null,
+    agencyType: formData.agencyType || null,
+    serviceStartDate: formData.serviceStartDate || null,
+    serviceEndDate: formData.serviceEndDate || null,
+    trialStages: formData.trialStages?.join(',') || null,
+    courtCaseNumber: formData.courtCaseNumber || null,
+    hearingDate: formData.hearingDate || null,
     tags: formData.tags?.join(',') || null,
     summary: formData.summary,
     ownerId: formData.ownerId,
@@ -829,14 +983,26 @@ const transformToRequest = () => {
     amount: formData.amount || null,
     attorneyFee: formData.lawyerFee || null,
     feeMethod: feeMethodMap[formData.feeMethod] || formData.feeMethod || null,
-    feeDescription: formData.feeSummary || null,
     feeNotes: formData.feeRemark || null,
+    riskRatio: formData.riskRatio || null,
+    riskFee: formData.riskFee || null,
+    freeReason: formData.freeReason || null,
+    allocationJson: JSON.stringify(formData.allocation || {}),
 
     // B. 当事人
     parties: parties,
 
-    // D. 应收款
-    receivables: formData.receivables || [],
+    // D. 收费情况
+    receivables: (formData.receivables || []).map(item => ({
+      name: '回款',
+      amount: item.amount,
+      dueDate: item.dueDate,
+      notes: [
+        item.invoiceNumber ? `发票号码：${item.invoiceNumber}` : '',
+        item.invoiceDate ? `开票日期：${item.invoiceDate}` : '',
+        item.notes || ''
+      ].filter(Boolean).join('；')
+    })),
 
     // E. 关联信息
     clientIds: formData.relatedClients?.map(c => c.id || c) || [],
@@ -851,6 +1017,7 @@ const approving = ref(false)
 const { submitting, canSubmit, handleSubmit: handleFormSubmit } = useSubmitForm(
   async () => {
     await formRef.value?.validate()
+    if (!validateFilingBusinessRules()) return
     const requestData = transformToRequest()
 
     // 根据是否为编辑模式调用不同API
@@ -890,7 +1057,7 @@ const { submitting, canSubmit, handleSubmit: handleFormSubmit } = useSubmitForm(
           return false
         }
       }
-      return true
+      return validateFilingBusinessRules()
     }
   }
 )
@@ -902,14 +1069,24 @@ const showArchiveInfo = ref(false)
 const formData = reactive({
   // A. 基本信息
   caseType: '',
-  procedure: '',
+  procedure: 'FILING_REVIEW',
   caseName: '',
   caseNumber: '',
   caseReason: '',
   court: '',
+  acceptanceDate: new Date().toISOString().slice(0, 10),
   filingDate: '',
   deadlineDate: '',
   commissionDate: '',
+  suspectName: '',
+  subjectMatter: '',
+  businessType: '',
+  agencyType: '',
+  serviceStartDate: '',
+  serviceEndDate: '',
+  trialStages: [],
+  courtCaseNumber: '',
+  hearingDate: '',
   tags: [],
   summary: '',
   ownerId: '',
@@ -922,10 +1099,17 @@ const formData = reactive({
   // C. 代理律师费
   feeMethod: '',
   amount: null,
-  subjectMatter: '',
   lawyerFee: null,
-  feeSummary: '',
+  riskFee: null,
+  riskRatio: null,
+  freeReason: '',
   feeRemark: '',
+
+  allocation: {
+    sourceRatio: null,
+    departmentRatio: null,
+    firmRatio: null
+  },
 
   // D. 应收款
   receivables: [],
@@ -946,28 +1130,129 @@ const formData = reactive({
 // 表单验证规则
 const formRules = {
   caseType: [{ required: true, message: '请选择案件类型', trigger: 'change' }],
-  procedure: [{ required: true, message: '请选择案件程序', trigger: 'change' }],
-  caseName: [{ required: true, message: '请输入案件名称', trigger: 'blur' }],
+  acceptanceDate: [{ required: true, message: '请选择收案日期', trigger: 'change' }],
   caseReason: [{ required: true, message: '请填写案由', trigger: 'blur' }],
-  court: [{ required: true, message: '请选择管辖法院', trigger: 'change' }],
+  businessType: [{ required: true, message: '请选择业务类型', trigger: 'change' }],
   ownerId: [{ required: true, message: '请选择主办律师', trigger: 'change' }],
   feeMethod: [{ required: true, message: '请选择收费方式', trigger: 'change' }],
-  lawyerFee: [{ required: true, message: '请输入代理费', trigger: 'blur' }]
+  lawyerFee: [],
+  suspectName: [{ required: true, message: '请输入犯罪嫌疑人', trigger: 'blur' }],
+  serviceStartDate: [{ required: true, message: '请选择合同服务开始时间', trigger: 'change' }],
+  serviceEndDate: [{ required: true, message: '请选择合同服务结束时间', trigger: 'change' }],
+  freeReason: [{ required: true, message: '请输入免费代理申请理由', trigger: 'blur' }],
+  riskRatio: []
 }
 
 // 预置数据
+const businessTypeOptions = {
+  CIVIL: ['婚姻家庭', '公司', '金融', '证券', '保险', '海事海商', '建设工程', '劳动', '知识产权', '破产与重组', '医疗纠纷', '其他'],
+  CRIMINAL: ['一般代理', '当事人自行委托', '法律援助', '法定通知辩护', '扩大通知辩护', '刑事附带民事诉讼'],
+  ADMINISTRATIVE: ['一般代理/应诉', '行政申诉'],
+  NON_LITIGATION: ['公司', '金融', '证券', '保险', '反垄断', '建设工程与房地产', '劳动', '知识产权', '税法', '海事海商', '环境资源与能源', '破产与重组', '其他', '代书与咨询'],
+  CONSULTANT: ['常年法律顾问', '专项法律顾问']
+}
+
+const trialStageOptions = {
+  CIVIL: ['仲裁', '一审', '二审', '执行', '再审', '重审一审', '重审二审', '特别程序', '破产程序'],
+  CRIMINAL: ['侦查', '审查起诉', '一审', '二审', '申诉', '再审', '重审一审', '重审二审'],
+  ADMINISTRATIVE: ['行政复议', '行政裁决', '一审', '二审', '执行', '再审', '重审一审', '重审二审']
+}
+
+const feeMethodOptions = {
+  CIVIL: ['固定收费', '风险收费', '基础+风险', '其他', '免费代理', '未确定'],
+  CRIMINAL: ['固定收费', '其他', '免费代理', '未确定'],
+  ADMINISTRATIVE: ['固定收费', '其他', '免费代理', '未确定'],
+  NON_LITIGATION: ['固定收费', '风险收费', '基础+风险', '其他', '免费代理', '未确定'],
+  CONSULTANT: ['固定收费', '风险收费', '基础+风险', '其他', '免费代理', '未确定']
+}
+
 const caseReasonIndex = {
   CIVIL: ['人格权纠纷', '婚姻家庭纠纷', '继承纠纷', '物权纠纷', '机动车交通事故责任纠纷', '医疗损害责任纠纷'],
-  COMMERCIAL: ['买卖合同纠纷', '借款合同纠纷', '建设工程施工合同纠纷', '公司决议纠纷', '股权转让纠纷', '票据追索权纠纷'],
-  ARBITRATION: ['买卖合同纠纷', '服务合同纠纷', '建设工程合同纠纷', '股权投资纠纷', '租赁合同纠纷'],
   CRIMINAL: ['诈骗罪', '合同诈骗罪', '职务侵占罪', '非法吸收公众存款罪', '故意伤害罪', '危险驾驶罪'],
   ADMINISTRATIVE: ['行政处罚纠纷', '行政许可纠纷', '行政强制纠纷', '政府信息公开纠纷', '行政赔偿纠纷'],
-  NON_LITIGATION: ['常年法律顾问', '专项法律服务', '尽职调查', '法律意见书', '合规审查', '破产重整专项']
+  NON_LITIGATION: ['专项法律服务', '尽职调查', '法律意见书', '合规审查', '破产重整专项'],
+  CONSULTANT: ['常年法律顾问', '专项法律顾问']
 }
 
 const currentReasonHints = computed(() => caseReasonIndex[formData.caseType] || [])
+const currentBusinessTypes = computed(() => businessTypeOptions[formData.caseType] || [])
+const currentTrialStages = computed(() => trialStageOptions[formData.caseType] || [])
+const currentFeeMethods = computed(() => feeMethodOptions[formData.caseType] || [])
+const showTrialStages = computed(() => ['CIVIL', 'CRIMINAL', 'ADMINISTRATIVE'].includes(formData.caseType))
+const showCourtFields = computed(() => ['CIVIL', 'CRIMINAL', 'ADMINISTRATIVE'].includes(formData.caseType))
+const showAgencyType = computed(() => formData.caseType === 'CRIMINAL' && formData.businessType === '刑事附带民事诉讼')
+const isRiskFee = computed(() => ['风险收费', '固定+风险', '基础+风险'].includes(formData.feeMethod))
 
-const commonTags = ref(['紧急', 'VIP客户', '群体性案件', '媒体关注', '复杂案件'])
+watch(() => formData.caseType, () => {
+  formData.businessType = ''
+  formData.trialStages = []
+  formData.feeMethod = ''
+  formData.agencyType = ''
+})
+
+watch(() => formData.feeMethod, () => {
+  if (!isRiskFee.value) {
+    formData.riskRatio = null
+    formData.riskFee = null
+  }
+  if (formData.feeMethod !== '免费代理') {
+    formData.freeReason = ''
+  }
+})
+
+const validateFilingBusinessRules = () => {
+  if (formData.caseType === 'CRIMINAL' && !formData.suspectName?.trim()) {
+    ElMessage.warning('刑事案件请填写犯罪嫌疑人')
+    return false
+  }
+  if (formData.caseType === 'CONSULTANT') {
+    if (!formData.serviceStartDate || !formData.serviceEndDate) {
+      ElMessage.warning('顾问案件请填写合同服务开始和结束时间')
+      return false
+    }
+    if (new Date(formData.serviceStartDate) > new Date(formData.serviceEndDate)) {
+      ElMessage.warning('合同服务开始时间不能晚于结束时间')
+      return false
+    }
+  }
+  if (showTrialStages.value && (!formData.trialStages || formData.trialStages.length === 0)) {
+    ElMessage.warning('请选择审级')
+    return false
+  }
+  if (['固定收费', '固定', '基础+风险', '固定+风险'].includes(formData.feeMethod)) {
+    if (!formData.lawyerFee || formData.lawyerFee <= 0) {
+      ElMessage.warning('固定收费或基础+风险案件请填写代理金额')
+      return false
+    }
+  }
+  if (isRiskFee.value) {
+    const hasRiskFee = formData.riskFee !== null && formData.riskFee !== undefined && Number(formData.riskFee) > 0
+    const hasRiskRatio = formData.riskRatio !== null && formData.riskRatio !== undefined && Number(formData.riskRatio) > 0
+    if (!hasRiskFee && !hasRiskRatio) {
+      ElMessage.warning('风险收费案件请填写风险费用或风险比例')
+      return false
+    }
+    if (hasRiskRatio && Number(formData.riskRatio) > 18) {
+      ElMessage.warning('请检查风险代理收费比例是否合规，风险比例不得超过18%')
+      return false
+    }
+  }
+  if (formData.feeMethod === '免费代理' && !formData.freeReason?.trim()) {
+    ElMessage.warning('免费代理案件请填写免费理由')
+    return false
+  }
+  const sourceRatio = Number(formData.allocation.sourceRatio || 0)
+  const departmentRatio = Number(formData.allocation.departmentRatio || 0)
+  const firmRatio = Number(formData.allocation.firmRatio || 0)
+  const total = sourceRatio + departmentRatio + firmRatio
+  if (total !== 100) {
+    ElMessage.warning('分配情况中：案源比例 + 部门比例 + 律所比例必须等于100%')
+    return false
+  }
+  return true
+}
+
+const commonTags = ref(['紧急', 'VIP客户', '法援', '涉黑恶', '无罪辩护', '重大疑难案件', '群体性案件', '媒体关注'])
 
 const lawyerList = ref([
   { id: 1, name: '张律师' },
@@ -1158,10 +1443,11 @@ const handleDeleteParty = (index) => {
 // 添加应收款
 const handleAddReceivable = () => {
   formData.receivables.push({
-    name: '',
     amount: null,
     dueDate: '',
-    remark: ''
+    invoiceNumber: '',
+    invoiceDate: '',
+    notes: ''
   })
 }
 
@@ -1244,6 +1530,9 @@ const handleSubmitApproval = async () => {
       ElMessage.warning('请至少添加一个当事人')
       return
     }
+    if (!validateFilingBusinessRules()) {
+      return
+    }
 
     const requestData = transformToRequest()
 
@@ -1286,15 +1575,39 @@ onMounted(async () => {
       formData.caseNumber = caseData.caseNumber || ''
       formData.caseReason = caseData.caseReason || ''
       formData.court = caseData.court || ''
+      formData.acceptanceDate = caseData.acceptanceDate || new Date().toISOString().slice(0, 10)
+      formData.suspectName = caseData.suspectName || ''
+      formData.subjectMatter = caseData.subjectMatter || ''
+      formData.businessType = caseData.businessType || ''
+      formData.agencyType = caseData.agencyType || ''
+      formData.serviceStartDate = caseData.serviceStartDate || ''
+      formData.serviceEndDate = caseData.serviceEndDate || ''
+      formData.trialStages = caseData.trialStages ? caseData.trialStages.split(',').filter(Boolean) : []
+      formData.courtCaseNumber = caseData.courtCaseNumber || ''
+      formData.hearingDate = caseData.hearingDate || ''
       formData.amount = caseData.amount || null
       formData.lawyerFee = caseData.attorneyFee || null
       const feeMethodReverseMap = {
         FIXED: '固定收费',
         CONTINGENT: '风险收费',
         BASE_PLUS_CONTINGENT: '基础+风险',
+        FIXED_PLUS_CONTINGENT: '基础+风险',
+        FREE: '免费代理',
+        UNDETERMINED: '未确定',
         OTHER: '其他'
       }
       formData.feeMethod = feeMethodReverseMap[caseData.feeMethod] || caseData.feeMethod || ''
+      formData.riskRatio = caseData.riskRatio || null
+      formData.riskFee = caseData.riskFee || null
+      formData.freeReason = caseData.freeReason || ''
+      formData.feeRemark = caseData.feeNotes || ''
+      if (caseData.allocationJson) {
+        try {
+          formData.allocation = JSON.parse(caseData.allocationJson)
+        } catch (error) {
+          console.warn('分配情况解析失败:', error)
+        }
+      }
       formData.filingDate = caseData.filingDate || null
       formData.deadlineDate = caseData.deadlineDate || null
       formData.summary = caseData.summary || ''

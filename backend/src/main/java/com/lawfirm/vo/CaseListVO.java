@@ -76,6 +76,18 @@ public class CaseListVO {
      */
     private String court;
 
+    private LocalDate acceptanceDate;
+
+    private String businessType;
+
+    private String suspectName;
+
+    private String subjectMatter;
+
+    private String courtCaseNumber;
+
+    private LocalDate hearingDate;
+
     /**
      * 主办律师ID
      */

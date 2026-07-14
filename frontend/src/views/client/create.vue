@@ -14,27 +14,135 @@
         ref="formRef"
         :model="formData"
         :rules="formRules"
-        label-width="120px"
+        label-width="132px"
         class="client-form"
       >
-        <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>基本信息</h3>
+            <h3>客户基础信息</h3>
           </div>
 
           <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="客户类型" prop="type">
-                <el-radio-group v-model="formData.type" @change="handleTypeChange">
-                  <el-radio value="personal">个人</el-radio>
-                  <el-radio value="company">企业</el-radio>
+            <el-col :span="8">
+              <el-form-item label="客户类型" prop="clientType">
+                <el-select v-model="formData.clientType" placeholder="请选择客户类型" style="width: 100%" @change="handleTypeChange">
+                  <el-option v-for="item in clientTypeOptions" :key="item" :label="item" :value="item" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="8">
+              <el-form-item label="客户与律所关系" prop="clientRelationship">
+                <el-select v-model="formData.clientRelationship" placeholder="请选择关系" style="width: 100%">
+                  <el-option v-for="item in relationshipOptions" :key="item" :label="item" :value="item" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="8">
+              <el-form-item label="客户角色" prop="clientRole">
+                <el-select v-model="formData.clientRole" placeholder="请选择客户角色" style="width: 100%">
+                  <el-option v-for="item in clientRoleOptions" :key="item" :label="item" :value="item" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-form-item label="客户名称" prop="clientName">
+            <el-input
+              v-model="formData.clientName"
+              placeholder="请输入客户名称"
+              maxlength="100"
+              show-word-limit
+            />
+          </el-form-item>
+
+          <el-row :gutter="20">
+            <el-col :span="8" v-if="isIndividual">
+              <el-form-item label="性别" prop="gender">
+                <el-radio-group v-model="formData.gender">
+                  <el-radio value="男">男</el-radio>
+                  <el-radio value="女">女</el-radio>
                 </el-radio-group>
               </el-form-item>
             </el-col>
 
-            <el-col :span="12">
-              <el-form-item label="所属部门" prop="departmentId">
+            <el-col :span="8" v-if="isIndividual">
+              <el-form-item label="民族" prop="ethnicity">
+                <el-input v-model="formData.ethnicity" placeholder="请输入民族" maxlength="30" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="8" v-if="isIndividual">
+              <el-form-item label="身份证号码" prop="idCard">
+                <el-input v-model="formData.idCard" placeholder="个人客户必填" maxlength="18" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-row :gutter="20" v-if="!isIndividual">
+            <el-col :span="8">
+              <el-form-item label="统一社会信用代码" prop="creditCode">
+                <el-input v-model="formData.creditCode" placeholder="请输入统一社会信用代码" maxlength="18" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="8">
+              <el-form-item label="法人姓名" prop="legalRepresentative">
+                <el-input v-model="formData.legalRepresentative" placeholder="请输入法人姓名" maxlength="50" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="8">
+              <el-form-item label="法人身份证号码" prop="legalRepresentativeIdCard">
+                <el-input v-model="formData.legalRepresentativeIdCard" placeholder="请输入法人身份证号码" maxlength="18" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-row :gutter="20">
+            <el-col :span="8">
+              <el-form-item label="联系人" prop="contactPerson">
+                <el-input v-model="formData.contactPerson" placeholder="请输入联系人" maxlength="50" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="8">
+              <el-form-item label="联系电话" prop="phone">
+                <el-input v-model="formData.phone" placeholder="手机号、固话或区号+固话" maxlength="24" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="8">
+              <el-form-item label="微信号" prop="wechat">
+                <el-input v-model="formData.wechat" placeholder="请输入微信号" maxlength="50" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-row :gutter="20">
+            <el-col :span="8">
+              <el-form-item label="邮箱" prop="email">
+                <el-input v-model="formData.email" placeholder="请输入邮箱地址" maxlength="100" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="16">
+              <el-form-item label="地址" prop="address">
+                <el-input v-model="formData.address" placeholder="请输入联系地址" maxlength="200" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </div>
+
+        <div class="form-section">
+          <div class="section-header">
+            <h3>归属信息</h3>
+          </div>
+
+          <el-row :gutter="20">
+            <el-col :span="8">
+              <el-form-item label="客户所属部门" prop="departmentId">
                 <el-select
                   v-model="formData.departmentId"
                   placeholder="请选择所属部门"
@@ -51,82 +159,79 @@
                 </el-select>
               </el-form-item>
             </el-col>
-          </el-row>
 
-          <el-form-item :label="formData.type === 'personal' ? '姓名' : '企业名称'" prop="name">
-            <el-input
-              v-model="formData.name"
-              :placeholder="formData.type === 'personal' ? '请输入客户姓名' : '请输入企业名称'"
-              maxlength="100"
-              show-word-limit
-            />
-          </el-form-item>
-
-          <el-row :gutter="20" v-if="formData.type === 'personal'">
-            <el-col :span="12">
-              <el-form-item label="性别" prop="gender">
-                <el-radio-group v-model="formData.gender">
-                  <el-radio value="男">男</el-radio>
-                  <el-radio value="女">女</el-radio>
-                </el-radio-group>
+            <el-col :span="8">
+              <el-form-item label="案源人" prop="sourceUserIds">
+                <el-select
+                  v-model="formData.sourceUserIds"
+                  multiple
+                  filterable
+                  collapse-tags
+                  placeholder="请选择案源人"
+                  style="width: 100%"
+                >
+                  <el-option v-for="user in userOptions" :key="user.id" :label="user.realName" :value="user.id" />
+                </el-select>
               </el-form-item>
             </el-col>
 
-            <el-col :span="12">
-              <el-form-item label="身份证号" prop="idCard">
-                <el-input
-                  v-model="formData.idCard"
-                  placeholder="请输入身份证号"
-                  maxlength="18"
-                />
+            <el-col :span="8">
+              <el-form-item label="客户所属人" prop="clientOwnerIds">
+                <el-select
+                  v-model="formData.clientOwnerIds"
+                  multiple
+                  filterable
+                  collapse-tags
+                  placeholder="请选择所属人"
+                  style="width: 100%"
+                >
+                  <el-option v-for="user in userOptions" :key="user.id" :label="user.realName" :value="user.id" />
+                </el-select>
               </el-form-item>
             </el-col>
           </el-row>
+        </div>
 
-          <el-form-item label="统一社会信用代码" prop="creditCode" v-if="formData.type === 'company'">
-            <el-input
-              v-model="formData.creditCode"
-              placeholder="请输入统一社会信用代码"
-              maxlength="18"
-            />
-          </el-form-item>
+        <div class="form-section">
+          <div class="section-header">
+            <h3>开票与补充信息</h3>
+          </div>
 
           <el-row :gutter="20">
             <el-col :span="12">
-              <el-form-item label="联系电话" prop="phone">
-                <el-input
-                  v-model="formData.phone"
-                  placeholder="请输入手机号或区号+固话"
-                  maxlength="20"
-                />
+              <el-form-item label="购方名称" prop="invoiceTitle">
+                <el-input v-model="formData.invoiceTitle" placeholder="请输入购方名称" maxlength="100" />
               </el-form-item>
             </el-col>
 
             <el-col :span="12">
-              <el-form-item label="邮箱" prop="email">
-                <el-input
-                  v-model="formData.email"
-                  placeholder="请输入邮箱地址"
-                  maxlength="100"
-                />
+              <el-form-item label="税号" prop="invoiceTaxNo">
+                <el-input v-model="formData.invoiceTaxNo" placeholder="请输入税号" maxlength="50" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="12">
+              <el-form-item label="地址和电话" prop="invoiceAddressPhone">
+                <el-input v-model="formData.invoiceAddressPhone" placeholder="请输入开票地址和电话" maxlength="200" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="12">
+              <el-form-item label="开户行及账号" prop="invoiceBankAccount">
+                <el-input v-model="formData.invoiceBankAccount" placeholder="请输入开户行及账号" maxlength="200" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="12">
+              <el-form-item label="对方代理律师" prop="opposingLawyer">
+                <el-input v-model="formData.opposingLawyer" placeholder="请输入对方代理律师" maxlength="100" />
               </el-form-item>
             </el-col>
           </el-row>
 
-          <el-form-item label="联系地址" prop="address">
+          <el-form-item label="备注" prop="notes">
             <el-input
-              v-model="formData.address"
-              type="textarea"
-              :rows="3"
-              placeholder="请输入联系地址"
-              maxlength="200"
-              show-word-limit
-            />
-          </el-form-item>
-
-          <el-form-item label="备注" prop="remark">
-            <el-input
-              v-model="formData.remark"
+              v-model="formData.notes"
               type="textarea"
               :rows="4"
               placeholder="请输入备注信息"
@@ -143,79 +248,144 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
-import { createClient, getClientDetail, updateClient } from '@/api/client'
+import { createClient, getClientDetail, updateClient, previewConflictCheck } from '@/api/client'
 import { getDepartmentList } from '@/api/department'
+import { getUserList } from '@/api/user'
 
 const router = useRouter()
 const route = useRoute()
 const formRef = ref(null)
 const submitting = ref(false)
 const isEdit = computed(() => Boolean(route.params.id))
+const isIndividual = computed(() => formData.clientType === '个人')
+const isPrincipalClient = computed(() => formData.clientRelationship === '委托人')
+
+const clientTypeOptions = ['个人', '企业', '金融机构', '事业单位', '党政机关', '社会团体', '其他']
+const relationshipOptions = ['委托人', '当事人', '对方当事人', '顾问单位', '关联企业', '股东', '法定代表人']
+const clientRoleOptions = ['原告', '被告', '第三人', '共同被告', '共同原告', '申请人', '被申请人', '上诉人', '被上诉人', '管理人', '债权人']
 
 const formData = reactive({
-  type: 'personal',
+  clientType: '个人',
+  clientRelationship: '委托人',
+  clientRole: '',
   departmentId: null,
-  name: '',
+  sourceUserIds: [],
+  clientOwnerIds: [],
+  clientName: '',
   gender: '男',
+  ethnicity: '',
   idCard: '',
   creditCode: '',
+  contactPerson: '',
   phone: '',
   email: '',
+  wechat: '',
   address: '',
-  remark: ''
+  legalRepresentative: '',
+  legalRepresentativeIdCard: '',
+  invoiceTitle: '',
+  invoiceTaxNo: '',
+  invoiceAddressPhone: '',
+  invoiceBankAccount: '',
+  opposingLawyer: '',
+  notes: ''
 })
-const departmentOptions = ref([])
 
-// 表单校验规则
+const departmentOptions = ref([])
+const userOptions = ref([])
+
+const validateIdCardWhenIndividual = (_rule, value, callback) => {
+  if (!isIndividual.value) {
+    callback()
+    return
+  }
+  if (!value) {
+    callback(new Error('个人客户必须填写身份证号码'))
+    return
+  }
+  if (!/(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/.test(value)) {
+    callback(new Error('请输入正确的身份证号码'))
+    return
+  }
+  callback()
+}
+
+const validatePrincipalRequired = (message) => (_rule, value, callback) => {
+  if (!isPrincipalClient.value) {
+    callback()
+    return
+  }
+  if (Array.isArray(value) ? value.length === 0 : !value) {
+    callback(new Error(message))
+    return
+  }
+  callback()
+}
+
 const formRules = {
-  type: [{ required: true, message: '请选择客户类型', trigger: 'change' }],
-  departmentId: [{ required: true, message: '请选择所属部门', trigger: 'change' }],
-  name: [
-    { required: true, message: '请输入客户姓名', trigger: 'blur' },
+  clientType: [{ required: true, message: '请选择客户类型', trigger: 'change' }],
+  clientRelationship: [{ required: true, message: '请选择客户与律所关系', trigger: 'change' }],
+  clientRole: [{ required: true, message: '请选择客户角色', trigger: 'change' }],
+  clientName: [
+    { required: true, message: '请输入客户名称', trigger: 'blur' },
     { min: 2, max: 100, message: '长度在 2 到 100 个字符', trigger: 'blur' }
   ],
+  departmentId: [{ validator: validatePrincipalRequired('委托人客户必须选择客户所属部门'), trigger: 'change' }],
+  sourceUserIds: [{ validator: validatePrincipalRequired('委托人客户必须选择案源人'), trigger: 'change' }],
+  clientOwnerIds: [{ validator: validatePrincipalRequired('委托人客户必须选择客户所属人'), trigger: 'change' }],
   phone: [
-    { required: true, message: '请输入联系电话', trigger: 'blur' },
     {
-      pattern: /^(1[3-9]\d{9}|0\d{2,3}-?\d{7,8})(-\d{1,6})?$/,
-      message: '请输入正确的手机号或区号+固话',
+      pattern: /^(1[3-9]\d{9}|0\d{2,3}-?\d{7,8}|0\d{2,3}\d{7,8})(-\d{1,6})?$/,
+      message: '请输入正确的手机号、固话或区号+固话',
       trigger: 'blur'
     }
   ],
   email: [
     { pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: '请输入正确的邮箱地址', trigger: 'blur' }
   ],
-  idCard: [
-    { pattern: /(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/, message: '请输入正确的身份证号码', trigger: 'blur' }
-  ],
+  idCard: [{ validator: validateIdCardWhenIndividual, trigger: 'blur' }],
   creditCode: [
     { pattern: /^[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10}$/, message: '请输入正确的统一社会信用代码', trigger: 'blur' }
+  ],
+  legalRepresentativeIdCard: [
+    { pattern: /(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/, message: '请输入正确的身份证号码', trigger: 'blur' }
   ]
 }
 
-const toBackendClientType = (type) => {
-  if (type === 'company' || type === '企业') return '企业'
-  return '个人'
-}
-
-const toFormClientType = (type) => {
-  if (type === '企业' || type === 'company') return 'company'
-  return 'personal'
+const idsToString = (ids) => (ids || []).join(',')
+const stringToIds = (value) => {
+  if (!value) return []
+  return String(value).split(',').map(item => Number(item)).filter(Boolean)
 }
 
 const buildPayload = () => ({
-  clientType: toBackendClientType(formData.type),
-  clientName: formData.name,
-  gender: formData.type === 'personal' ? formData.gender : '',
-  idCard: formData.type === 'personal' ? formData.idCard : '',
-  creditCode: formData.type === 'company' ? formData.creditCode : '',
+  clientType: formData.clientType,
+  clientRelationship: formData.clientRelationship,
+  clientRole: formData.clientRole,
+  clientName: formData.clientName,
+  gender: isIndividual.value ? formData.gender : '',
+  ethnicity: isIndividual.value ? formData.ethnicity : '',
+  idCard: isIndividual.value ? formData.idCard : '',
+  creditCode: !isIndividual.value ? formData.creditCode : '',
+  contactPerson: formData.contactPerson,
   phone: formData.phone,
   email: formData.email,
+  wechat: formData.wechat,
   address: formData.address,
-  notes: formData.remark,
+  legalRepresentative: !isIndividual.value ? formData.legalRepresentative : '',
+  legalRepresentativeIdCard: !isIndividual.value ? formData.legalRepresentativeIdCard : '',
+  invoiceTitle: formData.invoiceTitle,
+  invoiceTaxNo: formData.invoiceTaxNo,
+  invoiceAddressPhone: formData.invoiceAddressPhone,
+  invoiceBankAccount: formData.invoiceBankAccount,
+  opposingLawyer: formData.opposingLawyer,
+  notes: formData.notes,
   departmentId: formData.departmentId,
+  sourceUserIds: idsToString(formData.sourceUserIds),
+  clientOwnerIds: idsToString(formData.clientOwnerIds),
+  ownerId: formData.clientOwnerIds[0] || null,
   status: 'ACTIVE'
 })
 
@@ -229,40 +399,98 @@ const loadDepartments = async () => {
   }
 }
 
+const loadUsers = async () => {
+  try {
+    const response = await getUserList({ page: 0, size: 200, status: 1 })
+    userOptions.value = response.data?.content || response.data || []
+  } catch (error) {
+    console.error('加载人员列表失败:', error)
+    ElMessage.error('加载人员列表失败')
+  }
+}
+
 const loadClient = async () => {
   if (!isEdit.value) return
 
   try {
     const response = await getClientDetail(route.params.id)
     const client = response.data || {}
-    formData.type = toFormClientType(client.clientType)
+    formData.clientType = client.clientType || '个人'
+    formData.clientRelationship = client.clientRelationship || '委托人'
+    formData.clientRole = client.clientRole || ''
     formData.departmentId = client.departmentId || null
-    formData.name = client.clientName || ''
+    formData.sourceUserIds = stringToIds(client.sourceUserIds)
+    formData.clientOwnerIds = stringToIds(client.clientOwnerIds || client.ownerId)
+    formData.clientName = client.clientName || ''
     formData.gender = client.gender || '男'
+    formData.ethnicity = client.ethnicity || ''
     formData.idCard = client.idCard || ''
     formData.creditCode = client.creditCode || ''
+    formData.contactPerson = client.contactPerson || ''
     formData.phone = client.phone || ''
     formData.email = client.email || ''
+    formData.wechat = client.wechat || ''
     formData.address = client.address || ''
-    formData.remark = client.notes || ''
+    formData.legalRepresentative = client.legalRepresentative || ''
+    formData.legalRepresentativeIdCard = client.legalRepresentativeIdCard || ''
+    formData.invoiceTitle = client.invoiceTitle || ''
+    formData.invoiceTaxNo = client.invoiceTaxNo || ''
+    formData.invoiceAddressPhone = client.invoiceAddressPhone || ''
+    formData.invoiceBankAccount = client.invoiceBankAccount || ''
+    formData.opposingLawyer = client.opposingLawyer || ''
+    formData.notes = client.notes || ''
   } catch (error) {
     console.error('加载客户信息失败:', error)
     ElMessage.error('加载客户信息失败')
   }
 }
 
-// 客户类型切换
-const handleTypeChange = (type) => {
-  // 清空特定类型的字段
-  if (type === 'personal') {
+const handleTypeChange = () => {
+  if (isIndividual.value) {
     formData.creditCode = ''
+    formData.legalRepresentative = ''
+    formData.legalRepresentativeIdCard = ''
   } else {
     formData.gender = '男'
+    formData.ethnicity = ''
     formData.idCard = ''
   }
 }
 
-// 提交表单
+const runConflictPreview = async (payload) => {
+  if (isEdit.value) return true
+
+  const response = await previewConflictCheck(payload)
+  if (!response.success || !response.data) return true
+  const result = response.data
+
+  if (result.conflictLevel === 'DIRECT') {
+    ElMessageBox.alert(result.conflictDescription || '存在直接利益冲突，请停止建档并提交行政管理审查。', '利益冲突提示', {
+      type: 'error',
+      confirmButtonText: '知道了'
+    })
+    return false
+  }
+
+  if (result.conflictLevel === 'SIMILAR') {
+    await ElMessageBox.confirm(
+      result.conflictDescription || '发现高度相似客户，请核实客户名称是否正确。是否继续新增？',
+      '客户名称核实',
+      {
+        type: 'warning',
+        confirmButtonText: '继续新增',
+        cancelButtonText: '返回修改'
+      }
+    )
+  }
+
+  if (result.conflictLevel === 'EXISTING' && result.conflictDescription) {
+    ElMessage.warning(result.conflictDescription)
+  }
+
+  return true
+}
+
 const handleSubmit = async () => {
   if (!formRef.value) return
 
@@ -271,6 +499,9 @@ const handleSubmit = async () => {
     submitting.value = true
 
     const payload = buildPayload()
+    const canContinue = await runConflictPreview(payload)
+    if (!canContinue) return
+
     const response = isEdit.value
       ? await updateClient(route.params.id, payload)
       : await createClient(payload)
@@ -282,7 +513,7 @@ const handleSubmit = async () => {
       ElMessage.error(response.message || (isEdit.value ? '客户更新失败' : '客户创建失败'))
     }
   } catch (error) {
-    if (error !== false) { // 排除表单验证失败
+    if (error !== false && error !== 'cancel') {
       console.error(isEdit.value ? '客户更新失败:' : '客户创建失败:', error)
       ElMessage.error(isEdit.value ? '客户更新失败，请稍后重试' : '客户创建失败，请稍后重试')
     }
@@ -291,13 +522,13 @@ const handleSubmit = async () => {
   }
 }
 
-// 取消
 const handleCancel = () => {
   router.back()
 }
 
 onMounted(() => {
   loadDepartments()
+  loadUsers()
   loadClient()
 })
 </script>
@@ -305,27 +536,31 @@ onMounted(() => {
 <style scoped lang="scss">
 .client-create {
   .create-container {
-    max-width: 900px;
+    max-width: 1120px;
     margin: 0 auto;
     padding: 20px;
   }
 
   .client-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+
     .form-section {
       background: #fff;
-      padding: 30px;
-      border-radius: 4px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      padding: 24px;
+      border: 1px solid #ebeef5;
+      border-radius: 8px;
 
       .section-header {
-        margin-bottom: 30px;
-        padding-bottom: 15px;
+        margin-bottom: 24px;
+        padding-bottom: 12px;
         border-bottom: 1px solid #ebeef5;
 
         h3 {
           margin: 0;
           font-size: 16px;
-          font-weight: 500;
+          font-weight: 600;
           color: #303133;
         }
       }

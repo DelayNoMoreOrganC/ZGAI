@@ -17,7 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -40,27 +43,14 @@ public class ClientService {
      */
     @Transactional
     public ClientDTO createClient(ClientDTO dto, Long userId) {
-        // 检查客户是否已存在
-        if (clientRepository.existsByClientNameAndDeletedIsFalse(dto.getClientName())) {
-            throw new IllegalArgumentException("客户已存在");
-        }
+        validateClientBeforeSave(dto, null);
 
         Client client = new Client();
-        client.setClientType(dto.getClientType());
-        client.setClientName(dto.getClientName());
-        client.setGender(dto.getGender());
-        client.setIdCard(dto.getIdCard());
-        client.setCreditCode(dto.getCreditCode());
-        client.setPhone(dto.getPhone());
-        client.setEmail(dto.getEmail());
-        client.setAddress(dto.getAddress());
-        client.setLegalRepresentative(dto.getLegalRepresentative());
-        client.setIndustry(dto.getIndustry());
-        client.setStatus(dto.getStatus() != null ? dto.getStatus() : "ACTIVE");
-        client.setSource(dto.getSource());
-        client.setNotes(dto.getNotes());
-        client.setDepartmentId(dto.getDepartmentId());
+        applyClientFields(client, dto);
         client.setOwnerId(dto.getOwnerId() != null ? dto.getOwnerId() : userId);
+        if (!StringUtils.hasText(client.getClientOwnerIds()) && client.getOwnerId() != null) {
+            client.setClientOwnerIds(String.valueOf(client.getOwnerId()));
+        }
 
         client = clientRepository.save(client);
         log.info("创建客户成功: {}", client.getId());
@@ -76,20 +66,8 @@ public class ClientService {
         Client client = clientRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("客户不存在"));
 
-        client.setClientType(dto.getClientType());
-        client.setClientName(dto.getClientName());
-        client.setGender(dto.getGender());
-        client.setIdCard(dto.getIdCard());
-        client.setCreditCode(dto.getCreditCode());
-        client.setPhone(dto.getPhone());
-        client.setEmail(dto.getEmail());
-        client.setAddress(dto.getAddress());
-        client.setLegalRepresentative(dto.getLegalRepresentative());
-        client.setIndustry(dto.getIndustry());
-        client.setStatus(dto.getStatus() != null ? dto.getStatus() : client.getStatus());
-        client.setSource(dto.getSource());
-        client.setNotes(dto.getNotes());
-        client.setDepartmentId(dto.getDepartmentId());
+        validateClientBeforeSave(dto, id);
+        applyClientFields(client, dto);
         client.setOwnerId(dto.getOwnerId() != null ? dto.getOwnerId() : client.getOwnerId());
 
         client = clientRepository.save(client);
@@ -202,23 +180,79 @@ public class ClientService {
      * 利益冲突检索
      */
     public ClientDTO checkConflict(Long clientId) {
-        ClientDTO dto = getClientById(clientId);
+        Client client = clientRepository.findById(clientId)
+                .orElseThrow(() -> new IllegalArgumentException("客户不存在"));
+        return checkConflictPreview(convertToDTO(client), clientId);
+    }
 
-        // 检查是否存在利益冲突（案件中对立方）
-        List<Case> allCases = caseRepository.findAll();
-        List<Long> conflictCaseIds = allCases.stream()
-                .filter(c -> {
-                    // 如果客户参与了案件，检查案件的对方当事人
-                    // 这里简化处理，实际应该检查Party表
-                    return false;
-                })
-                .map(Case::getId)
+    /**
+     * 客户建档前利益冲突预检。
+     */
+    public ClientDTO checkConflictPreview(ClientDTO dto) {
+        return checkConflictPreview(dto, null);
+    }
+
+    private ClientDTO checkConflictPreview(ClientDTO dto, Long excludedClientId) {
+        ClientDTO result = new ClientDTO();
+        result.setClientName(dto.getClientName());
+        result.setClientType(dto.getClientType());
+        result.setClientRelationship(dto.getClientRelationship());
+        result.setClientRole(dto.getClientRole());
+        result.setIdCard(dto.getIdCard());
+        result.setHasConflict(false);
+        result.setConflictLevel("NONE");
+        result.setConflictCaseIds(new ArrayList<>());
+        result.setSimilarClientNames(new ArrayList<>());
+
+        if (!StringUtils.hasText(dto.getClientName())) {
+            return result;
+        }
+
+        List<Client> clients = clientRepository.findByDeletedFalse().stream()
+                .filter(c -> excludedClientId == null || !excludedClientId.equals(c.getId()))
                 .collect(Collectors.toList());
 
-        dto.setHasConflict(!conflictCaseIds.isEmpty());
-        dto.setConflictCaseIds(conflictCaseIds);
+        List<Client> exactMatches = clients.stream()
+                .filter(c -> dto.getClientName().equals(c.getClientName()))
+                .collect(Collectors.toList());
 
-        return dto;
+        for (Client existing : exactMatches) {
+            if (isOpposingRole(dto.getClientRole(), existing.getClientRole())) {
+                result.setHasConflict(true);
+                result.setConflictLevel("DIRECT");
+                result.setConflictDescription("存在直接利益冲突：客户库中已存在相同客户名称，且既有客户角色为“"
+                        + nullToBlank(existing.getClientRole()) + "”，本次拟录入角色为“"
+                        + nullToBlank(dto.getClientRole()) + "”。请停止建档并由行政管理进行利冲审查。");
+                result.getConflictCaseIds().addAll(findCaseIdsByPartyName(dto.getClientName()));
+                return result;
+            }
+        }
+
+        if (!exactMatches.isEmpty()) {
+            Client existing = exactMatches.get(0);
+            result.setConflictLevel("EXISTING");
+            result.setConflictDescription("此客户已存在，客户所属人为“"
+                    + resolveUserNames(existing.getClientOwnerIds(), existing.getOwnerId()) + "”，所属部门为“"
+                    + resolveDepartmentName(existing.getDepartmentId()) + "”。未发现直接利益冲突。");
+        }
+
+        String normalized = normalizeClientName(dto.getClientName());
+        List<String> similarNames = clients.stream()
+                .filter(c -> !dto.getClientName().equals(c.getClientName()))
+                .filter(c -> isSimilarName(normalized, normalizeClientName(c.getClientName())))
+                .map(Client::getClientName)
+                .distinct()
+                .limit(5)
+                .collect(Collectors.toList());
+
+        if (!similarNames.isEmpty() && !"EXISTING".equals(result.getConflictLevel())) {
+            result.setConflictLevel("SIMILAR");
+            result.setSimilarClientNames(similarNames);
+            result.setConflictDescription("发现高度相似客户：" + String.join("、", similarNames)
+                    + "。请再次核实客户名称是否正确；核实后可继续新增。");
+        }
+
+        return result;
     }
 
     /**
@@ -231,6 +265,146 @@ public class ClientService {
         return text.toLowerCase().contains(keyword.toLowerCase());
     }
 
+    private void validateClientBeforeSave(ClientDTO dto, Long currentClientId) {
+        if ("个人".equals(dto.getClientType()) && !StringUtils.hasText(dto.getIdCard())) {
+            throw new IllegalArgumentException("个人客户必须填写身份证号码");
+        }
+        if ("委托人".equals(dto.getClientRelationship())) {
+            if (dto.getDepartmentId() == null) {
+                throw new IllegalArgumentException("委托人客户必须选择客户所属部门");
+            }
+            if (!StringUtils.hasText(dto.getSourceUserIds())) {
+                throw new IllegalArgumentException("委托人客户必须选择案源人");
+            }
+            if (!StringUtils.hasText(dto.getClientOwnerIds())) {
+                throw new IllegalArgumentException("委托人客户必须选择客户所属人");
+            }
+        }
+
+        if ("个人".equals(dto.getClientType())) {
+            if (StringUtils.hasText(dto.getIdCard())) {
+                clientRepository.findByIdCardAndDeletedFalse(dto.getIdCard())
+                        .filter(c -> currentClientId == null || !currentClientId.equals(c.getId()))
+                        .ifPresent(c -> {
+                            throw new IllegalArgumentException("身份证号码已存在，疑似同一客户");
+                        });
+            }
+            return;
+        }
+
+        List<Client> sameNameClients = clientRepository.findAllByClientNameAndDeletedFalse(dto.getClientName()).stream()
+                .filter(c -> currentClientId == null || !currentClientId.equals(c.getId()))
+                .collect(Collectors.toList());
+        if (!sameNameClients.isEmpty()) {
+            throw new IllegalArgumentException("客户已存在");
+        }
+    }
+
+    private void applyClientFields(Client client, ClientDTO dto) {
+        client.setClientType(dto.getClientType());
+        client.setClientName(dto.getClientName());
+        client.setClientRelationship(dto.getClientRelationship());
+        client.setClientRole(dto.getClientRole());
+        client.setGender(dto.getGender());
+        client.setEthnicity(dto.getEthnicity());
+        client.setIdCard(dto.getIdCard());
+        client.setCreditCode(dto.getCreditCode());
+        client.setPhone(dto.getPhone());
+        client.setEmail(dto.getEmail());
+        client.setAddress(dto.getAddress());
+        client.setContactPerson(dto.getContactPerson());
+        client.setWechat(dto.getWechat());
+        client.setLegalRepresentative(dto.getLegalRepresentative());
+        client.setLegalRepresentativeIdCard(dto.getLegalRepresentativeIdCard());
+        client.setInvoiceTitle(dto.getInvoiceTitle());
+        client.setInvoiceTaxNo(dto.getInvoiceTaxNo());
+        client.setInvoiceAddressPhone(dto.getInvoiceAddressPhone());
+        client.setInvoiceBankAccount(dto.getInvoiceBankAccount());
+        client.setOpposingLawyer(dto.getOpposingLawyer());
+        client.setIndustry(dto.getIndustry());
+        client.setStatus(dto.getStatus() != null ? dto.getStatus() : "ACTIVE");
+        client.setSource(dto.getSource());
+        client.setNotes(dto.getNotes());
+        client.setDepartmentId(dto.getDepartmentId());
+        client.setSourceUserIds(dto.getSourceUserIds());
+        client.setClientOwnerIds(dto.getClientOwnerIds());
+    }
+
+    private List<Long> findCaseIdsByPartyName(String clientName) {
+        return partyRepository.findByNameAndDeletedFalse(clientName).stream()
+                .map(com.lawfirm.entity.Party::getCaseId)
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private boolean isOpposingRole(String newRole, String existingRole) {
+        if (!StringUtils.hasText(newRole) || !StringUtils.hasText(existingRole)) {
+            return false;
+        }
+        Set<String> plaintiffSide = new HashSet<>(Arrays.asList("原告", "共同原告", "申请人", "上诉人", "债权人"));
+        Set<String> defendantSide = new HashSet<>(Arrays.asList("被告", "共同被告", "被申请人", "被上诉人"));
+        return (plaintiffSide.contains(newRole) && defendantSide.contains(existingRole))
+                || (defendantSide.contains(newRole) && plaintiffSide.contains(existingRole));
+    }
+
+    private String normalizeClientName(String name) {
+        if (!StringUtils.hasText(name)) {
+            return "";
+        }
+        return name.replaceAll("[\\s（）()·,，。.-]", "")
+                .replace("广东省", "")
+                .replace("广东", "")
+                .replace("佛山市", "佛山")
+                .replace("广州市", "广州")
+                .replace("深圳市", "深圳")
+                .replace("有限责任公司", "")
+                .replace("股份有限公司", "")
+                .replace("有限公司", "")
+                .replace("公司", "")
+                .replace("律所", "")
+                .toLowerCase();
+    }
+
+    private boolean isSimilarName(String left, String right) {
+        if (!StringUtils.hasText(left) || !StringUtils.hasText(right)) {
+            return false;
+        }
+        if (left.equals(right)) {
+            return true;
+        }
+        return left.length() >= 4 && right.length() >= 4 && (left.contains(right) || right.contains(left));
+    }
+
+    private String resolveDepartmentName(Long departmentId) {
+        if (departmentId == null) {
+            return "未设置";
+        }
+        return departmentRepository.findById(departmentId).map(d -> d.getDeptName()).orElse("未设置");
+    }
+
+    private String resolveUserNames(String userIds, Long fallbackUserId) {
+        String ids = StringUtils.hasText(userIds) ? userIds : (fallbackUserId == null ? "" : String.valueOf(fallbackUserId));
+        List<String> names = parseIds(ids).stream()
+                .map(id -> userRepository.findById(id).map(u -> u.getRealName()).orElse(String.valueOf(id)))
+                .collect(Collectors.toList());
+        return names.isEmpty() ? "未设置" : String.join("、", names);
+    }
+
+    private List<Long> parseIds(String ids) {
+        if (!StringUtils.hasText(ids)) {
+            return new ArrayList<>();
+        }
+        return Arrays.stream(ids.split(","))
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .map(Long::valueOf)
+                .collect(Collectors.toList());
+    }
+
+    private String nullToBlank(String value) {
+        return value == null ? "" : value;
+    }
+
     /**
      * 转换为DTO
      */
@@ -239,19 +413,32 @@ public class ClientService {
         dto.setId(client.getId());
         dto.setClientType(client.getClientType());
         dto.setClientName(client.getClientName());
+        dto.setClientRelationship(client.getClientRelationship());
+        dto.setClientRole(client.getClientRole());
         dto.setGender(client.getGender());
+        dto.setEthnicity(client.getEthnicity());
         dto.setIdCard(client.getIdCard());
         dto.setCreditCode(client.getCreditCode());
         dto.setPhone(client.getPhone());
         dto.setEmail(client.getEmail());
         dto.setAddress(client.getAddress());
+        dto.setContactPerson(client.getContactPerson());
+        dto.setWechat(client.getWechat());
         dto.setLegalRepresentative(client.getLegalRepresentative());
+        dto.setLegalRepresentativeIdCard(client.getLegalRepresentativeIdCard());
+        dto.setInvoiceTitle(client.getInvoiceTitle());
+        dto.setInvoiceTaxNo(client.getInvoiceTaxNo());
+        dto.setInvoiceAddressPhone(client.getInvoiceAddressPhone());
+        dto.setInvoiceBankAccount(client.getInvoiceBankAccount());
+        dto.setOpposingLawyer(client.getOpposingLawyer());
         dto.setIndustry(client.getIndustry());
         dto.setStatus(client.getStatus());
         dto.setSource(client.getSource());
         dto.setNotes(client.getNotes());
         dto.setDepartmentId(client.getDepartmentId());
         dto.setOwnerId(client.getOwnerId());
+        dto.setSourceUserIds(client.getSourceUserIds());
+        dto.setClientOwnerIds(client.getClientOwnerIds());
         dto.setCreatedAt(client.getCreatedAt());
         dto.setUpdatedAt(client.getUpdatedAt());
 
@@ -264,6 +451,8 @@ public class ClientService {
         if (client.getOwnerId() != null) {
             userRepository.findById(client.getOwnerId()).ifPresent(u -> dto.setOwnerName(u.getRealName()));
         }
+        dto.setSourceUserNames(resolveUserNames(client.getSourceUserIds(), null));
+        dto.setClientOwnerNames(resolveUserNames(client.getClientOwnerIds(), client.getOwnerId()));
 
         // 当前系统通过案件当事人姓名关联客户和案件。
         List<com.lawfirm.entity.Party> parties = partyRepository.findByNameAndDeletedFalse(client.getClientName());

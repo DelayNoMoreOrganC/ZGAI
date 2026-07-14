@@ -57,6 +57,9 @@ public class Case extends LogicalDeleteEntity {
     @Column(length = 100)
     private String court;
 
+    @Column(name = "acceptance_date")
+    private LocalDate acceptanceDate;
+
     @Column(name = "filing_date")
     private LocalDate filingDate;
 
@@ -65,6 +68,33 @@ public class Case extends LogicalDeleteEntity {
 
     @Column(name = "commission_date")
     private LocalDate commissionDate;
+
+    @Column(name = "suspect_name", length = 100)
+    private String suspectName;
+
+    @Column(name = "subject_matter")
+    private String subjectMatter;
+
+    @Column(name = "business_type", length = 100)
+    private String businessType;
+
+    @Column(name = "agency_type", length = 50)
+    private String agencyType;
+
+    @Column(name = "service_start_date")
+    private LocalDate serviceStartDate;
+
+    @Column(name = "service_end_date")
+    private LocalDate serviceEndDate;
+
+    @Column(name = "trial_stages")
+    private String trialStages;
+
+    @Column(name = "court_case_number", length = 100)
+    private String courtCaseNumber;
+
+    @Column(name = "hearing_date")
+    private LocalDate hearingDate;
 
     @Column(name = "close_date")
     private LocalDate closeDate;
@@ -92,8 +122,23 @@ public class Case extends LogicalDeleteEntity {
     @Column(name = "attorney_fee", precision = 15, scale = 2)
     private BigDecimal attorneyFee;
 
-    @Column(name = "fee_method", length = 20)
+    @Column(name = "fee_method", length = 50)
     private String feeMethod;
+
+    @Column(name = "risk_ratio", precision = 5, scale = 2)
+    private BigDecimal riskRatio;
+
+    @Column(name = "risk_fee", precision = 15, scale = 2)
+    private BigDecimal riskFee;
+
+    @Column(name = "fee_notes")
+    private String feeNotes;
+
+    @Column(name = "free_reason")
+    private String freeReason;
+
+    @Column(name = "allocation_json", length = 2000)
+    private String allocationJson;
 
     @Column(name = "won_amount", precision = 15, scale = 2)
     private BigDecimal wonAmount;

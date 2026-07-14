@@ -66,6 +66,18 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     Optional<Client> findByClientNameAndDeletedFalse(@Param("clientName") String clientName);
 
     /**
+     * 根据客户名称查找未删除客户列表
+     */
+    @Query("SELECT c FROM Client c WHERE c.clientName = :clientName AND c.deleted = false")
+    List<Client> findAllByClientNameAndDeletedFalse(@Param("clientName") String clientName);
+
+    /**
+     * 根据身份证号查找未删除客户
+     */
+    @Query("SELECT c FROM Client c WHERE c.idCard = :idCard AND c.deleted = false")
+    Optional<Client> findByIdCardAndDeletedFalse(@Param("idCard") String idCard);
+
+    /**
      * 查找所有未删除的客户（搜索优化）
      */
     @Query("SELECT c FROM Client c WHERE c.deleted = false")

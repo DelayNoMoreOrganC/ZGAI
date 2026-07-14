@@ -103,6 +103,15 @@ export function conflictCheck(id) {
   })
 }
 
+// 客户建档前利益冲突预检
+export function previewConflictCheck(data) {
+  return request({
+    url: '/clients/conflict-check',
+    method: 'post',
+    data
+  })
+}
+
 // 别名函数，保持向后兼容
 export function checkConflict(id) {
   return conflictCheck(id)

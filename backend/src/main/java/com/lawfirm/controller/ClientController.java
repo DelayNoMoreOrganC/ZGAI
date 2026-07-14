@@ -174,6 +174,21 @@ public class ClientController {
     }
 
     /**
+     * 客户建档前利益冲突预检
+     * POST /api/clients/conflict-check
+     */
+    @PostMapping("/conflict-check")
+    public Result<ClientDTO> checkConflictPreview(@RequestBody ClientDTO dto) {
+        try {
+            ClientDTO result = clientService.checkConflictPreview(dto);
+            return Result.success(result);
+        } catch (Exception e) {
+            log.error("利益冲突预检异常", e);
+            return Result.error("利益冲突预检失败");
+        }
+    }
+
+    /**
      * 获取客户的案件列表
      * GET /api/clients/{id}/cases
      */

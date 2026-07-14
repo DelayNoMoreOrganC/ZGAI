@@ -13,7 +13,7 @@
     <div class="filter-section">
       <el-input
         v-model="searchKeyword"
-        placeholder="搜索客户名称、联系人..."
+        placeholder="搜索客户名称、案源人、承办人..."
         clearable
         class="search-input"
       >
@@ -63,9 +63,16 @@
         </template>
       </el-table-column>
 
-      <el-table-column prop="contact" label="联系人" width="120" />
-      <el-table-column prop="phone" label="联系电话" width="130" />
-      <el-table-column prop="email" label="邮箱" width="180" />
+      <el-table-column prop="sourceUserNames" label="案源人" width="150">
+        <template #default="{ row }">
+          {{ row.sourceUserNames || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="clientOwnerNames" label="承办人" width="150">
+        <template #default="{ row }">
+          {{ row.clientOwnerNames || row.ownerName || '-' }}
+        </template>
+      </el-table-column>
       <el-table-column prop="caseCount" label="关联案件" width="100">
         <template #default="{ row }">
           <el-link v-if="row.caseCount > 0" type="primary" @click="handleViewRelatedCases(row)">
@@ -132,6 +139,12 @@
             </el-descriptions-item>
             <el-descriptions-item label="邮箱">
               {{ currentClient.email }}
+            </el-descriptions-item>
+            <el-descriptions-item label="案源人">
+              {{ currentClient.sourceUserNames || '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="承办人">
+              {{ currentClient.clientOwnerNames || currentClient.ownerName || '-' }}
             </el-descriptions-item>
             <el-descriptions-item label="所属部门">
               {{ currentClient.departmentName || '-' }}
@@ -262,6 +275,8 @@ const normalizeClient = (client = {}) => ({
   name: client.clientName || client.name || '',
   type: client.clientType || client.type || '',
   contact: client.legalRepresentative || client.clientName || client.contact || '',
+  sourceUserNames: client.sourceUserNames || '',
+  clientOwnerNames: client.clientOwnerNames || client.ownerName || '',
   departmentId: client.departmentId || null,
   departmentName: client.departmentName || '',
   createTime: formatDate(client.createdAt),

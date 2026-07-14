@@ -204,6 +204,9 @@ const activeMenu = computed(() => {
   if (path.startsWith('/case/')) {
     return '/case/list'
   }
+  if (path === '/client/conflict-check') {
+    return '/client/conflict-check'
+  }
   if (path.startsWith('/client/')) {
     return '/client/list'
   }
@@ -227,7 +230,8 @@ const menuRoutes = computed(() => {
       meta: { title: '客户管理', icon: '👥' },
       children: [
         { path: '/client/list', meta: { title: '全部客户' } },
-        { path: '/client/create', meta: { title: '新建客户' } }
+        { path: '/client/create', meta: { title: '新建客户' } },
+        { path: '/client/conflict-check', meta: { title: '利冲检查' } }
       ]
     }
   ]

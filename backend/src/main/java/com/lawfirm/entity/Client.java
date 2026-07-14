@@ -33,8 +33,17 @@ public class Client extends LogicalDeleteEntity {
     @Column(name = "client_name", nullable = false, length = 100)
     private String clientName;
 
+    @Column(name = "client_relationship", length = 30)
+    private String clientRelationship;
+
+    @Column(name = "client_role", length = 30)
+    private String clientRole;
+
     @Column(length = 10)
     private String gender;
+
+    @Column(length = 30)
+    private String ethnicity;
 
     @Column(name = "id_card", length = 20)
     private String idCard;
@@ -51,8 +60,32 @@ public class Client extends LogicalDeleteEntity {
     @Column
     private String address;
 
+    @Column(name = "contact_person", length = 50)
+    private String contactPerson;
+
+    @Column(length = 50)
+    private String wechat;
+
     @Column(name = "legal_representative", length = 50)
     private String legalRepresentative;
+
+    @Column(name = "legal_representative_id_card", length = 20)
+    private String legalRepresentativeIdCard;
+
+    @Column(name = "invoice_title", length = 100)
+    private String invoiceTitle;
+
+    @Column(name = "invoice_tax_no", length = 50)
+    private String invoiceTaxNo;
+
+    @Column(name = "invoice_address_phone", length = 200)
+    private String invoiceAddressPhone;
+
+    @Column(name = "invoice_bank_account", length = 200)
+    private String invoiceBankAccount;
+
+    @Column(name = "opposing_lawyer", length = 100)
+    private String opposingLawyer;
 
     @Column(length = 50)
     private String industry;
@@ -70,4 +103,10 @@ public class Client extends LogicalDeleteEntity {
 
     @Column(name = "owner_id")
     private Long ownerId;
+
+    @Column(name = "source_user_ids", length = 500)
+    private String sourceUserIds;
+
+    @Column(name = "client_owner_ids", length = 500)
+    private String clientOwnerIds;
 }

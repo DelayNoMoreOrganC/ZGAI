@@ -51,6 +51,7 @@ public class ApprovalService {
     public static final String TYPE_PURCHASE = "PURCHASE";  // 采购申请
     public static final String TYPE_LICENSE = "LICENSE";  // 证照借用
     public static final String TYPE_CASE_FILING = "CASE_FILING";  // 立案审批
+    public static final String TYPE_CASE_FILING_DIRECTOR = "CASE_FILING_DIRECTOR";  // 免费代理主任终审
 
     /**
      * 创建审批
@@ -106,8 +107,12 @@ public class ApprovalService {
         // 记录流程
         recordFlow(approvalId, approverId, "APPROVE", comments);
 
-        if (TYPE_CASE_FILING.equals(approval.getApprovalType()) && approval.getCaseId() != null) {
-            approveCaseFiling(approval, comments, approverId);
+        if (approval.getCaseId() != null) {
+            if (TYPE_CASE_FILING.equals(approval.getApprovalType())) {
+                approveCaseFilingAdminStep(approval, comments, approverId);
+            } else if (TYPE_CASE_FILING_DIRECTOR.equals(approval.getApprovalType())) {
+                approveCaseFilingFinal(approval, comments, approverId);
+            }
         }
     }
 
@@ -139,7 +144,8 @@ public class ApprovalService {
         // 记录流程
         recordFlow(approvalId, approverId, "REJECT", comments);
 
-        if (TYPE_CASE_FILING.equals(approval.getApprovalType()) && approval.getCaseId() != null) {
+        if ((TYPE_CASE_FILING.equals(approval.getApprovalType()) || TYPE_CASE_FILING_DIRECTOR.equals(approval.getApprovalType()))
+                && approval.getCaseId() != null) {
             rejectCaseFiling(approval, comments);
         }
     }
@@ -346,15 +352,68 @@ public class ApprovalService {
         types.add(createTypeItem(TYPE_PURCHASE, "采购申请"));
         types.add(createTypeItem(TYPE_LICENSE, "证照借用"));
         types.add(createTypeItem(TYPE_CASE_FILING, "立案审批"));
+        types.add(createTypeItem(TYPE_CASE_FILING_DIRECTOR, "免费代理主任终审"));
         return types;
     }
 
     // 辅助方法
 
-    private void approveCaseFiling(Approval approval, String comments, Long approverId) {
+    private void approveCaseFilingAdminStep(Approval approval, String comments, Long approverId) {
         Case caseEntity = caseRepository.findById(approval.getCaseId())
                 .orElseThrow(() -> new RuntimeException("案件不存在"));
 
+        caseTimelineService.createSystemTimeline(
+                caseEntity.getId(),
+                "CASE_FILING_ADMIN_APPROVED",
+                "行政管理已完成立案初审：" + (comments == null ? "" : comments)
+        );
+
+        if ("FREE".equals(caseEntity.getFeeMethod())) {
+            Long directorId = findUserIdByPosition("主任");
+            if (directorId == null) {
+                throw new RuntimeException("未找到身份类别为“主任”的终审人，请先在用户管理中配置主任账号");
+            }
+
+            Approval directorApproval = new Approval();
+            directorApproval.setApprovalType(TYPE_CASE_FILING_DIRECTOR);
+            directorApproval.setTitle("免费代理主任终审：" + caseEntity.getCaseName());
+            directorApproval.setContent("行政管理已完成初审，请主任对免费代理立案申请进行终审。"
+                    + "\n案件名称：" + caseEntity.getCaseName()
+                    + "\n免费理由：" + (caseEntity.getFreeReason() == null ? "" : caseEntity.getFreeReason()));
+            directorApproval.setCaseId(caseEntity.getId());
+            directorApproval.setApplicantId(approval.getApplicantId());
+            directorApproval.setCurrentApproverId(directorId);
+            directorApproval.setStatus(ApprovalStatus.PENDING.getCode());
+            directorApproval.setApplyTime(LocalDateTime.now());
+            directorApproval = approvalRepository.save(directorApproval);
+            recordFlow(directorApproval.getId(), approverId, "SUBMIT", "行政管理初审通过，提交主任终审");
+
+            caseTimelineService.createSystemTimeline(
+                    caseEntity.getId(),
+                    "CASE_FILING_DIRECTOR_REVIEW",
+                    "免费代理案件已提交主任终审：" + getUserName(directorId)
+            );
+            return;
+        }
+
+        approveCaseFilingFinal(approval, comments, approverId);
+    }
+
+    private Long findUserIdByPosition(String position) {
+        return userRepository.findByPosition(position).stream()
+                .filter(user -> !Boolean.TRUE.equals(user.getDeleted()))
+                .filter(user -> user.getStatus() == null || user.getStatus() == 1)
+                .sorted(Comparator.comparing((User user) -> user.getDepartmentId() == null))
+                .map(User::getId)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void approveCaseFilingFinal(Approval approval, String comments, Long approverId) {
+        Case caseEntity = caseRepository.findById(approval.getCaseId())
+                .orElseThrow(() -> new RuntimeException("案件不存在"));
+
+        ensureOfficialCaseNumber(caseEntity);
         String folderPath = ensureCaseFolder(caseEntity);
         createConflictCheckReport(caseEntity, approval, comments, approverId, folderPath);
 
@@ -367,8 +426,29 @@ public class ApprovalService {
         caseTimelineService.createSystemTimeline(
                 caseEntity.getId(),
                 "CASE_FILING_APPROVED",
-                "行政管理已通过立案审批，案卷文件夹已建立：" + folderPath
+                "立案审批已通过，案卷文件夹已建立：" + folderPath
         );
+    }
+
+    private void ensureOfficialCaseNumber(Case caseEntity) {
+        if (caseEntity.getCaseNumber() != null && caseEntity.getCaseNumber().matches("\\[\\d{4}\\]粤至高.+第\\d{3}号")) {
+            return;
+        }
+        String year = String.valueOf(java.time.Year.now().getValue());
+        String type = getOfficialCaseTypeChar(caseEntity.getCaseType());
+        long count = caseRepository.countByCaseTypeAndDeletedFalse(caseEntity.getCaseType()) + 1;
+        caseEntity.setCaseNumber(String.format("[%s]粤至高%s字第%03d号", year, type, count));
+    }
+
+    private String getOfficialCaseTypeChar(String caseType) {
+        switch (caseType) {
+            case "CIVIL": return "民";
+            case "CRIMINAL": return "刑";
+            case "ADMINISTRATIVE": return "行";
+            case "NON_LITIGATION": return "非";
+            case "CONSULTANT": return "顾";
+            default: return "案";
+        }
     }
 
     private void rejectCaseFiling(Approval approval, String comments) {

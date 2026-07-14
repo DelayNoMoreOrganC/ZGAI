@@ -134,6 +134,12 @@ const routes = [
             meta: { title: '新建客户' }
           },
           {
+            path: 'conflict-check',
+            name: 'ClientConflictCheck',
+            component: () => import('@/views/client/conflict-check.vue'),
+            meta: { title: '利冲检查' }
+          },
+          {
             path: ':id/edit',
             name: 'ClientEdit',
             component: () => import('@/views/client/create.vue'),

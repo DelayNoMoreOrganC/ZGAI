@@ -41,6 +41,11 @@ public class CaseUpdateRequest {
     private String court;
 
     /**
+     * 收案日期
+     */
+    private LocalDate acceptanceDate;
+
+    /**
      * 立案时间
      */
     private LocalDate filingDate;
@@ -54,6 +59,16 @@ public class CaseUpdateRequest {
      * 委托时间
      */
     private LocalDate commissionDate;
+
+    private String suspectName;
+    private String subjectMatter;
+    private String businessType;
+    private String agencyType;
+    private LocalDate serviceStartDate;
+    private LocalDate serviceEndDate;
+    private String trialStages;
+    private String courtCaseNumber;
+    private LocalDate hearingDate;
 
     /**
      * 案件标签
@@ -110,6 +125,10 @@ public class CaseUpdateRequest {
      */
     private String feeMethod;
 
+    private BigDecimal riskRatio;
+
+    private BigDecimal riskFee;
+
     /**
      * 收费简介
      */
@@ -119,6 +138,9 @@ public class CaseUpdateRequest {
      * 收费备注
      */
     private String feeNotes;
+
+    private String freeReason;
+    private String allocationJson;
 
     /**
      * 胜诉金额

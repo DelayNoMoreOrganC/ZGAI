@@ -9,10 +9,8 @@ import java.util.List;
 @Data
 public class CaseCreateRequest {
     // 基本信息
-    @NotBlank(message = "案件编号不能为空")
     private String caseNumber;
 
-    @NotBlank(message = "案件名称不能为空")
     private String caseName;
 
     @NotBlank(message = "案件类型不能为空")
@@ -33,9 +31,19 @@ public class CaseCreateRequest {
     // 案件详情
     private String caseReason;
     private String court;
+    private LocalDate acceptanceDate;
     private LocalDate filingDate;
     private LocalDate deadlineDate;
     private LocalDate commissionDate;
+    private String suspectName;
+    private String subjectMatter;
+    private String businessType;
+    private String agencyType;
+    private LocalDate serviceStartDate;
+    private LocalDate serviceEndDate;
+    private String trialStages;
+    private String courtCaseNumber;
+    private LocalDate hearingDate;
 
     // 标签和摘要
     private String tags;
@@ -51,6 +59,11 @@ public class CaseCreateRequest {
     private java.math.BigDecimal amount;
     private java.math.BigDecimal attorneyFee;
     private String feeMethod;
+    private java.math.BigDecimal riskRatio;
+    private java.math.BigDecimal riskFee;
+    private String feeNotes;
+    private String freeReason;
+    private String allocationJson;
 
     // 当事人信息
     private List<PartyDTO> parties;
