@@ -2,15 +2,11 @@
   <div class="case-create">
     <PageHeader title="新建案件" :show-back="true" @back="$router.back()">
       <template #extra>
-        <el-button @click="handleSaveDraft">保存草稿</el-button>
-        <el-button type="success" :loading="filing" @click="handleFiling">
-          确认立案
+        <el-button v-if="isEditMode" type="primary" :loading="submitting" @click="handleSubmit">
+          保存修改
         </el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">
-          提交案件
-        </el-button>
-        <el-button type="warning" :loading="approving" @click="handleSubmitApproval">
-          提交审批
+        <el-button v-else type="primary" :loading="approving" @click="handleSubmitApproval">
+          提交立案申请
         </el-button>
       </template>
     </PageHeader>
@@ -82,19 +78,23 @@
 
             <el-col :span="12">
               <el-form-item label="案由" prop="caseReason">
-                <el-select
+                <el-input
                   v-model="formData.caseReason"
-                  filterable
-                  allow-create
-                  placeholder="请选择或输入案由"
-                >
-                  <el-option
-                    v-for="reason in caseReasonList"
+                  placeholder="请自由填写案由，如：买卖合同纠纷"
+                  maxlength="80"
+                  show-word-limit
+                />
+                <div class="reason-hints">
+                  <el-tag
+                    v-for="reason in currentReasonHints"
                     :key="reason"
-                    :label="reason"
-                    :value="reason"
-                  />
-                </el-select>
+                    size="small"
+                    effect="plain"
+                    @click="formData.caseReason = reason"
+                  >
+                    {{ reason }}
+                  </el-tag>
+                </div>
               </el-form-item>
             </el-col>
 
@@ -179,16 +179,6 @@
                   maxlength="500"
                   show-word-limit
                 />
-              </el-form-item>
-            </el-col>
-
-            <el-col :span="12">
-              <el-form-item label="案件等级" prop="level">
-                <el-radio-group v-model="formData.level">
-                  <el-radio label="重要">重要</el-radio>
-                  <el-radio label="一般">一般</el-radio>
-                  <el-radio label="次要">次要</el-radio>
-                </el-radio-group>
               </el-form-item>
             </el-col>
 
@@ -356,10 +346,10 @@
                   label="联系电话"
                   :prop="`parties.${index}.phone`"
                   :rules="[
-                    { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }
+                    { pattern: /^(1[3-9]\d{9}|0\d{2,3}-?\d{7,8})(-\d{1,6})?$/, message: '请输入正确的手机号或区号+固话', trigger: 'blur' }
                   ]"
                 >
-                  <el-input v-model="party.phone" placeholder="请输入联系电话" />
+                  <el-input v-model="party.phone" placeholder="请输入手机号或区号+固话" />
                 </el-form-item>
               </el-col>
 
@@ -465,14 +455,13 @@
 
           <el-row :gutter="20">
             <el-col :span="24">
-              <el-form-item label="收费方式" prop="feeTypes">
-                <el-checkbox-group v-model="formData.feeTypes">
-                  <el-checkbox label="定额">定额</el-checkbox>
-                  <el-checkbox label="风险代理">风险代理</el-checkbox>
-                  <el-checkbox label="计时">计时</el-checkbox>
-                  <el-checkbox label="计件">计件</el-checkbox>
-                  <el-checkbox label="免费">免费</el-checkbox>
-                </el-checkbox-group>
+              <el-form-item label="收费方式" prop="feeMethod">
+                <el-radio-group v-model="formData.feeMethod">
+                  <el-radio label="固定收费">固定收费</el-radio>
+                  <el-radio label="风险收费">风险收费</el-radio>
+                  <el-radio label="基础+风险">基础+风险</el-radio>
+                  <el-radio label="其他">其他</el-radio>
+                </el-radio-group>
               </el-form-item>
             </el-col>
 
@@ -756,7 +745,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Plus, MagicStick, DocumentCopy, Delete, UploadFilled
+  Plus, MagicStick, DocumentCopy, Delete
 } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import AIDocumentFill from '@/components/AIDocumentFill.vue'
@@ -777,13 +766,11 @@ const caseId = computed(() => route.params.id)
 
 // 转换formData为后端DTO格式
 const transformToRequest = () => {
-  // 转换收费方式数组为字符串
   const feeMethodMap = {
     '固定收费': 'FIXED',
-    '按比例收费': 'PERCENTAGE',
-    '风险代理': 'CONTINGENT',
-    '计时收费': 'HOURLY',
-    '协商收费': 'NEGOTIATED'
+    '风险收费': 'CONTINGENT',
+    '基础+风险': 'BASE_PLUS_CONTINGENT',
+    '其他': 'OTHER'
   }
 
   // 转换当事人类型和属性
@@ -800,12 +787,6 @@ const transformToRequest = () => {
     '第三人': 'THIRD_PARTY',
     '上诉人': 'APPELLANT',
     '被上诉人': 'APPELLEE'
-  }
-
-  // 将中文feeTypes转换为英文feeMethod
-  let feeMethod = null
-  if (formData.feeTypes && formData.feeTypes.length > 0) {
-    feeMethod = formData.feeTypes.map(type => feeMethodMap[type] || type).join(',')
   }
 
   // 转换当事人数据
@@ -840,7 +821,6 @@ const transformToRequest = () => {
     commissionDate: formData.commissionDate || null,
     tags: formData.tags?.join(',') || null,
     summary: formData.summary,
-    level: formData.level === '重要' ? 'IMPORTANT' : formData.level === '次要' ? 'MINOR' : 'GENERAL',
     ownerId: formData.ownerId,
     coOwnerIds: formData.coOwners || [],
     assistantIds: formData.assistants || [],
@@ -848,7 +828,7 @@ const transformToRequest = () => {
     // 律师费信息（映射到后端字段）
     amount: formData.amount || null,
     attorneyFee: formData.lawyerFee || null,
-    feeMethod: feeMethod,
+    feeMethod: feeMethodMap[formData.feeMethod] || formData.feeMethod || null,
     feeDescription: formData.feeSummary || null,
     feeNotes: formData.feeRemark || null,
 
@@ -864,12 +844,8 @@ const transformToRequest = () => {
   }
 }
 
-// 立案状态
-const filing = ref(false)
-
 // 提交审批状态
 const approving = ref(false)
-const createdCaseId = ref(null) // 记录创建的案件ID，用于审批关联
 
 // 使用表单防重复提交hook
 const { submitting, canSubmit, handleSubmit: handleFormSubmit } = useSubmitForm(
@@ -919,63 +895,6 @@ const { submitting, canSubmit, handleSubmit: handleFormSubmit } = useSubmitForm(
   }
 )
 
-// 确认立案功能
-const handleFiling = async () => {
-  try {
-    // 验证表单
-    const valid = await formRef.value?.validate()
-    if (!valid) {
-      ElMessage.warning('请先完善必填信息')
-      return
-    }
-
-    // 验证至少有一个当事人
-    if (!formData.parties || formData.parties.length === 0) {
-      ElMessage.warning('请至少添加一个当事人')
-      return
-    }
-
-    // 确认立案
-    await ElMessageBox.confirm(
-      '确认立案后将正式创建案件，案件状态将变为"审理中"，是否继续？',
-      '确认立案',
-      {
-        confirmButtonText: '确认立案',
-        cancelButtonText: '取消',
-        type: 'success'
-      }
-    )
-
-    filing.value = true
-    const requestData = transformToRequest()
-
-    // 创建案件并自动立案
-    const response = await createCase(requestData)
-
-    if (response.success || response.code === 200) {
-      const caseId = response.data?.id || response.data
-
-      // 调用立案API
-      try {
-        await updateCase(caseId, { status: 'active' })
-        ElMessage.success('案件立案成功！')
-        router.push('/case/list')
-      } catch (error) {
-        console.error('立案失败:', error)
-        ElMessage.warning('案件已创建，但立案状态更新失败，请手动修改')
-        router.push(`/case/${caseId}`)
-      }
-    }
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('立案失败:', error)
-      ElMessage.error('立案失败: ' + (error.message || '未知错误'))
-    }
-  } finally {
-    filing.value = false
-  }
-}
-
 // 是否显示结案/归档信息
 const showArchiveInfo = ref(false)
 
@@ -993,7 +912,6 @@ const formData = reactive({
   commissionDate: '',
   tags: [],
   summary: '',
-  level: '一般',
   ownerId: '',
   coOwners: [],
   assistants: [],
@@ -1002,7 +920,7 @@ const formData = reactive({
   parties: [],
 
   // C. 代理律师费
-  feeTypes: [],
+  feeMethod: '',
   amount: null,
   subjectMatter: '',
   lawyerFee: null,
@@ -1030,26 +948,24 @@ const formRules = {
   caseType: [{ required: true, message: '请选择案件类型', trigger: 'change' }],
   procedure: [{ required: true, message: '请选择案件程序', trigger: 'change' }],
   caseName: [{ required: true, message: '请输入案件名称', trigger: 'blur' }],
-  caseReason: [{ required: true, message: '请选择案由', trigger: 'change' }],
+  caseReason: [{ required: true, message: '请填写案由', trigger: 'blur' }],
   court: [{ required: true, message: '请选择管辖法院', trigger: 'change' }],
-  level: [{ required: true, message: '请选择案件等级', trigger: 'change' }],
   ownerId: [{ required: true, message: '请选择主办律师', trigger: 'change' }],
-  feeTypes: [
-    {
-      type: 'array',
-      required: true,
-      message: '请选择收费方式',
-      trigger: 'change'
-    }
-  ],
+  feeMethod: [{ required: true, message: '请选择收费方式', trigger: 'change' }],
   lawyerFee: [{ required: true, message: '请输入代理费', trigger: 'blur' }]
 }
 
 // 预置数据
-const caseReasonList = ref([
-  '买卖合同纠纷', '借款合同纠纷', '租赁合同纠纷', '劳动争议',
-  '机动车交通事故责任纠纷', '离婚纠纷', '继承纠纷', '侵权责任纠纷'
-])
+const caseReasonIndex = {
+  CIVIL: ['人格权纠纷', '婚姻家庭纠纷', '继承纠纷', '物权纠纷', '机动车交通事故责任纠纷', '医疗损害责任纠纷'],
+  COMMERCIAL: ['买卖合同纠纷', '借款合同纠纷', '建设工程施工合同纠纷', '公司决议纠纷', '股权转让纠纷', '票据追索权纠纷'],
+  ARBITRATION: ['买卖合同纠纷', '服务合同纠纷', '建设工程合同纠纷', '股权投资纠纷', '租赁合同纠纷'],
+  CRIMINAL: ['诈骗罪', '合同诈骗罪', '职务侵占罪', '非法吸收公众存款罪', '故意伤害罪', '危险驾驶罪'],
+  ADMINISTRATIVE: ['行政处罚纠纷', '行政许可纠纷', '行政强制纠纷', '政府信息公开纠纷', '行政赔偿纠纷'],
+  NON_LITIGATION: ['常年法律顾问', '专项法律服务', '尽职调查', '法律意见书', '合规审查', '破产重整专项']
+}
+
+const currentReasonHints = computed(() => caseReasonIndex[formData.caseType] || [])
 
 const commonTags = ref(['紧急', 'VIP客户', '群体性案件', '媒体关注', '复杂案件'])
 
@@ -1331,35 +1247,26 @@ const handleSubmitApproval = async () => {
 
     const requestData = transformToRequest()
 
-    // 提交案件
-    let caseId
+    // 创建案件后，后端会自动生成立案审批单并流转至行政管理
+    let savedCaseId
     if (isEditMode.value) {
-      const response = await updateCase(caseId.value, requestData)
-      caseId = caseId.value
+      await updateCase(caseId.value, requestData)
+      savedCaseId = caseId.value
     } else {
       const response = await createCase(requestData)
-      // 后端返回Result<CaseDetailVO>，数据在response.data中
       const caseData = response.data || response
-      caseId = caseData.id || caseData.data?.id
-      if (!caseId) {
+      savedCaseId = caseData.id || caseData.data?.id
+      if (!savedCaseId) {
         throw new Error('创建案件失败：未获取到案件ID')
       }
     }
 
-    // 跳转到审批页面，并带上案件ID参数
-    ElMessage.success('案件保存成功，正在跳转到审批页面...')
-    router.push({
-      path: '/approval',
-      query: {
-        action: 'create',
-        caseId: caseId,
-        caseName: formData.caseName || '未命名案件'
-      }
-    })
+    ElMessage.success('立案申请已提交，案件状态为待审批')
+    router.push('/case/list')
 
   } catch (error) {
-    console.error('提交审批失败:', error)
-    ElMessage.error('提交审批失败：' + (error.message || '未知错误'))
+    console.error('提交立案申请失败:', error)
+    ElMessage.error('提交立案申请失败：' + (error.message || '未知错误'))
   } finally {
     approving.value = false
   }
@@ -1380,7 +1287,14 @@ onMounted(async () => {
       formData.caseReason = caseData.caseReason || ''
       formData.court = caseData.court || ''
       formData.amount = caseData.amount || null
-      formData.attorneyFee = caseData.attorneyFee || null
+      formData.lawyerFee = caseData.attorneyFee || null
+      const feeMethodReverseMap = {
+        FIXED: '固定收费',
+        CONTINGENT: '风险收费',
+        BASE_PLUS_CONTINGENT: '基础+风险',
+        OTHER: '其他'
+      }
+      formData.feeMethod = feeMethodReverseMap[caseData.feeMethod] || caseData.feeMethod || ''
       formData.filingDate = caseData.filingDate || null
       formData.deadlineDate = caseData.deadlineDate || null
       formData.summary = caseData.summary || ''

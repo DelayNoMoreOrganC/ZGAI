@@ -107,6 +107,7 @@ public class DepartmentService {
 
         // 先转换为DTO
         List<DepartmentDTO> dtoList = allDepartments.stream()
+                .filter(department -> !Boolean.TRUE.equals(department.getDeleted()))
                 .map(this::toDTO)
                 .collect(Collectors.toList());
 
@@ -121,6 +122,7 @@ public class DepartmentService {
         List<Department> departments = departmentRepository.findAll();
 
         return departments.stream()
+                .filter(department -> !Boolean.TRUE.equals(department.getDeleted()))
                 .map(this::toDTO)
                 .collect(Collectors.toList());
     }

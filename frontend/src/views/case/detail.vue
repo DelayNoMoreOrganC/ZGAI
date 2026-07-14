@@ -104,7 +104,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft, Edit, FolderOpened, ArrowDown, Select, ChatDotRound
 } from '@element-plus/icons-vue'
-import { getCaseDetail, updateCaseStatus, archiveCase, deleteCase } from '@/api/case'
+import { getCaseDetail, updateCaseStatus, archiveCase, deleteCase, createCase } from '@/api/case'
 import { createTodo } from '@/api/todo'
 import { getStagesByCaseType, getStageAutoTodos, generateStageTodos } from '@/config/case-lifecycle'
 import AIAssistant from '@/views/ai/assistant.vue'
@@ -116,13 +116,12 @@ const loading = ref(false)
 const activeTab = ref('basic')
 const aiAssistantVisible = ref(false)
 const caseDetail = reactive({
-  id: '',
+  id: null,
   caseName: '',
   caseNumber: '',
   currentStage: '咨询',
   caseType: '',
-  level: '',
-  ownerId: ''
+  ownerId: null
 })
 
 // 案件阶段 - 根据案件类型动态获取
@@ -174,7 +173,7 @@ const showAIAssistant = () => {
 }
 
 // 当前案件ID（传递给AI助手）
-const currentCaseId = computed(() => caseDetail.id)
+const currentCaseId = computed(() => Number(caseDetail.id) || null)
 
 // 归档案件
 const handleArchive = async () => {
@@ -219,14 +218,14 @@ const handleMoreAction = async (command) => {
         )
 
         // 获取当前案件详细信息
-        const caseDetail = await getCaseDetail(caseData.value.id)
+        const detailRes = await getCaseDetail(caseDetail.id)
 
         // 构造新案件数据
         const newCaseData = {
-          ...caseDetail.data,
+          ...detailRes.data,
           id: undefined, // 移除ID，让系统生成新的
-          caseNumber: `${caseDetail.data.caseNumber}-副本`,
-          caseName: `${caseDetail.data.caseName}（副本）`,
+          caseNumber: `${detailRes.data.caseNumber}-副本`,
+          caseName: `${detailRes.data.caseName}（副本）`,
           status: 'CONSULTATION', // 重置状态为咨询
           createdAt: undefined,
           updatedAt: undefined
@@ -260,29 +259,28 @@ const handleMoreAction = async (command) => {
         const caseText = `
 案件信息
 ==================
-案件编号：${caseDetail.value.caseNumber || '无'}
-案件名称：${caseDetail.value.caseName || '无'}
-案件类型：${caseDetail.value.caseType || '无'}
-案件程序：${caseDetail.value.procedure || '无'}
-案由：${caseDetail.value.caseReason || '无'}
-管辖法院：${caseDetail.value.court || '无'}
-立案日期：${caseDetail.value.filingDate || '无'}
-结案日期：${caseDetail.value.deadlineDate || '无'}
-委托日期：${caseDetail.value.commissionDate || '无'}
-案件等级：${caseDetail.value.level || '无'}
-案件状态：${caseDetail.value.status || '无'}
+案件编号：${caseDetail.caseNumber || '无'}
+案件名称：${caseDetail.caseName || '无'}
+案件类型：${caseDetail.caseType || '无'}
+案件程序：${caseDetail.procedure || '无'}
+案由：${caseDetail.caseReason || '无'}
+管辖法院：${caseDetail.court || '无'}
+立案日期：${caseDetail.filingDate || '无'}
+结案日期：${caseDetail.deadlineDate || '无'}
+委托日期：${caseDetail.commissionDate || '无'}
+案件状态：${caseDetail.statusDesc || caseDetail.status || '无'}
 
 案件摘要
 ------------------
-${caseDetail.value.summary || '无'}
+${caseDetail.summary || '无'}
 
-主办律师：${caseDetail.value.ownerName || '无'}
-协办律师：${caseDetail.value.coOwners?.map(o => o.name).join('、') || '无'}
-律师助理：${caseDetail.value.assistants?.map(a => a.name).join('、') || '无'}
+主办律师：${caseDetail.ownerName || '无'}
+协办律师：${caseDetail.coOwners?.map(o => o.name).join('、') || '无'}
+律师助理：${caseDetail.assistants?.map(a => a.name).join('、') || '无'}
 
 当事人信息
 ------------------
-${caseDetail.value.parties?.map(p => `
+${caseDetail.parties?.map(p => `
 ${p.attribute} - ${p.name}
   类型：${p.type}
   联系电话：${p.phone || '无'}
@@ -292,15 +290,15 @@ ${p.attribute} - ${p.name}
 
 律师费信息
 ------------------
-收费方式：${caseDetail.value.feeTypes?.join('、') || '无'}
-争议标的：${caseDetail.value.subjectMatter || '无'}
-律师费金额：${caseDetail.value.lawyerFee || '无'}
-收费摘要：${caseDetail.value.feeSummary || '无'}
-收费备注：${caseDetail.value.feeRemark || '无'}
+收费方式：${caseDetail.feeMethod || caseDetail.feeTypes?.join('、') || '无'}
+争议标的：${caseDetail.subjectMatter || '无'}
+律师费金额：${caseDetail.attorneyFee || caseDetail.lawyerFee || '无'}
+收费摘要：${caseDetail.feeDescription || caseDetail.feeSummary || '无'}
+收费备注：${caseDetail.feeNotes || caseDetail.feeRemark || '无'}
 
 应收款信息
 ------------------
-${caseDetail.value.receivables?.map(r => `
+${caseDetail.receivables?.map(r => `
   ${r.name}：${r.amount}元
   应收日期：${r.dueDate || '无'}
   备注：${r.notes || '无'}
@@ -308,14 +306,14 @@ ${caseDetail.value.receivables?.map(r => `
 
 备注
 ------------------
-${caseDetail.value.remark || '无'}
+${caseDetail.remark || '无'}
         `.trim()
 
         // 创建Blob并下载
         const blob = new Blob([caseText], { type: 'text/plain;charset=utf-8' })
         const link = document.createElement('a')
         link.href = window.URL.createObjectURL(blob)
-        link.download = `案件_${caseDetail.value.caseNumber}_${caseDetail.value.caseName}.txt`
+        link.download = `案件_${caseDetail.caseNumber}_${caseDetail.caseName}.txt`
         link.click()
         window.URL.revokeObjectURL(link.href)
 
@@ -513,11 +511,16 @@ watch(() => route.path, (newPath) => {
       break
     }
   }
-})
+}, { immediate: true })
 
 // 监听tab变化，同步路由
 watch(activeTab, (newTab) => {
-  router.push(`/case/${caseDetail.id}/${newTab}`)
+  const id = route.params.id || caseDetail.id
+  if (!id) return
+  const targetPath = `/case/${id}/${newTab}`
+  if (route.path !== targetPath) {
+    router.push(targetPath)
+  }
 })
 
 onMounted(() => {

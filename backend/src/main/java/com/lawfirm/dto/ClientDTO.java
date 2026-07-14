@@ -44,6 +44,10 @@ public class ClientDTO {
 
     private String notes;
 
+    private Long departmentId;
+
+    private String departmentName;
+
     private Long ownerId;
 
     private String ownerName;

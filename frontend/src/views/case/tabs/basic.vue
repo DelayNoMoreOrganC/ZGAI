@@ -28,7 +28,7 @@
             {{ caseData.court }}
           </el-descriptions-item>
           <el-descriptions-item label="委托客户">
-            <div v-if="caseData.clientId">
+            <div v-if="primaryClientId">
               <el-tag type="success" size="small">有委托客户</el-tag>
               <el-button
                 type="primary"
@@ -42,31 +42,26 @@
             </div>
             <span v-else class="text-muted">未关联客户</span>
           </el-descriptions-item>
-          <el-descriptions-item label="案件等级">
-            <span v-if="caseData.level === '重要'">🔴 重要</span>
-            <span v-else-if="caseData.level === '一般'">🟡 一般</span>
-            <span v-else>⚪ 次要</span>
-          </el-descriptions-item>
           <el-descriptions-item label="立案时间">
-            {{ caseData.filingDate || '-' }}
+            {{ formatDate(caseData.filingDate) }}
           </el-descriptions-item>
           <el-descriptions-item label="审限时间">
             <span :class="getDeadlineClass(caseData.deadlineDate)">
-              {{ caseData.deadlineDate || '-' }}
+              {{ formatDate(caseData.deadlineDate) }}
             </span>
           </el-descriptions-item>
           <el-descriptions-item label="委托时间">
-            {{ caseData.commissionDate || '-' }}
+            {{ formatDate(caseData.commissionDate) }}
           </el-descriptions-item>
           <el-descriptions-item label="胜诉金额" :span="1">
-            ¥{{ caseData.winAmount || '0' }}
+            ¥{{ formatMoney(caseData.wonAmount ?? caseData.winAmount) }}
           </el-descriptions-item>
           <el-descriptions-item label="实际回款" :span="1">
-            ¥{{ caseData.actualAmount || '0' }}
+            ¥{{ formatMoney(caseData.actualReceived ?? caseData.actualAmount) }}
           </el-descriptions-item>
           <el-descriptions-item label="案件标签" :span="1">
             <el-tag
-              v-for="tag in caseData.tags"
+              v-for="tag in displayTags"
               :key="tag"
               size="small"
               style="margin-right: 5px"
@@ -177,7 +172,7 @@
         <el-descriptions :column="2" border>
           <el-descriptions-item label="收费方式">
             <el-tag
-              v-for="feeType in caseData.feeTypes"
+              v-for="feeType in displayFeeTypes"
               :key="feeType"
               style="margin-right: 5px"
             >
@@ -191,13 +186,13 @@
             {{ caseData.subjectMatter || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="代理费">
-            <span class="fee-amount">¥{{ caseData.lawyerFee || '0' }}</span>
+            <span class="fee-amount">¥{{ formatMoney(caseData.attorneyFee ?? caseData.lawyerFee) }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="收费简介" :span="2">
-            {{ caseData.feeSummary || '-' }}
+            {{ caseData.feeDescription || caseData.feeSummary || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="收费备注" :span="2">
-            {{ caseData.feeRemark || '-' }}
+            {{ caseData.feeNotes || caseData.feeRemark || '-' }}
           </el-descriptions-item>
         </el-descriptions>
 
@@ -254,13 +249,13 @@
                 {{ procedure.judge || '-' }}
               </el-descriptions-item>
               <el-descriptions-item label="立案日期">
-                {{ procedure.filingDate || '-' }}
+                {{ formatDate(procedure.filingDate) }}
               </el-descriptions-item>
               <el-descriptions-item label="开庭日期">
-                {{ procedure.hearingDate || '-' }}
+                {{ formatDate(procedure.hearingDate) }}
               </el-descriptions-item>
               <el-descriptions-item label="裁决日期">
-                {{ procedure.judgmentDate || '-' }}
+                {{ formatDate(procedure.judgmentDate) }}
               </el-descriptions-item>
               <el-descriptions-item label="结果">
                 <el-tag :type="getJudgmentTagType(procedure.result)">
@@ -730,16 +725,6 @@
             </el-form-item>
           </el-col>
 
-          <el-col :span="12">
-            <el-form-item label="案件等级">
-              <el-select v-model="infoForm.level" placeholder="请选择案件等级" style="width: 100%">
-                <el-option label="重要" value="重要" />
-                <el-option label="一般" value="一般" />
-                <el-option label="次要" value="次要" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-
           <el-col :span="8">
             <el-form-item label="立案时间">
               <el-date-picker
@@ -778,13 +763,13 @@
 
           <el-col :span="12">
             <el-form-item label="胜诉金额">
-              <el-input-number v-model="infoForm.winAmount" :min="0" :precision="2" placeholder="请输入胜诉金额" style="width: 100%" />
+              <el-input-number v-model="infoForm.wonAmount" :min="0" :precision="2" placeholder="请输入胜诉金额" style="width: 100%" />
             </el-form-item>
           </el-col>
 
           <el-col :span="12">
             <el-form-item label="实际回款">
-              <el-input-number v-model="infoForm.actualAmount" :min="0" :precision="2" placeholder="请输入实际回款" style="width: 100%" />
+              <el-input-number v-model="infoForm.actualReceived" :min="0" :precision="2" placeholder="请输入实际回款" style="width: 100%" />
             </el-form-item>
           </el-col>
 
@@ -842,12 +827,11 @@ const infoForm = ref({
   caseReason: '',
   caseNumber: '',
   court: '',
-  level: '一般',
   filingDate: '',
   deadlineDate: '',
   commissionDate: '',
-  winAmount: null,
-  actualAmount: null,
+  wonAmount: null,
+  actualReceived: null,
   tags: [],
   summary: ''
 })
@@ -932,15 +916,51 @@ const getTypeTagType = (type) => {
     '仲裁': 'warning',
     '刑事': 'danger',
     '行政': 'info',
-    '非诉': ''
+    '非诉': undefined
   }
-  return typeMap[type] || ''
+  return typeMap[type]
 }
+
+const normalizeDate = (value) => {
+  if (!value) return ''
+  if (Array.isArray(value)) {
+    const [year, month, day] = value
+    return [year, String(month).padStart(2, '0'), String(day).padStart(2, '0')].join('-')
+  }
+  return String(value).slice(0, 10)
+}
+
+const formatDate = (value) => normalizeDate(value) || '-'
+
+const formatMoney = (value) => {
+  const amount = Number(value ?? 0)
+  return Number.isFinite(amount) ? amount.toLocaleString('zh-CN') : '0'
+}
+
+const primaryClientId = computed(() => {
+  if (props.caseData.clientId) return props.caseData.clientId
+  return props.caseData.clientIds?.[0] || null
+})
+
+const displayTags = computed(() => {
+  const tags = props.caseData.tags
+  if (Array.isArray(tags)) return tags.filter(Boolean)
+  if (typeof tags === 'string') {
+    return tags.split(/[,，]/).map(tag => tag.trim()).filter(Boolean)
+  }
+  return []
+})
+
+const displayFeeTypes = computed(() => {
+  if (Array.isArray(props.caseData.feeTypes)) return props.caseData.feeTypes.filter(Boolean)
+  if (props.caseData.feeMethod) return [props.caseData.feeMethod]
+  return []
+})
 
 // 获取审限样式
 const getDeadlineClass = (date) => {
   if (!date) return ''
-  const days = Math.ceil((new Date(date) - new Date()) / (1000 * 60 * 60 * 24))
+  const days = Math.ceil((new Date(normalizeDate(date)) - new Date()) / (1000 * 60 * 60 * 24))
   if (days < 0) return 'deadline-overdue'
   if (days <= 3) return 'deadline-urgent'
   if (days <= 7) return 'deadline-warning'
@@ -992,13 +1012,12 @@ const handleEditSection = (section) => {
     caseReason: props.caseData.caseReason || '',
     caseNumber: props.caseData.caseNumber || '',
     court: props.caseData.court || '',
-    level: props.caseData.level || '一般',
-    filingDate: props.caseData.filingDate || '',
-    deadlineDate: props.caseData.deadlineDate || '',
-    commissionDate: props.caseData.commissionDate || '',
-    winAmount: props.caseData.winAmount || null,
-    actualAmount: props.caseData.actualAmount || null,
-    tags: props.caseData.tags || [],
+    filingDate: normalizeDate(props.caseData.filingDate),
+    deadlineDate: normalizeDate(props.caseData.deadlineDate),
+    commissionDate: normalizeDate(props.caseData.commissionDate),
+    wonAmount: props.caseData.wonAmount ?? props.caseData.winAmount ?? null,
+    actualReceived: props.caseData.actualReceived ?? props.caseData.actualAmount ?? null,
+    tags: displayTags.value.join(','),
     summary: props.caseData.summary || ''
   }
   infoDialogVisible.value = true
@@ -1006,7 +1025,11 @@ const handleEditSection = (section) => {
 
 const handleSubmitInfo = async () => {
   try {
-    await updateCase(props.caseData.id, infoForm.value)
+    const payload = {
+      ...infoForm.value,
+      tags: Array.isArray(infoForm.value.tags) ? infoForm.value.tags.join(',') : infoForm.value.tags
+    }
+    await updateCase(props.caseData.id, payload)
     ElMessage.success('案件信息更新成功')
     infoDialogVisible.value = false
     emit('refresh')
@@ -1096,8 +1119,8 @@ const handleSaveParty = async () => {
 
 // 查看客户详情
 const handleViewClient = () => {
-  if (props.caseData.clientId) {
-    router.push(`/client/${props.caseData.clientId}`)
+  if (primaryClientId.value) {
+    router.push(`/client/${primaryClientId.value}`)
   } else {
     ElMessage.warning('该案件未关联客户')
   }
@@ -1140,8 +1163,8 @@ const handleEditFee = () => {
     attorneyFee: props.caseData.attorneyFee || 0,
     feeMethod: props.caseData.feeMethod || 'FIXED',
     amount: props.caseData.amount || 0,
-    wonAmount: props.caseData.wonAmount || 0,
-    actualReceived: props.caseData.actualReceived || 0
+    wonAmount: props.caseData.wonAmount ?? props.caseData.winAmount ?? 0,
+    actualReceived: props.caseData.actualReceived ?? props.caseData.actualAmount ?? 0
   }
   feeDialogVisible.value = true
 }

@@ -225,6 +225,47 @@ public class ClientController {
     }
 
     /**
+     * 更新沟通记录
+     * PUT /api/clients/{id}/communications/{communicationId}
+     */
+    @PutMapping("/{id}/communications/{communicationId}")
+    public Result<com.lawfirm.entity.CommunicationRecord> updateCommunication(
+            @PathVariable Long id,
+            @PathVariable Long communicationId,
+            @Valid @RequestBody com.lawfirm.dto.CommunicationRecordDTO dto) {
+        try {
+            com.lawfirm.entity.CommunicationRecord record = clientService.updateCommunication(id, communicationId, dto);
+            return Result.success("沟通记录更新成功", record);
+        } catch (IllegalArgumentException e) {
+            log.error("更新沟通记录失败: {}", e.getMessage());
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("更新沟通记录异常", e);
+            return Result.error("更新沟通记录失败");
+        }
+    }
+
+    /**
+     * 删除沟通记录
+     * DELETE /api/clients/{id}/communications/{communicationId}
+     */
+    @DeleteMapping("/{id}/communications/{communicationId}")
+    public Result<Void> deleteCommunication(
+            @PathVariable Long id,
+            @PathVariable Long communicationId) {
+        try {
+            clientService.deleteCommunication(id, communicationId);
+            return Result.success();
+        } catch (IllegalArgumentException e) {
+            log.error("删除沟通记录失败: {}", e.getMessage());
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("删除沟通记录异常", e);
+            return Result.error("删除沟通记录失败");
+        }
+    }
+
+    /**
      * 分页查询客户
      * GET /api/clients?page={page}&size={size}
      */

@@ -78,6 +78,9 @@ public class Case extends LogicalDeleteEntity {
     @Column(name = "archive_location")
     private String archiveLocation;
 
+    @Column(name = "case_folder_path")
+    private String caseFolderPath;
+
     private String summary;
 
     @Column(length = 500)

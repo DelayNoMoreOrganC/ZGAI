@@ -65,6 +65,9 @@ public class Client extends LogicalDeleteEntity {
 
     private String notes;
 
+    @Column(name = "department_id")
+    private Long departmentId;
+
     @Column(name = "owner_id")
     private Long ownerId;
 }

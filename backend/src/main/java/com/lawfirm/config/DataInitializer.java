@@ -27,6 +27,7 @@ public class DataInitializer implements CommandLineRunner {
     private final TodoRepository todoRepository;
     private final CalendarRepository calendarRepository;
     private final AIConfigRepository aiConfigRepository;
+    private final DepartmentRepository departmentRepository;
 
     @Override
     public void run(String... args) {
@@ -41,6 +42,7 @@ public class DataInitializer implements CommandLineRunner {
                 admin.setRealName("系统管理员");
                 admin.setEmail("admin@lawfirm.com");
                 admin.setPhone("13800138000");
+                admin.setPosition("行政管理");
                 admin.setStatus(1);
                 admin.setDeleted(false);
                 User savedAdmin = userRepository.save(admin);
@@ -65,7 +67,10 @@ public class DataInitializer implements CommandLineRunner {
                 // 4. 创建AI配置
                 createDefaultAIConfig();
 
-                // 5. 创建测试数据
+                // 5. 创建默认部门
+                createDefaultDepartments();
+
+                // 6. 创建测试数据
                 createTestData(savedAdmin);
 
                 log.info("测试数据创建完成！");
@@ -77,10 +82,73 @@ public class DataInitializer implements CommandLineRunner {
                     log.info("检测到没有AI配置，创建默认AI配置...");
                     createDefaultAIConfig();
                 }
+
+                createDefaultDepartments();
+                ensureDefaultAdminIdentity();
             }
         } catch (Exception e) {
             log.error("数据初始化失败", e);
         }
+    }
+
+    private void createDefaultDepartments() {
+        String[] deptNames = {
+                "金融事务部",
+                "民商法务部",
+                "重整与清算部",
+                "重大项目研究中心",
+                "政府事务部",
+                "法税合规部",
+                "刑事法律事务部",
+                "独立律师团队",
+                "后勤保障部"
+        };
+
+        String[] deprecatedDeptNames = {
+                "民商事业务部",
+                "公司与合规业务部",
+                "刑事业务部",
+                "执行与不良资产业务部",
+                "综合管理部",
+                "管理层",
+                "民事部",
+                "行政部"
+        };
+
+        for (String deptName : deprecatedDeptNames) {
+            Department department = departmentRepository.findByDeptName(deptName);
+            if (department != null && !Boolean.TRUE.equals(department.getDeleted())) {
+                department.setDeleted(true);
+                departmentRepository.save(department);
+            }
+        }
+
+        for (String deptName : deptNames) {
+            Department department = departmentRepository.findByDeptName(deptName);
+            if (department == null) {
+                department = new Department();
+                department.setDeptName(deptName);
+                department.setParentId(0L);
+            }
+            department.setDeleted(false);
+            departmentRepository.save(department);
+        }
+
+        log.info("默认部门初始化完成");
+    }
+
+    private void ensureDefaultAdminIdentity() {
+        userRepository.findByUsername("admin").ifPresent(admin -> {
+            boolean changed = false;
+            if (admin.getPosition() == null || admin.getPosition().trim().isEmpty()) {
+                admin.setPosition("行政管理");
+                changed = true;
+            }
+            if (changed) {
+                userRepository.save(admin);
+                log.info("默认管理员身份类别已补齐为行政管理");
+            }
+        });
     }
 
     private void createTestData(User admin) {

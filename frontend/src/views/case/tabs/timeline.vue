@@ -187,7 +187,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Promotion } from '@element-plus/icons-vue'
 import { getCaseTimeline, createTimelineComment, deleteTimelineComment } from '@/api/case'
@@ -207,6 +207,7 @@ const showMention = ref(false)
 const newComment = ref('')
 const mentionedUsers = ref([])
 const currentUserId = ref('1') // 当前用户ID
+const caseId = computed(() => Number(props.caseData.id) || null)
 
 // ==================== 编辑评论对话框 ====================
 const editCommentDialogVisible = ref(false)
@@ -214,50 +215,7 @@ const editingComment = ref(null)
 const editingCommentText = ref('')
 
 // 时间线数据
-const timelineData = ref([
-  {
-    id: '1',
-    type: 'activity',
-    timestamp: '2024-03-20 15:30',
-    userName: '张律师',
-    userAvatar: '',
-    action: '创建了案件',
-    details: [
-      { label: '案件类型', value: '民事' },
-      { label: '案由', value: '买卖合同纠纷' }
-    ]
-  },
-  {
-    id: '2',
-    type: 'comment',
-    timestamp: '2024-03-21 10:15',
-    userName: '李律师',
-    userAvatar: '',
-    content: '案件已立案，注意关注举证期限',
-    mentions: [],
-    replies: [
-      {
-        id: '2-1',
-        userName: '小张',
-        userAvatar: '',
-        content: '收到，会及时提醒',
-        timestamp: '2024-03-21 10:20'
-      }
-    ]
-  },
-  {
-    id: '3',
-    type: 'activity',
-    timestamp: '2024-03-22 14:00',
-    userName: '小李',
-    userAvatar: '',
-    action: '上传了文档',
-    details: [
-      { label: '文档名称', value: '证据清单.xlsx' },
-      { label: '文件夹', value: '原告证据' }
-    ]
-  }
-])
+const timelineData = ref([])
 
 // 团队成员
 const teamMembers = ref([
@@ -308,36 +266,21 @@ const handleSubmitComment = async () => {
   }
 
   try {
-    const { id } = props.caseData
+    if (!caseId.value) return
     const data = {
       content: newComment.value,
       mentionIds: mentionedUsers.value,
       parentId: null
     }
 
-    await createTimelineComment(id, data)
+    await createTimelineComment(caseId.value, data)
 
     ElMessage.success('评论已添加')
-
-    // 添加到本地列表
-    timelineData.value.unshift({
-      id: Date.now().toString(),
-      type: 'comment',
-      timestamp: new Date().toLocaleString('zh-CN'),
-      userName: '当前用户',
-      userAvatar: '',
-      content: newComment.value,
-      mentions: mentionedUsers.value.map(id => ({
-        id,
-        name: teamMembers.value.find(u => u.id === id)?.name
-      })),
-      replies: []
-    })
-
-    // 清空输入
     newComment.value = ''
     mentionedUsers.value = []
     showMention.value = false
+    await fetchTimeline()
+    emit('refresh')
   } catch (error) {
     ElMessage.error('添加评论失败')
     console.error(error)
@@ -378,7 +321,8 @@ const handleSubmitEditComment = async () => {
 // 删除评论
 const handleDeleteComment = async (item) => {
   try {
-    await deleteTimelineComment(props.caseData.id, item.id)
+    if (!caseId.value) return
+    await deleteTimelineComment(caseId.value, item.id)
     timelineData.value = timelineData.value.filter(i => i.id !== item.id)
     ElMessage.success('删除成功')
     emit('refresh')
@@ -414,11 +358,15 @@ const handleReply = (item) => {
 
 // 获取时间线数据
 const fetchTimeline = async () => {
+  if (!caseId.value) {
+    timelineData.value = []
+    return
+  }
+
   try {
     loading.value = true
-    const { id } = props.caseData
-    const res = await getCaseTimeline(id)
-    timelineData.value = res.data || []
+    const res = await getCaseTimeline(caseId.value)
+    timelineData.value = (res.data || []).map(normalizeTimelineItem)
   } catch (error) {
     console.error('获取案件动态失败:', error)
   } finally {
@@ -426,8 +374,37 @@ const fetchTimeline = async () => {
   }
 }
 
-// 初始化
-fetchTimeline()
+const normalizeDate = (value) => {
+  if (!value) return ''
+  if (Array.isArray(value)) {
+    const [year, month, day, hour = 0, minute = 0] = value
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+  }
+  return String(value).replace('T', ' ').slice(0, 16)
+}
+
+const normalizeTimelineItem = (item) => {
+  const isComment = Boolean(item.isComment || item.type === 'comment')
+  return {
+    ...item,
+    type: isComment ? 'comment' : 'activity',
+    timestamp: normalizeDate(item.createdAt || item.timestamp),
+    userId: String(item.operatorId || item.userId || ''),
+    userName: item.operatorName || item.userName || (item.operatorId ? `用户 #${item.operatorId}` : '系统'),
+    userAvatar: item.userAvatar || '',
+    action: item.actionContent || item.action || item.actionType || '更新了案件',
+    content: item.actionContent || item.content || '',
+    details: isComment
+      ? []
+      : [{ label: '类型', value: item.actionType || '案件动态' }],
+    mentions: item.mentions || [],
+    replies: item.replies || []
+  }
+}
+
+watch(caseId, () => {
+  fetchTimeline()
+}, { immediate: true })
 </script>
 
 <style scoped lang="scss">

@@ -224,7 +224,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Download, Plus, Paperclip, User, Upload, ArrowDown, Document
@@ -255,6 +255,7 @@ const keyword = ref('')
 // 数据
 const recordList = ref([])
 const loading = ref(false)
+const caseId = computed(() => Number(props.caseData.id) || null)
 
 // 统计
 const completedCount = ref(0)
@@ -327,17 +328,24 @@ const getStageTagType = (stage) => {
 
 // 获取记录列表
 const fetchRecords = async () => {
+  if (!caseId.value) {
+    recordList.value = []
+    completedCount.value = 0
+    totalCount.value = 0
+    totalHours.value = 0
+    return
+  }
+
   try {
     loading.value = true
-    const { id } = props.caseData
     const params = {
-      stage: filterStage.value,
+      stage: filterStage.value || undefined,
       startDate: dateRange.value?.[0],
       endDate: dateRange.value?.[1],
-      keyword: keyword.value
+      keyword: keyword.value || undefined
     }
-    const res = await getCaseRecords(id, params)
-    recordList.value = res.data || []
+    const res = await getCaseRecords(caseId.value, params)
+    recordList.value = (res.data || []).map(normalizeRecord)
 
     // 计算统计
     completedCount.value = recordList.value.filter(r => r.completed).length
@@ -366,29 +374,30 @@ const handleReset = () => {
 
 // 导出办案记录
 const handleExportCommand = async (command) => {
+  if (!caseId.value) return
+
   try {
-    const { id } = props.caseData
     let response
     let fileName
     let fileType
 
     if (command === 'word') {
-      response = await exportCaseRecordsWord(id, {
-        stage: filterStage.value,
+      response = await exportCaseRecordsWord(caseId.value, {
+        stage: filterStage.value || undefined,
         startDate: dateRange.value?.[0],
         endDate: dateRange.value?.[1],
-        keyword: keyword.value
+        keyword: keyword.value || undefined
       })
-      fileName = `办案记录_${id}_${new Date().getTime()}.docx`
+      fileName = `办案记录_${caseId.value}_${new Date().getTime()}.docx`
       fileType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     } else {
-      response = await exportCaseRecords(id, {
-        stage: filterStage.value,
+      response = await exportCaseRecords(caseId.value, {
+        stage: filterStage.value || undefined,
         startDate: dateRange.value?.[0],
         endDate: dateRange.value?.[1],
-        keyword: keyword.value
+        keyword: keyword.value || undefined
       })
-      fileName = `办案记录_${id}_${new Date().getTime()}.xlsx`
+      fileName = `办案记录_${caseId.value}_${new Date().getTime()}.xlsx`
       fileType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     }
 
@@ -411,6 +420,8 @@ const handleExportCommand = async (command) => {
 
 // 添加记录
 const handleAddRecord = () => {
+  if (!caseId.value) return
+
   isEdit.value = false
   Object.assign(recordForm, {
     id: null,
@@ -448,8 +459,8 @@ const handleDeleteRecord = async (record) => {
       type: 'warning'
     })
 
-    const { id } = props.caseData
-    await deleteCaseRecord(id, record.id)
+    if (!caseId.value) return
+    await deleteCaseRecord(caseId.value, record.id)
     ElMessage.success('删除成功')
     fetchRecords()
     emit('refresh')
@@ -493,15 +504,18 @@ const handleDeleteAttachment = async (record, file) => {
 const handleSubmitRecord = async () => {
   try {
     await recordFormRef.value?.validate()
+    if (!caseId.value) return
 
-    const { id } = props.caseData
-    const data = { ...recordForm }
+    const data = {
+      ...recordForm,
+      workHours: recordForm.hours
+    }
 
     if (isEdit.value) {
-      await updateCaseRecord(id, recordForm.id, data)
+      await updateCaseRecord(caseId.value, recordForm.id, data)
       ElMessage.success('更新成功')
     } else {
-      await createCaseRecord(id, data)
+      await createCaseRecord(caseId.value, data)
       ElMessage.success('添加成功')
     }
 
@@ -515,8 +529,28 @@ const handleSubmitRecord = async () => {
   }
 }
 
-// 初始化
-fetchRecords()
+const normalizeDate = (value) => {
+  if (!value) return ''
+  if (Array.isArray(value)) {
+    const [year, month, day, hour = 0, minute = 0] = value
+    const datePart = [year, String(month).padStart(2, '0'), String(day).padStart(2, '0')].join('-')
+    return hour || minute ? `${datePart} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}` : datePart
+  }
+  return String(value).replace('T', ' ').slice(0, 16)
+}
+
+const normalizeRecord = (record) => ({
+  ...record,
+  hours: record.hours ?? record.workHours ?? 0,
+  recordDate: normalizeDate(record.recordDate),
+  createTime: normalizeDate(record.createTime || record.createdAt),
+  authorName: record.authorName || record.operatorName || '-',
+  attachments: record.attachments || []
+})
+
+watch(caseId, () => {
+  fetchRecords()
+}, { immediate: true })
 </script>
 
 <style scoped lang="scss">

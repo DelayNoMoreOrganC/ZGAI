@@ -14,29 +14,23 @@
       <el-form :model="filterForm" inline>
         <el-form-item label="案件类型">
           <el-select v-model="filterForm.caseType" placeholder="请选择" clearable style="width: 150px">
-            <el-option label="民事" value="民事" />
-            <el-option label="商事" value="商事" />
-            <el-option label="仲裁" value="仲裁" />
-            <el-option label="刑事" value="刑事" />
-            <el-option label="行政" value="行政" />
-            <el-option label="非诉" value="非诉" />
+            <el-option label="民事" value="CIVIL" />
+            <el-option label="商事" value="COMMERCIAL" />
+            <el-option label="仲裁" value="ARBITRATION" />
+            <el-option label="刑事" value="CRIMINAL" />
+            <el-option label="行政" value="ADMINISTRATIVE" />
+            <el-option label="非诉" value="NON_LITIGATION" />
           </el-select>
         </el-form-item>
 
         <el-form-item label="案件状态">
           <el-select v-model="filterForm.status" placeholder="请选择" clearable style="width: 150px">
-            <el-option label="待立案" value="pending" />
-            <el-option label="审理中" value="active" />
-            <el-option label="结案" value="closed" />
-            <el-option label="归档" value="archived" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="案件等级">
-          <el-select v-model="filterForm.level" placeholder="请选择" clearable style="width: 120px">
-            <el-option label="重要" value="重要" />
-            <el-option label="一般" value="一般" />
-            <el-option label="次要" value="次要" />
+            <el-option label="待审批" value="PENDING_APPROVAL" />
+            <el-option label="立案驳回" value="FILING_REJECTED" />
+            <el-option label="待立案" value="PENDING_FILING" />
+            <el-option label="审理中" value="ACTIVE" />
+            <el-option label="结案" value="CLOSED" />
+            <el-option label="归档" value="ARCHIVED" />
           </el-select>
         </el-form-item>
 
@@ -93,11 +87,11 @@
     <div class="toolbar">
       <div class="toolbar-left">
         <el-radio-group v-model="viewMode" @change="handleViewChange">
-          <el-radio-button label="list">
+          <el-radio-button value="list">
             <el-icon><List /></el-icon>
             列表视图
           </el-radio-button>
-          <el-radio-button label="kanban">
+          <el-radio-button value="kanban">
             <el-icon><Grid /></el-icon>
             看板视图
           </el-radio-button>
@@ -140,15 +134,15 @@
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
       >
-        <el-table-column prop="level" label="等级" width="60" align="center">
+        <el-table-column prop="caseTypeDesc" label="类型" width="80" sortable />
+
+        <el-table-column prop="statusDesc" label="状态" width="100" sortable>
           <template #default="{ row }">
-            <el-icon v-if="row.level === '重要'" color="#f56c6c"><Star /></el-icon>
-            <el-icon v-else-if="row.level === '一般'" color="#e6a23c"><Warning /></el-icon>
-            <el-icon v-else color="#909399"><CircleCheck /></el-icon>
+            <el-tag :type="getStatusTagType(row.status)" size="small">
+              {{ row.statusDesc || row.status }}
+            </el-tag>
           </template>
         </el-table-column>
-
-        <el-table-column prop="caseType" label="类型" width="80" sortable />
 
         <el-table-column prop="caseName" label="案件名称" width="200" sortable>
           <template #default="{ row }">
@@ -162,7 +156,8 @@
 
         <el-table-column prop="parties" label="当事人" width="150">
           <template #default="{ row }">
-            <div class="parties-cell">
+            <span v-if="row.parties">{{ row.parties }}</span>
+            <div v-else class="parties-cell">
               <div class="party">{{ row.plaintiff }}</div>
               <div class="vs">vs</div>
               <div class="party">{{ row.defendant }}</div>
@@ -287,7 +282,6 @@ const route = useRoute()
 const filterForm = reactive({
   caseType: '',
   status: '',
-  level: '',
   ownerId: '',
   court: '',
   clientId: null, // 客户ID筛选
@@ -333,14 +327,13 @@ const fetchCaseList = async () => {
     const params = {
       page: currentPage.value,
       size: pageSize.value,
-      caseType: filterForm.caseType,
-      status: filterForm.status,
-      level: filterForm.level,
-      ownerId: filterForm.ownerId,
-      court: filterForm.court,
-      clientId: filterForm.clientId,
-      startDate: filterForm.dateRange?.[0] || null,
-      endDate: filterForm.dateRange?.[1] || null
+      caseType: filterForm.caseType || undefined,
+      status: filterForm.status || undefined,
+      ownerId: filterForm.ownerId || undefined,
+      court: filterForm.court || undefined,
+      clientId: filterForm.clientId || undefined,
+      startDate: filterForm.dateRange?.[0] || undefined,
+      endDate: filterForm.dateRange?.[1] || undefined
     }
     const res = await getCaseList(params)
     caseList.value = res.data?.records || []  // 后端PageResult的data字段包含records
@@ -429,6 +422,12 @@ const formatDate = (date) => {
 // 获取案件类型标签颜色
 const getTypeTagType = (type) => {
   const typeMap = {
+    CIVIL: 'primary',
+    COMMERCIAL: 'success',
+    ARBITRATION: 'warning',
+    CRIMINAL: 'danger',
+    ADMINISTRATIVE: 'info',
+    NON_LITIGATION: '',
     '民事': 'primary',
     '商事': 'success',
     '仲裁': 'warning',
@@ -437,6 +436,18 @@ const getTypeTagType = (type) => {
     '非诉': ''
   }
   return typeMap[type] || ''
+}
+
+const getStatusTagType = (status) => {
+  const statusMap = {
+    PENDING_APPROVAL: 'warning',
+    FILING_REJECTED: 'danger',
+    PENDING_FILING: 'info',
+    ACTIVE: 'success',
+    CLOSED: '',
+    ARCHIVED: 'info'
+  }
+  return statusMap[status] || ''
 }
 
 // 看板视图：根据阶段筛选案件
@@ -471,7 +482,6 @@ const handleReset = () => {
   Object.assign(filterForm, {
     caseType: '',
     status: '',
-    level: '',
     ownerId: '',
     court: '',
     dateRange: []

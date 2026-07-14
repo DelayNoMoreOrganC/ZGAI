@@ -55,7 +55,7 @@
               :auto-upload="false"
               multiple
               :on-change="handleFileUpload"
-              show-file-list="false"
+              :show-file-list="false"
             >
               <el-button type="primary">
                 <el-icon><Upload /></el-icon>

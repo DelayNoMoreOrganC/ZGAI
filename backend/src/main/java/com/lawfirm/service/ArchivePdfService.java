@@ -40,7 +40,7 @@ public class ArchivePdfService {
     private final CaseRepository caseRepository;
     private final CaseDocumentRepository caseDocumentRepository;
 
-    @Value("${file.upload-path:D:/ZGAI/uploads/}")
+    @Value("${file.upload-path:./uploads/}")
     private String uploadPath;
 
     /**

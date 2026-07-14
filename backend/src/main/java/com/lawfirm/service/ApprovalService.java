@@ -13,7 +13,13 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -29,7 +35,11 @@ public class ApprovalService {
     private final ApprovalFlowRepository approvalFlowRepository;
     private final UserRepository userRepository;
     private final CaseRepository caseRepository;
+    private final CaseDocumentRepository caseDocumentRepository;
     private final NotificationService notificationService;
+    private final CaseTimelineService caseTimelineService;
+
+    private static final String CASE_FILE_BASE_DIR = "uploads/cases/";
 
     /**
      * 审批类型常量
@@ -40,6 +50,7 @@ public class ApprovalService {
     public static final String TYPE_LEAVE = "LEAVE";  // 请假出差
     public static final String TYPE_PURCHASE = "PURCHASE";  // 采购申请
     public static final String TYPE_LICENSE = "LICENSE";  // 证照借用
+    public static final String TYPE_CASE_FILING = "CASE_FILING";  // 立案审批
 
     /**
      * 创建审批
@@ -94,6 +105,10 @@ public class ApprovalService {
 
         // 记录流程
         recordFlow(approvalId, approverId, "APPROVE", comments);
+
+        if (TYPE_CASE_FILING.equals(approval.getApprovalType()) && approval.getCaseId() != null) {
+            approveCaseFiling(approval, comments, approverId);
+        }
     }
 
     /**
@@ -123,6 +138,10 @@ public class ApprovalService {
 
         // 记录流程
         recordFlow(approvalId, approverId, "REJECT", comments);
+
+        if (TYPE_CASE_FILING.equals(approval.getApprovalType()) && approval.getCaseId() != null) {
+            rejectCaseFiling(approval, comments);
+        }
     }
 
     /**
@@ -326,10 +345,105 @@ public class ApprovalService {
         types.add(createTypeItem(TYPE_LEAVE, "请假出差"));
         types.add(createTypeItem(TYPE_PURCHASE, "采购申请"));
         types.add(createTypeItem(TYPE_LICENSE, "证照借用"));
+        types.add(createTypeItem(TYPE_CASE_FILING, "立案审批"));
         return types;
     }
 
     // 辅助方法
+
+    private void approveCaseFiling(Approval approval, String comments, Long approverId) {
+        Case caseEntity = caseRepository.findById(approval.getCaseId())
+                .orElseThrow(() -> new RuntimeException("案件不存在"));
+
+        String folderPath = ensureCaseFolder(caseEntity);
+        createConflictCheckReport(caseEntity, approval, comments, approverId, folderPath);
+
+        caseEntity.setStatus("ACTIVE");
+        if (caseEntity.getFilingDate() == null) {
+            caseEntity.setFilingDate(java.time.LocalDate.now());
+        }
+        caseRepository.save(caseEntity);
+
+        caseTimelineService.createSystemTimeline(
+                caseEntity.getId(),
+                "CASE_FILING_APPROVED",
+                "行政管理已通过立案审批，案卷文件夹已建立：" + folderPath
+        );
+    }
+
+    private void rejectCaseFiling(Approval approval, String comments) {
+        Case caseEntity = caseRepository.findById(approval.getCaseId())
+                .orElseThrow(() -> new RuntimeException("案件不存在"));
+        caseEntity.setStatus("FILING_REJECTED");
+        caseRepository.save(caseEntity);
+
+        caseTimelineService.createSystemTimeline(
+                caseEntity.getId(),
+                "CASE_FILING_REJECTED",
+                "行政管理驳回立案申请：" + (comments == null ? "" : comments)
+        );
+    }
+
+    private String ensureCaseFolder(Case caseEntity) {
+        if (caseEntity.getCaseFolderPath() != null && !caseEntity.getCaseFolderPath().trim().isEmpty()) {
+            Path existing = Paths.get(caseEntity.getCaseFolderPath());
+            try {
+                Files.createDirectories(existing);
+            } catch (IOException e) {
+                throw new RuntimeException("创建案卷文件夹失败: " + e.getMessage(), e);
+            }
+            return existing.toString();
+        }
+
+        String safeName = sanitizePathSegment(caseEntity.getCaseNumber() + "_" + caseEntity.getCaseName());
+        Path folder = Paths.get(CASE_FILE_BASE_DIR, caseEntity.getId() + "_" + safeName);
+        try {
+            Files.createDirectories(folder);
+        } catch (IOException e) {
+            throw new RuntimeException("创建案卷文件夹失败: " + e.getMessage(), e);
+        }
+
+        caseEntity.setCaseFolderPath(folder.toString());
+        caseRepository.save(caseEntity);
+        return folder.toString();
+    }
+
+    private void createConflictCheckReport(Case caseEntity, Approval approval, String comments, Long approverId, String folderPath) {
+        String fileName = "利冲审查报告_" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now()) + ".txt";
+        Path reportPath = Paths.get(folderPath, "00_立案审批", fileName);
+        String report = "利冲审查报告\n"
+                + "案件名称：" + caseEntity.getCaseName() + "\n"
+                + "案号：" + caseEntity.getCaseNumber() + "\n"
+                + "案由：" + (caseEntity.getCaseReason() == null ? "" : caseEntity.getCaseReason()) + "\n"
+                + "审查人：" + getUserName(approverId) + "\n"
+                + "审查时间：" + LocalDateTime.now() + "\n"
+                + "审查结论：" + (comments == null || comments.trim().isEmpty() ? "通过" : comments.trim()) + "\n";
+
+        try {
+            Files.createDirectories(reportPath.getParent());
+            Files.write(reportPath, report.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new RuntimeException("生成利冲审查报告失败: " + e.getMessage(), e);
+        }
+
+        CaseDocument document = new CaseDocument();
+        document.setCaseId(caseEntity.getId());
+        document.setDocumentName(fileName);
+        document.setDocumentType("CONFLICT_CHECK");
+        document.setFilePath(reportPath.toString());
+        document.setFileSize(reportPath.toFile().length());
+        document.setFolderPath("00_立案审批");
+        document.setUploadBy(approverId);
+        document.setTags("立案审批,利冲审查");
+        caseDocumentRepository.save(document);
+    }
+
+    private String sanitizePathSegment(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "未命名案件";
+        }
+        return value.replaceAll("[\\\\/:*?\"<>|\\s]+", "_");
+    }
 
     private void recordFlow(Long approvalId, Long approverId, String action, String comments) {
         ApprovalFlow flow = new ApprovalFlow();

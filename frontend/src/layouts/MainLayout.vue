@@ -14,8 +14,16 @@
       :class="{ 'mobile-visible': mobileSidebarVisible }"
     >
       <div class="logo">
-        <h2 v-if="!isCollapse">律所管理系统</h2>
-        <h2 v-else>律所</h2>
+        <div class="window-dots" v-if="!isCollapse">
+          <span class="dot red"></span>
+          <span class="dot yellow"></span>
+          <span class="dot green"></span>
+        </div>
+        <div class="brand-mark">Z</div>
+        <div v-if="!isCollapse" class="brand-copy">
+          <strong>ZGAI</strong>
+          <span>案件与客户工作台</span>
+        </div>
       </div>
       <el-menu
         :default-active="activeMenu"
@@ -45,6 +53,10 @@
           </el-menu-item>
         </template>
       </el-menu>
+      <div v-if="!isCollapse" class="sidebar-footer">
+        <span class="footer-label">下一阶段</span>
+        <span class="footer-text">文档、财务、审批等模块将在稳定后逐步开放。</span>
+      </div>
     </el-aside>
 
     <!-- 主内容区 -->
@@ -79,17 +91,14 @@
             <el-icon><Search /></el-icon>
           </el-button>
 
-          <!-- AI助手 -->
-          <el-button circle class="header-btn" @click="showAIAssistant = true">
-            <span class="ai-icon">🤖</span>
+          <el-button v-if="!isMobile" class="quick-create" @click="router.push('/client/create')">
+            <el-icon><UserFilled /></el-icon>
+            新建客户
           </el-button>
-
-          <!-- 通知 -->
-          <el-badge :value="unreadCount" :hidden="unreadCount === 0" class="header-btn">
-            <el-button circle @click="showNotifications">
-              <el-icon><Bell /></el-icon>
-            </el-button>
-          </el-badge>
+          <el-button v-if="!isMobile" type="primary" class="quick-create primary" @click="router.push('/case/create')">
+            <el-icon><FolderAdd /></el-icon>
+            新建案件
+          </el-button>
 
           <!-- 用户头像 -->
           <el-dropdown @command="handleUserAction">
@@ -121,15 +130,6 @@
       </el-main>
     </el-container>
 
-    <!-- AI助手 -->
-    <AIAssistant v-model:visible="showAIAssistant" />
-
-    <!-- 通知面板 -->
-    <NotificationPanel
-      v-model="showNotificationPanel"
-      :unreadCount="unreadCount"
-      @update:unreadCount="updateUnreadCount"
-    />
   </el-container>
 </template>
 
@@ -138,9 +138,6 @@ import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore, useAppStore } from '@/stores'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import AIAssistant from '@/views/ai/assistant.vue'
-import NotificationPanel from '@/components/NotificationPanel.vue'
-import request from '@/utils/request'
 
 const route = useRoute()
 const router = useRouter()
@@ -192,7 +189,7 @@ const sidebarWidth = computed(() => {
   if (isMobile.value) {
     return '0px' // 移动端完全隐藏
   }
-  return isCollapse.value ? '64px' : '200px'
+  return isCollapse.value ? '76px' : '248px'
 })
 
 // 当前页面标题（移动端）
@@ -204,9 +201,11 @@ const currentPageTitle = computed(() => {
 // 当前激活的菜单
 const activeMenu = computed(() => {
   const { path } = route
-  // 案件详情页高亮案件列表
-  if (path.startsWith('/case/') && path.includes('/tab')) {
+  if (path.startsWith('/case/')) {
     return '/case/list'
+  }
+  if (path.startsWith('/client/')) {
+    return '/client/list'
   }
   return path
 })
@@ -214,26 +213,23 @@ const activeMenu = computed(() => {
 // 菜单路由
 const menuRoutes = computed(() => {
   const routes = [
-    { path: '/dashboard', meta: { title: '工作台', icon: '📊' } },
-    { path: '/calendar', meta: { title: '日程', icon: '📅' } },
+    { path: '/dashboard', meta: { title: '总览', icon: '📊' } },
     {
       path: '/case',
-      meta: { title: '案件', icon: '⚖️' },
+      meta: { title: '案件管理', icon: '⚖️' },
       children: [
-        { path: '/case/list', meta: { title: '案件列表' } },
-        { path: '/case/create', meta: { title: '新建案件' } },
-        { path: '/case/archive', meta: { title: '归档库' } },
-        { path: '/case/trash', meta: { title: '回收站' } }
+        { path: '/case/list', meta: { title: '全部案件' } },
+        { path: '/case/create', meta: { title: '新建案件' } }
       ]
     },
-    { path: '/client', meta: { title: '客户', icon: '👥' } },
-    { path: '/document', meta: { title: '文档中心', icon: '📁' } },
-    { path: '/finance', meta: { title: '财务', icon: '💰' } },
-    { path: '/approval', meta: { title: '审批', icon: '✅' } },
-    { path: '/admin-oa', meta: { title: '行政', icon: '🏢' } },
-    { path: '/statistics', meta: { title: '统计', icon: '📈' } },
-    { path: '/tools', meta: { title: '工具集', icon: '🔧' } },
-    { path: '/settings', meta: { title: '设置', icon: '⚙️' } }
+    {
+      path: '/client',
+      meta: { title: '客户管理', icon: '👥' },
+      children: [
+        { path: '/client/list', meta: { title: '全部客户' } },
+        { path: '/client/create', meta: { title: '新建客户' } }
+      ]
+    }
   ]
   return routes
 })
@@ -267,33 +263,6 @@ const handleSearch = () => {
     router.push({ path: '/search', query: { q: searchKeyword.value } })
   }
 }
-
-// 通知
-const unreadCount = ref(0)
-const showNotificationPanel = ref(false)
-const showNotifications = () => {
-  showNotificationPanel.value = true
-}
-
-// 更新未读数量
-const updateUnreadCount = async (count) => {
-  if (typeof count === 'number') {
-    unreadCount.value = count
-  } else {
-    // 如果没有传count，从服务器获取
-    try {
-      const response = await request.get('/notification/unread-count')
-      if (response.data.code === 200) {
-        unreadCount.value = response.data.data
-      }
-    } catch (error) {
-      console.error('获取未读数量失败:', error)
-    }
-  }
-}
-
-// AI助手
-const showAIAssistant = ref(false)
 
 // 切换侧边栏
 const toggleSidebar = () => {
@@ -355,15 +324,6 @@ onMounted(() => {
     appStore.closeSidebar()
   }
 
-  // 获取未读通知数量（仅在用户已登录时）
-  if (userStore.isLoggedIn) {
-    updateUnreadCount()
-  }
-
-  // 定时刷新未读数量（每30秒，仅在用户已登录时）
-  if (userStore.isLoggedIn) {
-    setInterval(updateUnreadCount, 30000)
-  }
 })
 
 onBeforeUnmount(() => {
@@ -375,49 +335,156 @@ onBeforeUnmount(() => {
 .main-layout {
   height: 100vh;
   width: 100vw;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(255, 255, 255, 0.95), transparent 34%),
+    linear-gradient(135deg, #eef2f6 0%, #f7f8fb 42%, #edf1f5 100%);
+  color: #1d1d1f;
 
   .sidebar {
-    background-color: #001529;
-    transition: width 0.3s, transform 0.3s;
+    background: rgba(245, 247, 250, 0.78);
+    border-right: 1px solid rgba(196, 202, 211, 0.72);
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
+    transition: width 0.24s ease, transform 0.24s ease;
     overflow: hidden;
     position: relative;
     z-index: 1000;
+    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.65);
 
     .logo {
-      height: 60px;
+      height: 92px;
       display: flex;
       align-items: center;
-      justify-content: center;
-      color: #fff;
-      font-size: 18px;
-      font-weight: bold;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      gap: 12px;
+      padding: 18px 18px 12px;
+      color: #1d1d1f;
+      border-bottom: 1px solid rgba(210, 214, 220, 0.6);
       white-space: nowrap;
       overflow: hidden;
+      position: relative;
+
+      .window-dots {
+        position: absolute;
+        top: 16px;
+        left: 18px;
+        display: flex;
+        gap: 7px;
+
+        .dot {
+          width: 11px;
+          height: 11px;
+          border-radius: 50%;
+          box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+        }
+
+        .red { background: #ff5f57; }
+        .yellow { background: #ffbd2e; }
+        .green { background: #28c840; }
+      }
+
+      .brand-mark {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 18px;
+        background: linear-gradient(145deg, #24272d, #5e6674);
+        color: #fff;
+        font-size: 18px;
+        font-weight: 700;
+        box-shadow: 0 12px 24px rgba(41, 48, 58, 0.2);
+      }
+
+      .brand-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin-top: 18px;
+        min-width: 0;
+
+        strong {
+          font-size: 15px;
+          line-height: 1.1;
+          letter-spacing: 0;
+          color: #17181c;
+        }
+
+        span {
+          font-size: 12px;
+          color: #777f8c;
+        }
+      }
     }
 
     .sidebar-menu {
       border-right: none;
-      background-color: #001529;
+      background: transparent;
+      padding: 14px 10px;
 
       :deep(.el-menu-item),
       :deep(.el-sub-menu__title) {
-        color: rgba(255, 255, 255, 0.65);
+        height: 38px;
+        line-height: 38px;
+        margin: 4px 0;
+        border-radius: 9px;
+        color: #4f5865;
+        font-size: 14px;
+        font-weight: 500;
 
         &:hover {
-          background-color: rgba(255, 255, 255, 0.08);
-          color: #fff;
+          background: rgba(255, 255, 255, 0.72);
+          color: #111827;
         }
 
         &.is-active {
-          background-color: #1890ff;
-          color: #fff;
+          background: rgba(255, 255, 255, 0.96);
+          color: #111827;
+          box-shadow:
+            0 1px 2px rgba(17, 24, 39, 0.08),
+            0 10px 22px rgba(31, 41, 55, 0.08);
         }
       }
 
+      :deep(.el-sub-menu .el-menu) {
+        background: transparent;
+      }
+
+      :deep(.el-sub-menu__icon-arrow) {
+        color: #9ca3af;
+      }
+
       .menu-icon {
-        margin-right: 8px;
-        font-size: 16px;
+        margin-right: 10px;
+        font-size: 17px;
+        color: #697386;
+      }
+    }
+
+    .sidebar-footer {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 16px;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.62);
+      border: 1px solid rgba(218, 222, 228, 0.8);
+
+      .footer-label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: #3f4652;
+        margin-bottom: 4px;
+      }
+
+      .footer-text {
+        display: block;
+        font-size: 12px;
+        line-height: 1.5;
+        color: #7a838f;
       }
     }
   }
@@ -425,55 +492,89 @@ onBeforeUnmount(() => {
   .main-container {
     display: flex;
     flex-direction: column;
+    min-width: 0;
 
     .header {
-      background-color: #fff;
-      border-bottom: 1px solid #f0f0f0;
+      background: rgba(255, 255, 255, 0.72);
+      border-bottom: 1px solid rgba(218, 222, 228, 0.8);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 20px;
-      height: 60px;
-      box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+      padding: 0 24px;
+      height: 64px;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
 
       .header-left {
         display: flex;
         align-items: center;
-        gap: 20px;
+        gap: 16px;
+        min-width: 0;
 
         .collapse-btn {
-          font-size: 20px;
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 17px;
           cursor: pointer;
-          transition: color 0.3s;
+          color: #6b7280;
+          transition: background-color 0.18s ease, color 0.18s ease;
 
           &:hover {
-            color: #1890ff;
+            background: #f1f3f6;
+            color: #111827;
           }
+        }
+
+        :deep(.el-breadcrumb__inner) {
+          color: #7b8491;
+          font-weight: 500;
+        }
+
+        :deep(.el-breadcrumb__item:last-child .el-breadcrumb__inner) {
+          color: #1f2937;
         }
 
         .mobile-title {
           font-size: 16px;
-          font-weight: 500;
-          color: #333;
+          font-weight: 600;
+          color: #1f2937;
         }
       }
 
       .header-right {
         display: flex;
         align-items: center;
-        gap: 15px;
+        gap: 10px;
 
         .search-input {
-          width: 300px;
+          width: 280px;
+
+          :deep(.el-input__wrapper) {
+            height: 36px;
+            border-radius: 10px;
+            background: rgba(242, 244, 247, 0.88);
+            box-shadow: inset 0 0 0 1px rgba(224, 228, 233, 0.9);
+          }
         }
 
-        .header-btn {
-          background-color: transparent;
-          border: none;
-          font-size: 18px;
+        .quick-create {
+          height: 36px;
+          border-radius: 10px;
+          border-color: rgba(211, 216, 224, 0.95);
+          color: #374151;
+          background: rgba(255, 255, 255, 0.72);
+          font-weight: 500;
 
-          .ai-icon {
-            font-size: 20px;
+          &.primary {
+            border: none;
+            background: #1f2937;
+            color: #fff;
+            box-shadow: 0 8px 18px rgba(31, 41, 55, 0.16);
           }
         }
 
@@ -482,26 +583,38 @@ onBeforeUnmount(() => {
           align-items: center;
           gap: 8px;
           cursor: pointer;
-          padding: 0 10px;
-          border-radius: 4px;
-          transition: background-color 0.3s;
+          padding: 4px 8px;
+          border-radius: 10px;
+          transition: background-color 0.18s ease;
 
           &:hover {
-            background-color: #f5f5f5;
+            background-color: #f1f3f6;
           }
 
           .user-name {
             font-size: 14px;
-            color: #333;
+            color: #374151;
           }
         }
       }
     }
 
     .main-content {
-      background-color: #f0f2f5;
+      background: transparent;
       overflow-y: auto;
-      padding: 20px;
+      padding: 24px;
+
+      :deep(.el-card),
+      :deep(.info-section),
+      :deep(.detail-header),
+      :deep(.progress-section),
+      :deep(.calendar-section),
+      :deep(.todo-section),
+      :deep(.ai-upload-section) {
+        border-radius: 12px;
+        border: 1px solid rgba(224, 228, 235, 0.86);
+        box-shadow: 0 10px 30px rgba(31, 41, 55, 0.06);
+      }
     }
   }
 
@@ -514,7 +627,7 @@ onBeforeUnmount(() => {
       height: 100vh;
       width: 200px !important;
       transform: translateX(-100%);
-      box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+      box-shadow: 12px 0 40px rgba(31, 41, 55, 0.18);
 
       &.mobile-visible {
         transform: translateX(0);
@@ -569,10 +682,6 @@ onBeforeUnmount(() => {
 
           .header-btn {
             padding: 8px;
-
-            .ai-icon {
-              font-size: 16px;
-            }
           }
         }
       }
@@ -583,7 +692,7 @@ onBeforeUnmount(() => {
 @media (min-width: 769px) and (max-width: 991px) {
   .main-layout {
     .sidebar {
-      width: 64px !important;
+      width: 76px !important;
     }
 
     .main-container {

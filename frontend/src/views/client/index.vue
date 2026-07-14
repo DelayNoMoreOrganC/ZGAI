@@ -23,14 +23,17 @@
       </el-input>
 
       <el-select v-model="filterType" placeholder="客户类型" clearable class="filter-select">
-        <el-option label="个人" value="personal" />
-        <el-option label="企业" value="company" />
+        <el-option label="个人" value="个人" />
+        <el-option label="企业" value="企业" />
       </el-select>
 
-      <el-select v-model="filterLevel" placeholder="客户等级" clearable class="filter-select">
-        <el-option label="VIP" value="vip" />
-        <el-option label="重要" value="important" />
-        <el-option label="普通" value="normal" />
+      <el-select v-model="filterDepartmentId" placeholder="所属部门" clearable filterable class="filter-select">
+        <el-option
+          v-for="department in departmentOptions"
+          :key="department.id"
+          :label="department.deptName"
+          :value="department.id"
+        />
       </el-select>
 
       <el-button type="primary" @click="handleSearch" class="search-btn">
@@ -54,8 +57,8 @@
 
       <el-table-column prop="type" label="类型" width="100">
         <template #default="{ row }">
-          <el-tag :type="row.type === 'personal' ? 'primary' : 'success'" size="small">
-            {{ row.type === 'personal' ? '个人' : '企业' }}
+          <el-tag :type="row.type === '个人' || row.type === 'personal' ? 'primary' : 'success'" size="small">
+            {{ row.type === '个人' || row.type === 'personal' ? '个人' : '企业' }}
           </el-tag>
         </template>
       </el-table-column>
@@ -76,11 +79,10 @@
           {{ row.totalAmount || '0' }}
         </template>
       </el-table-column>
-      <el-table-column prop="level" label="客户等级" width="100">
+      <el-table-column prop="departmentName" label="所属部门" width="130">
         <template #default="{ row }">
-          <el-tag v-if="row.level === 'vip'" type="danger">VIP</el-tag>
-          <el-tag v-else-if="row.level === 'important'" type="warning">重要</el-tag>
-          <el-tag v-else>普通</el-tag>
+          <el-tag v-if="row.departmentName" type="info">{{ row.departmentName }}</el-tag>
+          <span v-else>-</span>
         </template>
       </el-table-column>
       <el-table-column prop="createTime" label="创建时间" width="160" sortable />
@@ -118,8 +120,8 @@
               {{ currentClient.name }}
             </el-descriptions-item>
             <el-descriptions-item label="客户类型">
-              <el-tag :type="currentClient.type === 'personal' ? 'primary' : 'success'">
-                {{ currentClient.type === 'personal' ? '个人' : '企业' }}
+              <el-tag :type="currentClient.type === '个人' || currentClient.type === 'personal' ? 'primary' : 'success'">
+                {{ currentClient.type === '个人' || currentClient.type === 'personal' ? '个人' : '企业' }}
               </el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="联系人">
@@ -131,10 +133,8 @@
             <el-descriptions-item label="邮箱">
               {{ currentClient.email }}
             </el-descriptions-item>
-            <el-descriptions-item label="客户等级">
-              <el-tag v-if="currentClient.level === 'vip'" type="danger">VIP</el-tag>
-              <el-tag v-else-if="currentClient.level === 'important'" type="warning">重要</el-tag>
-              <el-tag v-else>普通</el-tag>
+            <el-descriptions-item label="所属部门">
+              {{ currentClient.departmentName || '-' }}
             </el-descriptions-item>
             <el-descriptions-item label="地址" :span="2">
               {{ currentClient.address }}
@@ -231,16 +231,21 @@ import PageHeader from '@/components/PageHeader.vue'
 import { useRouter } from 'vue-router'
 import {
   getClientList,
+  getClientDetail,
+  getClientCases,
+  getCommunications,
   deleteClient,
   searchClients,
   conflictCheck
 } from '@/api/client'
+import { getDepartmentList } from '@/api/department'
 
 const router = useRouter()
 const loading = ref(false)
 const searchKeyword = ref('')
 const filterType = ref('')
-const filterLevel = ref('')
+const filterDepartmentId = ref('')
+const departmentOptions = ref([])
 const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
@@ -252,6 +257,29 @@ const currentClient = ref({})
 
 const clientList = ref([])
 
+const normalizeClient = (client = {}) => ({
+  ...client,
+  name: client.clientName || client.name || '',
+  type: client.clientType || client.type || '',
+  contact: client.legalRepresentative || client.clientName || client.contact || '',
+  departmentId: client.departmentId || null,
+  departmentName: client.departmentName || '',
+  createTime: formatDate(client.createdAt),
+  remark: client.notes || client.remark || ''
+})
+
+const normalizeClients = (clients = []) => clients.map(normalizeClient)
+
+const formatDate = (value) => {
+  if (!value) return ''
+  if (Array.isArray(value)) {
+    const [year, month, day, hour, minute] = value
+    const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    return hour == null ? date : `${date} ${String(hour).padStart(2, '0')}:${String(minute || 0).padStart(2, '0')}`
+  }
+  return String(value).replace('T', ' ').slice(0, 16)
+}
+
 // 加载客户列表
 const fetchClientList = async () => {
   try {
@@ -261,8 +289,16 @@ const fetchClientList = async () => {
       size: pageSize.value
     }
     const res = await getClientList(params)
-    clientList.value = res.data || []
-    total.value = res.total || 0
+    const pageData = res.data || {}
+    let records = normalizeClients(pageData.records || [])
+    if (filterType.value) {
+      records = records.filter(client => client.type === filterType.value)
+    }
+    if (filterDepartmentId.value) {
+      records = records.filter(client => client.departmentId === filterDepartmentId.value)
+    }
+    clientList.value = records
+    total.value = pageData.total || 0
   } catch (error) {
     console.error('加载客户列表失败:', error)
     ElMessage.error('加载客户列表失败')
@@ -273,8 +309,18 @@ const fetchClientList = async () => {
 
 // 页面加载时获取数据
 onMounted(() => {
+  loadDepartments()
   fetchClientList()
 })
+
+const loadDepartments = async () => {
+  try {
+    const res = await getDepartmentList()
+    departmentOptions.value = res.data || []
+  } catch (error) {
+    console.error('加载部门列表失败:', error)
+  }
+}
 
 const handleCreate = () => {
   router.push('/client/create')
@@ -288,7 +334,7 @@ const handleSearch = async () => {
     }
     loading.value = true
     const res = await searchClients(searchKeyword.value)
-    clientList.value = res.data || []
+    clientList.value = normalizeClients(res.data || [])
     total.value = res.data?.length || 0
   } catch (error) {
     console.error('搜索客户失败:', error)
@@ -301,35 +347,40 @@ const handleSearch = async () => {
 const handleReset = () => {
   searchKeyword.value = ''
   filterType.value = ''
-  filterLevel.value = ''
+  filterDepartmentId.value = ''
   fetchClientList()
 }
 
-const handleViewDetail = (client) => {
-  currentClient.value = {
-    ...client,
-    cases: [
-      {
-        caseName: '张三诉李四买卖合同纠纷',
-        caseNumber: '（2024）京0105民初12345号',
-        caseType: '民事',
-        status: '审理中'
-      }
-    ],
-    communications: [
-      {
-        id: '1',
-        date: '2024-04-15 10:00',
-        communicator: '张律师',
-        method: '电话',
-        content: '沟通案件进展，客户对进度表示满意'
-      }
-    ],
-    totalAmount: '15.5',
-    receivedAmount: '10.0',
-    pendingAmount: '5.5'
+const handleViewDetail = async (client) => {
+  try {
+    loading.value = true
+    const [detailRes, casesRes, communicationsRes] = await Promise.all([
+      getClientDetail(client.id),
+      getClientCases(client.id),
+      getCommunications(client.id, { page: 0, size: 20 })
+    ])
+
+    currentClient.value = {
+      ...normalizeClient(detailRes.data || client),
+      cases: casesRes.data || [],
+      communications: (communicationsRes.data || []).map(record => ({
+        ...record,
+        date: formatDate(record.communicationDate),
+        communicator: record.operatorId ? `记录人 #${record.operatorId}` : '系统',
+        method: record.communicationType,
+        content: record.content
+      })),
+      totalAmount: client.totalAmount || '0',
+      receivedAmount: client.receivedAmount || '0',
+      pendingAmount: client.pendingAmount || '0'
+    }
+    detailDialogVisible.value = true
+  } catch (error) {
+    console.error('加载客户详情失败:', error)
+    ElMessage.error('加载客户详情失败')
+  } finally {
+    loading.value = false
   }
-  detailDialogVisible.value = true
 }
 
 // 查看关联案件

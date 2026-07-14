@@ -23,10 +23,8 @@
                 {{ clientData.type === 'personal' ? '个人' : '企业' }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="客户等级">
-              <el-tag v-if="clientData.level === 'vip'" type="danger">VIP</el-tag>
-              <el-tag v-else-if="clientData.level === 'important'" type="warning">重要</el-tag>
-              <el-tag v-else>普通</el-tag>
+            <el-descriptions-item label="所属部门">
+              {{ clientData.departmentName || '-' }}
             </el-descriptions-item>
             <el-descriptions-item label="联系电话">
               {{ clientData.phone }}
@@ -292,7 +290,8 @@ const clientData = reactive({
   id: '',
   name: '',
   type: 'personal',
-  level: 'normal',
+  departmentId: null,
+  departmentName: '',
   phone: '',
   email: '',
   address: '',
@@ -328,7 +327,15 @@ const fetchClientDetail = async () => {
     loading.value = true
     const response = await getClientDetail(clientId)
     if (response.success) {
-      Object.assign(clientData, response.data)
+      const data = response.data || {}
+      Object.assign(clientData, {
+        ...data,
+        name: data.clientName || data.name || '',
+        type: data.clientType === '企业' ? 'company' : 'personal',
+        remark: data.notes || data.remark || '',
+        createTime: formatDate(data.createdAt || data.createTime),
+        updateTime: formatDate(data.updatedAt || data.updateTime)
+      })
     }
   } catch (error) {
     ElMessage.error('获取客户详情失败')

@@ -29,6 +29,7 @@ public class CaseDetailVO {
     private LocalDate closeDate;
     private LocalDate archiveDate;
     private String archiveLocation;
+    private String caseFolderPath;
     private String summary;
     private String tags;
     private String level;

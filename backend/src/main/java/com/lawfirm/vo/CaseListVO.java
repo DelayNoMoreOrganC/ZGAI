@@ -57,6 +57,11 @@ public class CaseListVO {
     private String levelDesc;
 
     /**
+     * 案件文件夹路径
+     */
+    private String caseFolderPath;
+
+    /**
      * 当前阶段
      */
     private String currentStage;

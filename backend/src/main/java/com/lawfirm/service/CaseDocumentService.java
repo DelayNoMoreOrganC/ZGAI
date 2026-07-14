@@ -1,6 +1,7 @@
 package com.lawfirm.service;
 
 import com.lawfirm.dto.CaseDocumentDTO;
+import com.lawfirm.entity.Case;
 import com.lawfirm.entity.CaseDocument;
 import com.lawfirm.repository.CaseDocumentRepository;
 import com.lawfirm.repository.CaseRepository;
@@ -30,7 +31,7 @@ public class CaseDocumentService {
     private final CaseDocumentRepository caseDocumentRepository;
     private final CaseRepository caseRepository;
 
-    private static final String UPLOAD_BASE_DIR = "uploads/documents/";
+    private static final String UPLOAD_BASE_DIR = "uploads/cases/";
 
     /**
      * 上传案件文档
@@ -39,16 +40,20 @@ public class CaseDocumentService {
     public CaseDocumentDTO uploadDocument(Long caseId, MultipartFile file,
                                           String documentType, String folderPath,
                                           Long userId) throws IOException {
-        // 验证案件是否存在
-        if (!caseRepository.existsById(caseId)) {
-            throw new IllegalArgumentException("案件不存在");
+        Case caseEntity = caseRepository.findById(caseId)
+                .orElseThrow(() -> new IllegalArgumentException("案件不存在"));
+
+        if ("PENDING_APPROVAL".equals(caseEntity.getStatus())) {
+            throw new IllegalArgumentException("案件尚未审批通过，不能上传案件文件");
         }
 
         // 创建目录
-        Path uploadPath = Paths.get(UPLOAD_BASE_DIR, caseId.toString());
-        if (!Files.exists(uploadPath)) {
-            Files.createDirectories(uploadPath);
+        Path caseFolder = ensureCaseFolder(caseEntity);
+        Path uploadPath = caseFolder;
+        if (folderPath != null && !folderPath.trim().isEmpty()) {
+            uploadPath = caseFolder.resolve(sanitizeFolderPath(folderPath));
         }
+        Files.createDirectories(uploadPath);
 
         // 保存文件
         String originalFilename = file.getOriginalFilename();
@@ -71,6 +76,35 @@ public class CaseDocumentService {
         log.info("上传案件文档成功: caseId={}, fileName={}", caseId, originalFilename);
 
         return convertToDTO(saved);
+    }
+
+    private Path ensureCaseFolder(Case caseEntity) throws IOException {
+        if (caseEntity.getCaseFolderPath() != null && !caseEntity.getCaseFolderPath().trim().isEmpty()) {
+            Path existing = Paths.get(caseEntity.getCaseFolderPath());
+            Files.createDirectories(existing);
+            return existing;
+        }
+
+        String safeName = sanitizePathSegment(caseEntity.getCaseNumber() + "_" + caseEntity.getCaseName());
+        Path folder = Paths.get(UPLOAD_BASE_DIR, caseEntity.getId() + "_" + safeName);
+        Files.createDirectories(folder);
+        caseEntity.setCaseFolderPath(folder.toString());
+        caseRepository.save(caseEntity);
+        return folder;
+    }
+
+    private String sanitizeFolderPath(String folderPath) {
+        return folderPath.replace("\\", "/")
+                .replaceAll("\\.\\.", "")
+                .replaceAll("^/+", "")
+                .replaceAll("[*?\"<>|]+", "_");
+    }
+
+    private String sanitizePathSegment(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "未命名案件";
+        }
+        return value.replaceAll("[\\\\/:*?\"<>|\\s]+", "_");
     }
 
     /**

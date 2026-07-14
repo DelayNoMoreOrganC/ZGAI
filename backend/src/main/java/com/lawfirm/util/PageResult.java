@@ -72,8 +72,8 @@ public class PageResult<T> implements Serializable {
         this.total = total;
         this.records = records;
         this.totalPages = (total + size - 1) / size;
-        this.hasPrevious = page > 1;
-        this.hasNext = page < totalPages;
+        this.hasPrevious = page > 0;
+        this.hasNext = page + 1 < totalPages;
     }
 
     /**
@@ -87,7 +87,7 @@ public class PageResult<T> implements Serializable {
      * 空分页结果
      */
     public static <T> PageResult<T> empty() {
-        return new PageResult<>(1L, 10L, 0L, List.of());
+        return new PageResult<>(0L, 10L, 0L, List.of());
     }
 
     /**

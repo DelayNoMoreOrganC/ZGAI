@@ -22,12 +22,13 @@ public class WorkReportInitService {
     @EventListener(ApplicationReadyEvent.class)
     public void initWorkReportTable() {
         try {
-            // 删除旧表（如果存在）
+            // 检查表是否已存在（文件模式持久化后避免重复创建）
             try {
-                jdbcTemplate.execute("DROP TABLE IF EXISTS work_report");
-                log.info("Old WorkReport table dropped (if existed)");
+                jdbcTemplate.queryForObject("SELECT COUNT(*) FROM work_report", Integer.class);
+                log.info("WorkReport table already exists, skipping initialization");
+                return;
             } catch (Exception e) {
-                log.debug("No old table to drop: {}", e.getMessage());
+                log.debug("WorkReport table not found, creating...");
             }
 
             log.info("Creating WorkReport table with quoted identifiers...");

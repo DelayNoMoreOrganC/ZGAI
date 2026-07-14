@@ -7,6 +7,8 @@ import com.fasterxml.jackson.annotation.JsonValue;
  */
 public enum CaseStatus {
     CONSULTATION("咨询"),
+    PENDING_APPROVAL("待审批"),
+    FILING_REJECTED("立案驳回"),
     SIGNED("签约"),
     PENDING_FILING("待立案"),
     ACTIVE("审理中"),

@@ -26,14 +26,17 @@
       <el-select
         v-model="filters.departmentId"
         placeholder="选择部门"
+        filterable
         clearable
-        style="width: 150px; margin-right: 10px"
+        style="width: 190px; margin-right: 10px"
       >
         <el-option label="全部部门" :value="null" />
-        <el-option label="管理层" :value="1" />
-        <el-option label="民事部" :value="2" />
-        <el-option label="刑事部" :value="3" />
-        <el-option label="行政部" :value="4" />
+        <el-option
+          v-for="department in departmentOptions"
+          :key="department.id"
+          :label="department.deptName"
+          :value="department.id"
+        />
       </el-select>
 
       <el-select
@@ -60,9 +63,10 @@
           {{ row.gender === 'MALE' ? '男' : row.gender === 'FEMALE' ? '女' : '-' }}
         </template>
       </el-table-column>
-      <el-table-column prop="phone" label="手机号" width="130" />
+      <el-table-column prop="phone" label="联系电话" width="140" />
       <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
       <el-table-column prop="departmentName" label="部门" width="120" />
+      <el-table-column prop="position" label="身份类别" width="110" />
       <el-table-column label="角色" width="150">
         <template #default="{ row }">
           <el-tag
@@ -154,20 +158,33 @@
           </el-radio-group>
         </el-form-item>
 
-        <el-form-item label="手机号" prop="phone">
-          <el-input v-model="userForm.phone" placeholder="请输入手机号" />
+        <el-form-item label="联系电话" prop="phone">
+          <el-input v-model="userForm.phone" placeholder="请输入手机号或区号+固话" />
         </el-form-item>
 
         <el-form-item label="邮箱" prop="email">
           <el-input v-model="userForm.email" placeholder="请输入邮箱" />
         </el-form-item>
 
-        <el-form-item label="部门" prop="departmentId">
-          <el-select v-model="userForm.departmentId" placeholder="请选择部门" style="width: 100%">
-            <el-option label="管理层" :value="1" />
-            <el-option label="民事部" :value="2" />
-            <el-option label="刑事部" :value="3" />
-            <el-option label="行政部" :value="4" />
+        <el-form-item label="所属部门" prop="departmentId">
+          <el-select v-model="userForm.departmentId" placeholder="请选择所属部门" filterable style="width: 100%">
+            <el-option
+              v-for="department in departmentOptions"
+              :key="department.id"
+              :label="department.deptName"
+              :value="department.id"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="身份类别" prop="position">
+          <el-select v-model="userForm.position" placeholder="请选择身份类别" style="width: 100%">
+            <el-option
+              v-for="identity in identityOptions"
+              :key="identity"
+              :label="identity"
+              :value="identity"
+            />
           </el-select>
         </el-form-item>
 
@@ -222,9 +239,12 @@ import {
   assignRoles
 } from '@/api/user'
 import { getAllRoles } from '@/api/role'
+import { getDepartmentList } from '@/api/department'
 
 const loading = ref(false)
 const userList = ref([])
+const departmentOptions = ref([])
+const identityOptions = ['主任', '合伙人', '行政管理', '律师', '实习律师', '助理']
 
 // 分页
 const pagination = reactive({
@@ -254,6 +274,7 @@ const userForm = reactive({
   phone: '',
   email: '',
   departmentId: null,
+  position: '',
   status: 1
 })
 
@@ -271,13 +292,20 @@ const userRules = {
     { required: true, message: '请输入真实姓名', trigger: 'blur' }
   ],
   phone: [
-    { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号', trigger: 'blur' }
+    {
+      pattern: /^(1[3-9]\d{9}|0\d{2,3}-?\d{7,8})(-\d{1,6})?$/,
+      message: '请输入正确的手机号或区号+固话',
+      trigger: 'blur'
+    }
   ],
   email: [
     { type: 'email', message: '请输入正确的邮箱地址', trigger: 'blur' }
   ],
   departmentId: [
     { required: true, message: '请选择部门', trigger: 'change' }
+  ],
+  position: [
+    { required: true, message: '请选择身份类别', trigger: 'change' }
   ]
 }
 
@@ -319,6 +347,15 @@ const fetchRoles = async () => {
   }
 }
 
+const fetchDepartments = async () => {
+  try {
+    const res = await getDepartmentList()
+    departmentOptions.value = res.data || []
+  } catch (error) {
+    console.error('获取部门列表失败:', error)
+  }
+}
+
 // 搜索
 const handleSearch = () => {
   pagination.page = 1
@@ -345,6 +382,7 @@ const handleAdd = () => {
     phone: '',
     email: '',
     departmentId: null,
+    position: '',
     status: 1
   })
   dialogVisible.value = true
@@ -361,6 +399,7 @@ const handleEdit = (row) => {
     phone: row.phone,
     email: row.email,
     departmentId: row.departmentId,
+    position: row.position || '',
     status: row.status
   })
   dialogVisible.value = true
@@ -497,6 +536,7 @@ const formatDate = (dateStr) => {
 }
 
 onMounted(() => {
+  fetchDepartments()
   fetchUsers()
   fetchRoles()
 })

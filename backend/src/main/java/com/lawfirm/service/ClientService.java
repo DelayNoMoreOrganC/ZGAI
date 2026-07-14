@@ -33,6 +33,7 @@ public class ClientService {
     private final UserRepository userRepository;
     private final com.lawfirm.repository.CommunicationRecordRepository communicationRecordRepository;
     private final com.lawfirm.repository.PartyRepository partyRepository;
+    private final com.lawfirm.repository.DepartmentRepository departmentRepository;
 
     /**
      * 创建客户
@@ -58,6 +59,7 @@ public class ClientService {
         client.setStatus(dto.getStatus() != null ? dto.getStatus() : "ACTIVE");
         client.setSource(dto.getSource());
         client.setNotes(dto.getNotes());
+        client.setDepartmentId(dto.getDepartmentId());
         client.setOwnerId(dto.getOwnerId() != null ? dto.getOwnerId() : userId);
 
         client = clientRepository.save(client);
@@ -84,10 +86,11 @@ public class ClientService {
         client.setAddress(dto.getAddress());
         client.setLegalRepresentative(dto.getLegalRepresentative());
         client.setIndustry(dto.getIndustry());
-        client.setStatus(dto.getStatus());
+        client.setStatus(dto.getStatus() != null ? dto.getStatus() : client.getStatus());
         client.setSource(dto.getSource());
         client.setNotes(dto.getNotes());
-        client.setOwnerId(dto.getOwnerId());
+        client.setDepartmentId(dto.getDepartmentId());
+        client.setOwnerId(dto.getOwnerId() != null ? dto.getOwnerId() : client.getOwnerId());
 
         client = clientRepository.save(client);
         log.info("更新客户成功: {}", id);
@@ -219,14 +222,6 @@ public class ClientService {
     }
 
     /**
-     * 从案件获取客户ID（简化实现）
-     */
-    private Long getClientIdFromCase(Case c) {
-        // 实际应该从Party表获取
-        return null;
-    }
-
-    /**
      * 关键词匹配
      */
     private boolean containsKeyword(String text, String keyword) {
@@ -255,20 +250,35 @@ public class ClientService {
         dto.setStatus(client.getStatus());
         dto.setSource(client.getSource());
         dto.setNotes(client.getNotes());
+        dto.setDepartmentId(client.getDepartmentId());
         dto.setOwnerId(client.getOwnerId());
         dto.setCreatedAt(client.getCreatedAt());
         dto.setUpdatedAt(client.getUpdatedAt());
+
+        if (client.getDepartmentId() != null) {
+            departmentRepository.findById(client.getDepartmentId())
+                    .ifPresent(dept -> dto.setDepartmentName(dept.getDeptName()));
+        }
 
         // 加载负责人名称
         if (client.getOwnerId() != null) {
             userRepository.findById(client.getOwnerId()).ifPresent(u -> dto.setOwnerName(u.getRealName()));
         }
 
-        // 统计关联案件数（使用数据库查询优化）
-        long caseCount = caseRepository.findByDeletedFalse().stream()
-                .filter(c -> client.getId().equals(getClientIdFromCase(c)))
+        // 当前系统通过案件当事人姓名关联客户和案件。
+        List<com.lawfirm.entity.Party> parties = partyRepository.findByNameAndDeletedFalse(client.getClientName());
+        int caseCount = (int) parties.stream()
+                .map(com.lawfirm.entity.Party::getCaseId)
+                .distinct()
                 .count();
-        dto.setCaseCount((int) caseCount);
+        dto.setCaseCount(caseCount);
+
+        List<com.lawfirm.entity.CommunicationRecord> communications =
+                communicationRecordRepository.findByClientIdOrderByCommunicationDateDesc(client.getId());
+        dto.setCommunicationCount(communications.size());
+        if (!communications.isEmpty()) {
+            dto.setLastCommunicationDate(communications.get(0).getCommunicationDate().atStartOfDay());
+        }
 
         return dto;
     }
@@ -320,6 +330,10 @@ public class ClientService {
      */
     @Transactional
     public com.lawfirm.entity.CommunicationRecord createCommunication(Long clientId, com.lawfirm.dto.CommunicationRecordDTO dto, Long operatorId) {
+        if (!clientRepository.existsById(clientId)) {
+            throw new IllegalArgumentException("客户不存在");
+        }
+
         com.lawfirm.entity.CommunicationRecord record = new com.lawfirm.entity.CommunicationRecord();
         record.setClientId(clientId);
         record.setCommunicationType(dto.getCommunicationType());
@@ -329,6 +343,41 @@ public class ClientService {
         record.setAttachments(dto.getAttachments());
         record.setOperatorId(operatorId);
         return communicationRecordRepository.save(record);
+    }
+
+    /**
+     * 更新沟通记录
+     */
+    @Transactional
+    public com.lawfirm.entity.CommunicationRecord updateCommunication(Long clientId, Long communicationId, com.lawfirm.dto.CommunicationRecordDTO dto) {
+        com.lawfirm.entity.CommunicationRecord record = communicationRecordRepository.findById(communicationId)
+                .orElseThrow(() -> new IllegalArgumentException("沟通记录不存在"));
+
+        if (!clientId.equals(record.getClientId())) {
+            throw new IllegalArgumentException("沟通记录不属于当前客户");
+        }
+
+        record.setCommunicationType(dto.getCommunicationType());
+        record.setCommunicationDate(dto.getCommunicationDate());
+        record.setContent(dto.getContent());
+        record.setNextFollowDate(dto.getNextFollowDate());
+        record.setAttachments(dto.getAttachments());
+        return communicationRecordRepository.save(record);
+    }
+
+    /**
+     * 删除沟通记录
+     */
+    @Transactional
+    public void deleteCommunication(Long clientId, Long communicationId) {
+        com.lawfirm.entity.CommunicationRecord record = communicationRecordRepository.findById(communicationId)
+                .orElseThrow(() -> new IllegalArgumentException("沟通记录不存在"));
+
+        if (!clientId.equals(record.getClientId())) {
+            throw new IllegalArgumentException("沟通记录不属于当前客户");
+        }
+
+        communicationRecordRepository.delete(record);
     }
 
     /**

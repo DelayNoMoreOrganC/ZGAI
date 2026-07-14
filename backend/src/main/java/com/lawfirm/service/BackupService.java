@@ -27,7 +27,7 @@ public class BackupService {
 
     private final DataBackupRepository dataBackupRepository;
 
-    @Value("${backup.base.dir:D:/lawfirm/backups}")
+    @Value("${backup.base.dir:./backups}")
     private String backupBaseDir;
 
     @Value("${spring.datasource.url}")

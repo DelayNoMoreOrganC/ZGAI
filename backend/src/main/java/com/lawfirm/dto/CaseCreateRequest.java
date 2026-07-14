@@ -21,7 +21,6 @@ public class CaseCreateRequest {
     @NotNull(message = "案件程序不能为空")
     private String procedure;
 
-    @NotNull(message = "案件等级不能为空")
     private String level;
 
     @NotNull(message = "主办律师不能为空")

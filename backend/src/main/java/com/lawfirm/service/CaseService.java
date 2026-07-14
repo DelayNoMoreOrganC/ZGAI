@@ -51,6 +51,7 @@ public class CaseService {
     private final TodoService todoService;
     private final ClientService clientService;
     private final ClientRepository clientRepository;
+    private final ApprovalService approvalService;
 
     /**
      * 创建案件
@@ -63,9 +64,6 @@ public class CaseService {
         }
         if (request.getProcedure() == null) {
             throw new InvalidParameterException("procedure", "案件程序不能为空");
-        }
-        if (request.getLevel() == null) {
-            throw new InvalidParameterException("level", "案件等级不能为空");
         }
         if (request.getOwnerId() == null) {
             throw new InvalidParameterException("ownerId", "主办律师不能为空");
@@ -104,13 +102,13 @@ public class CaseService {
         caseEntity.setCommissionDate(request.getCommissionDate());
         caseEntity.setTags(request.getTags());
         caseEntity.setSummary(request.getSummary());
-        caseEntity.setLevel(request.getLevel());
+        caseEntity.setLevel(hasText(request.getLevel()) ? request.getLevel() : "GENERAL");
         caseEntity.setAmount(request.getAmount());
         caseEntity.setAttorneyFee(request.getAttorneyFee());
         caseEntity.setFeeMethod(request.getFeeMethod());
 
-        // 设置初始状态
-        caseEntity.setStatus(CaseStatus.CONSULTATION.getCode());
+        // 设置初始状态：新建案件进入立案审批流程，审批通过后才转为正式在办案件
+        caseEntity.setStatus(CaseStatus.PENDING_APPROVAL.getCode());
         caseEntity.setOwnerId(request.getOwnerId());
 
         // 保存案件
@@ -150,9 +148,11 @@ public class CaseService {
         // 6. 记录动态
         caseTimelineService.createSystemTimeline(
                 caseEntity.getId(),
-                "CASE_CREATED",
-                "案件已创建，案号：" + caseEntity.getCaseNumber()
+                "CASE_FILING_SUBMITTED",
+                "立案申请已提交，案号：" + caseEntity.getCaseNumber()
         );
+
+        submitCaseFilingApproval(caseEntity, currentUserId);
 
         // 7. 创建应收款记录（如果有）
         if (request.getReceivables() != null && !request.getReceivables().isEmpty()) {
@@ -170,6 +170,50 @@ public class CaseService {
         }
 
         return getCaseDetail(caseEntity.getId());
+    }
+
+    private void submitCaseFilingApproval(Case caseEntity, Long currentUserId) {
+        Long approverId = findAdministrativeApproverId();
+        if (approverId == null) {
+            caseTimelineService.createSystemTimeline(
+                    caseEntity.getId(),
+                    "CASE_FILING_APPROVER_MISSING",
+                    "未找到身份类别为“行政管理”的审批人，请在用户管理中配置后转交审批"
+            );
+            return;
+        }
+
+        ApprovalCreateRequest approvalRequest = new ApprovalCreateRequest();
+        approvalRequest.setApprovalType(ApprovalService.TYPE_CASE_FILING);
+        approvalRequest.setTitle("立案审批：" + caseEntity.getCaseName());
+        approvalRequest.setContent(buildFilingApprovalContent(caseEntity));
+        approvalRequest.setCaseId(caseEntity.getId());
+        approvalRequest.setCurrentApproverId(approverId);
+        approvalService.createApproval(approvalRequest, currentUserId);
+
+        caseTimelineService.createSystemTimeline(
+                caseEntity.getId(),
+                "CASE_FILING_APPROVAL_CREATED",
+                "立案审批已流转至行政管理：" + getUserName(approverId)
+        );
+    }
+
+    private Long findAdministrativeApproverId() {
+        return userRepository.findByPosition("行政管理").stream()
+                .filter(user -> !Boolean.TRUE.equals(user.getDeleted()))
+                .filter(user -> user.getStatus() == null || user.getStatus() == 1)
+                .map(User::getId)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String buildFilingApprovalContent(Case caseEntity) {
+        return "请进行利冲审查并在审批意见中填写审查结论。"
+                + "\n案件名称：" + caseEntity.getCaseName()
+                + "\n案号：" + caseEntity.getCaseNumber()
+                + "\n案件类型：" + getCaseTypeDesc(caseEntity.getCaseType())
+                + "\n案由：" + (caseEntity.getCaseReason() == null ? "" : caseEntity.getCaseReason())
+                + "\n主办律师：" + getUserName(caseEntity.getOwnerId());
     }
 
     /**
@@ -312,9 +356,9 @@ public class CaseService {
      */
     @Transactional(readOnly = true)
     public PageResult<CaseListVO> getCaseList(CaseQueryRequest request, Long currentUserId) {
-        // 构建查询条件（前端页码从1开始，Spring Data JPA从0开始，需要转换）
+        // 构建查询条件（接口统一使用0基页码）
         Pageable pageable = PageRequest.of(
-                Math.max(0, request.getPage() - 1),  // 修复分页bug：前端从1开始，JPA从0开始
+                Math.max(0, request.getPage()),
                 request.getSize(),
                 Sort.by(Sort.Direction.fromString(request.getSortDirection()), request.getSortField())
         );
@@ -335,13 +379,13 @@ public class CaseService {
             }
 
             // 基础条件
-            if (request.getCaseType() != null) {
+            if (hasText(request.getCaseType())) {
                 predicates.add(cb.equal(root.get("caseType"), request.getCaseType()));
             }
-            if (request.getStatus() != null) {
+            if (hasText(request.getStatus())) {
                 predicates.add(cb.equal(root.get("status"), request.getStatus()));
             }
-            if (request.getLevel() != null) {
+            if (hasText(request.getLevel())) {
                 predicates.add(cb.equal(root.get("level"), request.getLevel()));
             }
             if (request.getOwnerId() != null) {
@@ -350,16 +394,16 @@ public class CaseService {
                     predicates.add(cb.equal(root.get("ownerId"), request.getOwnerId()));
                 }
             }
-            if (request.getCourt() != null) {
+            if (hasText(request.getCourt())) {
                 predicates.add(cb.like(root.get("court"), "%" + request.getCourt() + "%"));
             }
-            if (request.getKeyword() != null) {
+            if (hasText(request.getKeyword())) {
                 String keyword = "%" + request.getKeyword() + "%";
                 javax.persistence.criteria.Predicate nameCondition = cb.like(root.get("caseName"), keyword);
                 javax.persistence.criteria.Predicate numberCondition = cb.like(root.get("caseNumber"), keyword);
                 predicates.add(cb.or(nameCondition, numberCondition));
             }
-            if (request.getTag() != null) {
+            if (hasText(request.getTag())) {
                 predicates.add(cb.like(root.get("tags"), "%" + request.getTag() + "%"));
             }
             if (request.getArchived() != null) {
@@ -396,6 +440,10 @@ public class CaseService {
                 page.getTotalElements(),
                 records
         );
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 
     /**
@@ -438,15 +486,37 @@ public class CaseService {
         vo.setAssistants(getMembers(caseId, "ASSISTANT"));
 
         // 设置当事人列表
-        vo.setParties(partyService.getByCaseId(caseId));
+        List<com.lawfirm.vo.PartyVO> parties = partyService.getByCaseId(caseId);
+        vo.setParties(parties);
 
         // 设置案件程序列表
         vo.setProcedures(caseProcedureService.getByCaseId(caseId));
+
+        vo.setClientIds(resolveClientIds(caseEntity, parties));
 
         // 设置阶段进度
         vo.setStageProgress(caseStageService.getStageProgress(caseId));
 
         return vo;
+    }
+
+    private List<Long> resolveClientIds(Case caseEntity, List<com.lawfirm.vo.PartyVO> parties) {
+        if (caseEntity.getClientId() != null) {
+            return Collections.singletonList(caseEntity.getClientId());
+        }
+
+        if (parties == null || parties.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        return parties.stream()
+                .filter(p -> Boolean.TRUE.equals(p.getIsClient()))
+                .map(com.lawfirm.vo.PartyVO::getName)
+                .filter(this::hasText)
+                .map(name -> clientRepository.findByClientNameAndDeletedFalse(name).map(Client::getId).orElse(null))
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
     }
 
     /**
@@ -664,6 +734,8 @@ public class CaseService {
         if (status == null) return null;
         switch (status) {
             case "CONSULTATION": return "咨询";
+            case "PENDING_APPROVAL": return "待审批";
+            case "FILING_REJECTED": return "立案驳回";
             case "SIGNED": return "签约";
             case "PENDING_FILING": return "待立案";
             case "ACTIVE": return "审理中";
