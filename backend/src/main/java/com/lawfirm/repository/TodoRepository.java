@@ -63,4 +63,10 @@ public interface TodoRepository extends JpaRepository<Todo, Long> {
      */
     @Query("SELECT COUNT(t) FROM Todo t WHERE t.deleted = false AND t.status <> 'COMPLETED'")
     long countByDeletedFalseAndStatusNotCompleted();
+
+    /**
+     * 统计指定负责人未完成且未删除的待办数量
+     */
+    @Query("SELECT COUNT(t) FROM Todo t WHERE t.assigneeId = :assigneeId AND t.deleted = false AND t.status <> 'COMPLETED'")
+    long countByAssigneeIdAndDeletedFalseAndStatusNotCompleted(@Param("assigneeId") Long assigneeId);
 }

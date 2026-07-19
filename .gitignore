@@ -41,6 +41,7 @@ Thumbs.db
 *.db
 *.h2.db
 data/
+backend/backups/
 
 # === 环境配置 ===
 .env

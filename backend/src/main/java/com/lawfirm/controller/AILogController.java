@@ -2,6 +2,7 @@ package com.lawfirm.controller;
 
 import com.lawfirm.entity.AILog;
 import com.lawfirm.service.AILogService;
+import com.lawfirm.service.CaseService;
 import com.lawfirm.util.Result;
 import com.lawfirm.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 public class AILogController {
 
     private final AILogService aiLogService;
+    private final CaseService caseService;
     private final SecurityUtils securityUtils;
 
     /**
@@ -45,6 +47,7 @@ public class AILogController {
             @PathVariable Long caseId,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
+        caseService.assertCaseVisible(caseId, getCurrentUserId());
         Page<AILog> logs = aiLogService.getCaseLogs(caseId,
                 PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "createdAt")));
         return Result.success(logs);

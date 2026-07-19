@@ -98,6 +98,32 @@ export function updateInvoice(id, data) {
   })
 }
 
+export function downloadInvoiceFile(id) {
+  return request({
+    url: `/finance/invoices/${id}/file`,
+    method: 'get',
+    responseType: 'blob'
+  })
+}
+
+export function issueInvoice(id, data) {
+  return request({
+    url: `/finance/invoices/${id}/issue`,
+    method: 'post',
+    data,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}
+
+export function completeInvoice(id) {
+  return request({
+    url: `/finance/invoices/${id}/complete`,
+    method: 'post'
+  })
+}
+
 export function deleteInvoice(id) {
   return request({
     url: `/finance/invoices/${id}`,

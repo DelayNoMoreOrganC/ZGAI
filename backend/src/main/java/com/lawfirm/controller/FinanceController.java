@@ -6,13 +6,23 @@ import com.lawfirm.dto.PaymentDTO;
 import com.lawfirm.service.FinanceRecordService;
 import com.lawfirm.service.InvoiceService;
 import com.lawfirm.service.PaymentService;
+import com.lawfirm.service.CaseService;
 import com.lawfirm.security.SecurityUtils;
 import com.lawfirm.util.Result;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -28,6 +38,7 @@ public class FinanceController {
     private final FinanceRecordService financeRecordService;
     private final PaymentService paymentService;
     private final InvoiceService invoiceService;
+    private final CaseService caseService;
     private final SecurityUtils securityUtils;
 
     // ==================== 财务记录相关接口 ====================
@@ -112,6 +123,7 @@ public class FinanceController {
     @GetMapping("/expenses/case/{caseId}")
     public Result<List<FinanceRecordDTO>> getFinanceRecordsByCase(@PathVariable Long caseId) {
         try {
+            assertCaseVisible(caseId);
             List<FinanceRecordDTO> result = financeRecordService.getFinanceRecordsByCase(caseId);
             return Result.success(result);
         } catch (Exception e) {
@@ -235,6 +247,7 @@ public class FinanceController {
     @GetMapping("/payments/case/{caseId}")
     public Result<List<PaymentDTO>> getPaymentsByCase(@PathVariable Long caseId) {
         try {
+            assertCaseVisible(caseId);
             List<PaymentDTO> result = paymentService.getPaymentsByCase(caseId);
             return Result.success(result);
         } catch (Exception e) {
@@ -269,7 +282,11 @@ public class FinanceController {
     @PostMapping("/invoices")
     public Result<InvoiceDTO> createInvoice(@RequestBody InvoiceDTO dto) {
         try {
-            InvoiceDTO result = invoiceService.createInvoice(dto);
+            if (dto.getCaseId() != null) {
+                assertCaseVisible(dto.getCaseId());
+            }
+            Long userId = securityUtils.getCurrentUserId();
+            InvoiceDTO result = invoiceService.createInvoice(dto, userId);
             return Result.success(result);
         } catch (IllegalArgumentException e) {
             log.error("创建开票记录失败: {}", e.getMessage());
@@ -281,13 +298,58 @@ public class FinanceController {
     }
 
     /**
+     * 财务人员上传电子发票反馈文件
+     * POST /api/finance/invoices/{id}/issue
+     */
+    @PostMapping(value = "/invoices/{id}/issue", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Result<InvoiceDTO> issueInvoice(
+            @PathVariable Long id,
+            @ModelAttribute InvoiceDTO dto,
+            @RequestParam(value = "file", required = false) MultipartFile file) {
+        try {
+            Long userId = securityUtils.getCurrentUserId();
+            InvoiceDTO result = invoiceService.issueInvoice(id, dto, file, userId);
+            return Result.success(result);
+        } catch (IllegalArgumentException e) {
+            log.error("开票反馈失败: {}", e.getMessage());
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("开票反馈异常", e);
+            return Result.error("开票反馈失败");
+        }
+    }
+
+    /**
+     * 财务人员确认开票完成并锁定记录
+     * POST /api/finance/invoices/{id}/complete
+     */
+    @PostMapping("/invoices/{id}/complete")
+    public Result<InvoiceDTO> completeInvoice(@PathVariable Long id) {
+        try {
+            Long userId = securityUtils.getCurrentUserId();
+            InvoiceDTO result = invoiceService.completeInvoice(id, userId);
+            return Result.success(result);
+        } catch (IllegalArgumentException e) {
+            log.error("完成开票失败: {}", e.getMessage());
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("完成开票异常", e);
+            return Result.error("完成开票失败");
+        }
+    }
+
+    /**
      * 更新开票记录
      * PUT /api/finance/invoices/{id}
      */
     @PutMapping("/invoices/{id}")
     public Result<InvoiceDTO> updateInvoice(@PathVariable Long id, @RequestBody InvoiceDTO dto) {
         try {
-            InvoiceDTO result = invoiceService.updateInvoice(id, dto);
+            if (dto.getCaseId() != null) {
+                assertCaseVisible(dto.getCaseId());
+            }
+            Long userId = securityUtils.getCurrentUserId();
+            InvoiceDTO result = invoiceService.updateInvoice(id, dto, userId);
             return Result.success(result);
         } catch (IllegalArgumentException e) {
             log.error("更新开票记录失败: {}", e.getMessage());
@@ -299,13 +361,31 @@ public class FinanceController {
     }
 
     /**
+     * 下载电子发票反馈文件
+     * GET /api/finance/invoices/{id}/file
+     */
+    @GetMapping("/invoices/{id}/file")
+    public ResponseEntity<Resource> downloadInvoiceFile(@PathVariable Long id) throws Exception {
+        Long userId = securityUtils.getCurrentUserId();
+        Path file = invoiceService.getInvoiceFilePath(id, userId);
+        Resource resource = new UrlResource(file.toUri());
+        String filename = URLEncoder.encode(file.getFileName().toString(), StandardCharsets.UTF_8.toString())
+                .replace("+", "%20");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + filename)
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(resource);
+    }
+
+    /**
      * 删除开票记录
      * DELETE /api/finance/invoices/{id}
      */
     @DeleteMapping("/invoices/{id}")
     public Result<Void> deleteInvoice(@PathVariable Long id) {
         try {
-            invoiceService.deleteInvoice(id);
+            Long userId = securityUtils.getCurrentUserId();
+            invoiceService.deleteInvoice(id, userId);
             return Result.success();
         } catch (IllegalArgumentException e) {
             log.error("删除开票记录失败: {}", e.getMessage());
@@ -341,6 +421,7 @@ public class FinanceController {
     @GetMapping("/invoices/case/{caseId}")
     public Result<List<InvoiceDTO>> getInvoicesByCase(@PathVariable Long caseId) {
         try {
+            assertCaseVisible(caseId);
             List<InvoiceDTO> result = invoiceService.getInvoicesByCase(caseId);
             return Result.success(result);
         } catch (Exception e) {
@@ -396,6 +477,7 @@ public class FinanceController {
             // 已收律师费（从收款记录中统计）
             List<PaymentDTO> receivedPayments;
             if (caseId != null) {
+                assertCaseVisible(caseId);
                 receivedPayments = paymentService.getPaymentsByCase(caseId);
             } else {
                 // 查询所有收款记录（最近100条）
@@ -428,6 +510,7 @@ public class FinanceController {
     @GetMapping("/fees/case/{caseId}")
     public Result<java.util.Map<String, Object>> getCaseLawyerFees(@PathVariable Long caseId) {
         try {
+            assertCaseVisible(caseId);
             java.util.Map<String, Object> result = new java.util.HashMap<>();
 
             // 获取该案件的收款记录
@@ -475,11 +558,17 @@ public class FinanceController {
     @GetMapping("/summary/{caseId}")
     public Result<java.util.Map<String, Object>> getCaseFinanceSummary(@PathVariable Long caseId) {
         try {
+            assertCaseVisible(caseId);
             java.util.Map<String, Object> summary = financeRecordService.getCaseFinanceSummary(caseId);
             return Result.success(summary);
         } catch (Exception e) {
             log.error("获取案件财务汇总失败", e);
             return Result.error("获取案件财务汇总失败");
         }
+    }
+
+    private void assertCaseVisible(Long caseId) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(caseId, currentUserId);
     }
 }

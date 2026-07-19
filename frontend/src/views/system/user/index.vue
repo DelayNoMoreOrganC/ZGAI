@@ -244,7 +244,7 @@ import { getDepartmentList } from '@/api/department'
 const loading = ref(false)
 const userList = ref([])
 const departmentOptions = ref([])
-const identityOptions = ['主任', '合伙人', '行政管理', '律师', '实习律师', '助理']
+const identityOptions = ['主任', '主管', '行政管理1', '行政管理2', '财务管理', '律师', '律师助理', '实习律师', '助理']
 
 // 分页
 const pagination = reactive({

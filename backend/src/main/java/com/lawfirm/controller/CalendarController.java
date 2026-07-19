@@ -2,6 +2,7 @@ package com.lawfirm.controller;
 
 import com.lawfirm.dto.CalendarDTO;
 import com.lawfirm.service.CalendarService;
+import com.lawfirm.service.CaseService;
 import com.lawfirm.security.SecurityUtils;
 import com.lawfirm.util.Result;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ import java.util.List;
 public class CalendarController {
 
     private final CalendarService calendarService;
+    private final CaseService caseService;
     private final SecurityUtils securityUtils;
 
     /**
@@ -162,12 +164,18 @@ public class CalendarController {
     @GetMapping("/case/{caseId}")
     public Result<List<CalendarDTO>> getCalendarsByCase(@PathVariable Long caseId) {
         try {
+            assertCaseVisible(caseId);
             List<CalendarDTO> result = calendarService.getCalendarsByCase(caseId);
             return Result.success(result);
         } catch (Exception e) {
             log.error("查询案件日程异常", e);
             return Result.error("查询案件日程失败");
         }
+    }
+
+    private void assertCaseVisible(Long caseId) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(caseId, currentUserId);
     }
 
     /**

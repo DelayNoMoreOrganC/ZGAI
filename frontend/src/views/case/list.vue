@@ -34,6 +34,27 @@
           </el-select>
         </el-form-item>
 
+        <el-form-item label="案由">
+          <el-input
+            v-model="filterForm.caseReason"
+            placeholder="输入案由关键词"
+            clearable
+            style="width: 180px"
+            @keyup.enter="handleSearch"
+          />
+        </el-form-item>
+
+        <el-form-item label="部门">
+          <el-select v-model="filterForm.departmentId" placeholder="请选择部门" clearable filterable style="width: 180px">
+            <el-option
+              v-for="department in departmentList"
+              :key="department.id"
+              :label="department.deptName"
+              :value="department.id"
+            />
+          </el-select>
+        </el-form-item>
+
         <el-form-item label="主办律师">
           <el-select v-model="filterForm.ownerId" placeholder="请选择" clearable filterable style="width: 150px">
             <el-option
@@ -274,6 +295,7 @@ import {
   batchDeleteCases,
   batchChangeOwner
 } from '@/api/case'
+import { getDepartmentList } from '@/api/department'
 
 const router = useRouter()
 const route = useRoute()
@@ -282,6 +304,8 @@ const route = useRoute()
 const filterForm = reactive({
   caseType: '',
   status: '',
+  caseReason: '',
+  departmentId: null,
   ownerId: '',
   court: '',
   clientId: null, // 客户ID筛选
@@ -298,6 +322,7 @@ const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
 const selectedCases = ref([])
+const departmentList = ref([])
 
 // 律师列表
 const lawyerList = ref([
@@ -329,6 +354,8 @@ const fetchCaseList = async () => {
       size: pageSize.value,
       caseType: filterForm.caseType || undefined,
       status: filterForm.status || undefined,
+      caseReason: filterForm.caseReason || undefined,
+      departmentId: filterForm.departmentId || undefined,
       ownerId: filterForm.ownerId || undefined,
       court: filterForm.court || undefined,
       clientId: filterForm.clientId || undefined,
@@ -343,6 +370,15 @@ const fetchCaseList = async () => {
     console.error(error)
   } finally {
     loading.value = false
+  }
+}
+
+const fetchDepartmentList = async () => {
+  try {
+    const res = await getDepartmentList()
+    departmentList.value = res.data || []
+  } catch (error) {
+    console.error('获取部门列表失败', error)
   }
 }
 
@@ -482,8 +518,11 @@ const handleReset = () => {
   Object.assign(filterForm, {
     caseType: '',
     status: '',
+    caseReason: '',
+    departmentId: null,
     ownerId: '',
     court: '',
+    clientId: null,
     dateRange: []
   })
   handleSearch()
@@ -686,6 +725,7 @@ onMounted(() => {
   }
 
   fetchCaseList()
+  fetchDepartmentList()
 })
 </script>
 

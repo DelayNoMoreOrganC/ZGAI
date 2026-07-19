@@ -2,6 +2,8 @@ package com.lawfirm.controller;
 
 import com.lawfirm.dto.CaseSearchRequest;
 import com.lawfirm.service.CaseSearchService;
+import com.lawfirm.service.CaseService;
+import com.lawfirm.security.SecurityUtils;
 import com.lawfirm.util.Result;
 import com.lawfirm.vo.CaseSearchResultVO;
 import io.swagger.v3.oas.annotations.Operation;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 类案检索Controller
@@ -27,6 +30,8 @@ import java.util.List;
 public class CaseSearchController {
 
     private final CaseSearchService caseSearchService;
+    private final CaseService caseService;
+    private final SecurityUtils securityUtils;
 
     /**
      * 智能类案检索
@@ -46,6 +51,7 @@ public class CaseSearchController {
                     request.getCourt());
 
             List<CaseSearchResultVO> results = caseSearchService.searchSimilarCases(request);
+            results = filterVisibleCases(results);
 
             log.info("类案检索完成: 找到{}个相似案例", results.size());
 
@@ -72,8 +78,11 @@ public class CaseSearchController {
             @RequestParam(defaultValue = "10") int limit) {
         try {
             log.info("根据案件ID检索相似案例: caseId={}, limit={}", caseId, limit);
+            Long currentUserId = securityUtils.getCurrentUserId();
+            caseService.assertCaseVisible(caseId, currentUserId);
 
             List<CaseSearchResultVO> results = caseSearchService.searchSimilarByCaseId(caseId, limit);
+            results = filterVisibleCases(results);
 
             log.info("检索完成: 找到{}个相似案例", results.size());
 
@@ -83,5 +92,13 @@ public class CaseSearchController {
             log.error("根据案件ID检索失败", e);
             return Result.error("检索失败: " + e.getMessage());
         }
+    }
+
+    private List<CaseSearchResultVO> filterVisibleCases(List<CaseSearchResultVO> results) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        return results.stream()
+                .filter(result -> result.getCaseId() != null)
+                .filter(result -> caseService.canAccessCase(result.getCaseId(), currentUserId))
+                .collect(Collectors.toList());
     }
 }

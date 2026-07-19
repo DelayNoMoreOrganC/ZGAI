@@ -82,7 +82,7 @@ public class NotificationController {
     public Result<Void> markAsRead(@PathVariable Long id) {
         try {
             Long userId = securityUtils.getCurrentUserId();
-            notificationService.markAsRead(id, userId);
+            notificationService.markAsRead(userId, id);
             return Result.success();
         } catch (Exception e) {
             log.error("标记已读失败", e);
@@ -114,7 +114,7 @@ public class NotificationController {
     public Result<Void> deleteNotification(@PathVariable Long id) {
         try {
             Long userId = securityUtils.getCurrentUserId();
-            notificationService.deleteNotification(id, userId);
+            notificationService.deleteNotification(userId, id);
             return Result.success();
         } catch (Exception e) {
             log.error("删除通知失败", e);

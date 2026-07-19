@@ -3,6 +3,7 @@ package com.lawfirm.controller;
 import com.lawfirm.entity.Dossier;
 import com.lawfirm.repository.DossierRepository;
 import com.lawfirm.security.SecurityUtils;
+import com.lawfirm.service.CaseService;
 import com.lawfirm.util.Result;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,15 +19,18 @@ import java.util.List;
 public class DossierController {
     private final DossierRepository dossierRepository;
     private final SecurityUtils securityUtils;
+    private final CaseService caseService;
     
     @GetMapping
     public Result<List<Dossier>> getDossiers(@PathVariable Long caseId) {
+        assertCaseVisible(caseId);
         List<Dossier> dossiers = dossierRepository.findByCaseIdOrderBySortOrder(caseId);
         return Result.success(dossiers);
     }
     
     @PostMapping
     public Result<Dossier> createDossier(@PathVariable Long caseId, @RequestBody Dossier dossier) {
+        assertCaseVisible(caseId);
         dossier.setCaseId(caseId);
         dossier.setCreatedAt(LocalDateTime.now());
         dossier.setUpdatedAt(LocalDateTime.now());
@@ -35,8 +39,14 @@ public class DossierController {
     }
     
     @DeleteMapping("/{id}")
-    public Result<Void> deleteDossier(@PathVariable Long id) {
+    public Result<Void> deleteDossier(@PathVariable Long caseId, @PathVariable Long id) {
+        assertCaseVisible(caseId);
         dossierRepository.deleteById(id);
         return Result.success();
+    }
+
+    private void assertCaseVisible(Long caseId) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(caseId, currentUserId);
     }
 }

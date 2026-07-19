@@ -4,6 +4,7 @@ import com.lawfirm.dto.OcrExtractRequest;
 import com.lawfirm.dto.DocGenerateRequest;
 import com.lawfirm.service.LlmExtractService;
 import com.lawfirm.service.DocGenerateService;
+import com.lawfirm.service.CaseService;
 import com.lawfirm.util.Result;
 import com.lawfirm.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,7 @@ public class AIFeaturesController {
 
     private final LlmExtractService llmExtractService;
     private final DocGenerateService docGenerateService;
+    private final CaseService caseService;
     private final SecurityUtils securityUtils;
 
     /**
@@ -38,6 +40,9 @@ public class AIFeaturesController {
     public Result<Map<String, Object>> extractLegalElements(@RequestBody OcrExtractRequest request) {
         try {
             Long userId = securityUtils.getCurrentUserId();
+            if (request.getCaseId() != null) {
+                caseService.assertCaseVisible(request.getCaseId(), userId);
+            }
             log.info("AI文书提取请求，案件ID: {}, 文书类型: {}", request.getCaseId(), request.getDocumentType());
 
             Map<String, Object> extracted = llmExtractService.extractLegalElements(request, userId);
@@ -62,6 +67,7 @@ public class AIFeaturesController {
 
         try {
             Long userId = securityUtils.getCurrentUserId();
+            caseService.assertCaseVisible(caseId, userId);
             String templateType = request.get("templateType");
 
             log.info("AI自动填充请求，案件ID: {}, 模板类型: {}", caseId, templateType);

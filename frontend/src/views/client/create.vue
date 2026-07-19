@@ -354,6 +354,8 @@ const formRules = {
   ]
 }
 
+const isSuccessResponse = (response) => response?.success || response?.code === 200
+
 const idsToString = (ids) => (ids || []).join(',')
 const stringToIds = (value) => {
   if (!value) return []
@@ -461,7 +463,7 @@ const runConflictPreview = async (payload) => {
   if (isEdit.value) return true
 
   const response = await previewConflictCheck(payload)
-  if (!response.success || !response.data) return true
+  if (!isSuccessResponse(response) || !response.data) return true
   const result = response.data
 
   if (result.conflictLevel === 'DIRECT') {

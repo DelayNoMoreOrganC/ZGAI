@@ -1,7 +1,10 @@
 package com.lawfirm.controller;
 
 import com.lawfirm.dto.CaseDocumentDTO;
+import com.lawfirm.entity.DocumentFolder;
+import com.lawfirm.service.CaseFileLibraryService;
 import com.lawfirm.service.CaseDocumentService;
+import com.lawfirm.service.CaseService;
 import com.lawfirm.security.SecurityUtils;
 import com.lawfirm.util.Result;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +19,8 @@ import org.springframework.http.MediaType;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -30,6 +35,8 @@ import java.util.List;
 public class CaseDocumentController {
 
     private final CaseDocumentService caseDocumentService;
+    private final CaseFileLibraryService caseFileLibraryService;
+    private final CaseService caseService;
     private final SecurityUtils securityUtils;
 
     /**
@@ -45,6 +52,7 @@ public class CaseDocumentController {
             @RequestParam(value = "folderPath", required = false) String folderPath) {
         try {
             Long userId = securityUtils.getCurrentUserId();
+            caseService.assertCaseVisible(caseId, userId);
             CaseDocumentDTO result = caseDocumentService.uploadDocument(
                     caseId, file, documentType, folderPath, userId);
             return Result.success("文档上传成功", result);
@@ -65,11 +73,28 @@ public class CaseDocumentController {
     @PreAuthorize("hasAuthority('CASE_VIEW')")
     public Result<List<CaseDocumentDTO>> getCaseDocuments(@PathVariable Long caseId) {
         try {
+            assertCaseVisible(caseId);
             List<CaseDocumentDTO> documents = caseDocumentService.getCaseDocuments(caseId);
             return Result.success(documents);
         } catch (Exception e) {
             log.error("获取案件文档列表异常", e);
             return Result.error("获取案件文档列表失败");
+        }
+    }
+
+    /**
+     * 获取案件文件夹目录
+     * GET /api/cases/{caseId}/documents/folders
+     */
+    @GetMapping("/folders")
+    @PreAuthorize("hasAuthority('CASE_VIEW')")
+    public Result<List<DocumentFolder>> getCaseFolders(@PathVariable Long caseId) {
+        try {
+            assertCaseVisible(caseId);
+            return Result.success(caseFileLibraryService.getOrCreateCaseFolders(caseId));
+        } catch (Exception e) {
+            log.error("获取案件文件夹目录异常", e);
+            return Result.error("获取案件文件夹目录失败");
         }
     }
 
@@ -83,7 +108,8 @@ public class CaseDocumentController {
             @PathVariable Long caseId,
             @PathVariable String documentType) {
         try {
-            List<CaseDocumentDTO> documents = caseDocumentService.getDocumentsByType(documentType);
+            assertCaseVisible(caseId);
+            List<CaseDocumentDTO> documents = caseDocumentService.getDocumentsByCaseAndType(caseId, documentType);
             return Result.success(documents);
         } catch (Exception e) {
             log.error("按类型获取文档列表异常", e);
@@ -101,7 +127,9 @@ public class CaseDocumentController {
             @PathVariable Long caseId,
             @PathVariable Long id) {
         try {
+            assertCaseVisible(caseId);
             CaseDocumentDTO document = caseDocumentService.getDocumentById(id);
+            assertDocumentInCase(document, caseId);
             return Result.success(document);
         } catch (IllegalArgumentException e) {
             log.error("获取文档详情失败: {}", e.getMessage());
@@ -123,6 +151,8 @@ public class CaseDocumentController {
             @PathVariable Long id,
             @RequestBody CaseDocumentDTO dto) {
         try {
+            assertCaseVisible(caseId);
+            assertDocumentInCase(caseDocumentService.getDocumentById(id), caseId);
             CaseDocumentDTO result = caseDocumentService.updateDocument(id, dto);
             return Result.success("文档更新成功", result);
         } catch (IllegalArgumentException e) {
@@ -145,6 +175,8 @@ public class CaseDocumentController {
             @PathVariable Long id,
             @RequestParam String folderPath) {
         try {
+            assertCaseVisible(caseId);
+            assertDocumentInCase(caseDocumentService.getDocumentById(id), caseId);
             CaseDocumentDTO result = caseDocumentService.moveDocument(id, folderPath);
             return Result.success("文档移动成功", result);
         } catch (IllegalArgumentException e) {
@@ -166,6 +198,8 @@ public class CaseDocumentController {
             @PathVariable Long caseId,
             @PathVariable Long id) {
         try {
+            assertCaseVisible(caseId);
+            assertDocumentInCase(caseDocumentService.getDocumentById(id), caseId);
             caseDocumentService.deleteDocument(id);
             return Result.success();
         } catch (IllegalArgumentException e) {
@@ -188,7 +222,9 @@ public class CaseDocumentController {
             @PathVariable Long id,
             HttpServletResponse response) throws IOException {
         try {
+            assertCaseVisible(caseId);
             CaseDocumentDTO document = caseDocumentService.getDocumentById(id);
+            assertDocumentInCase(document, caseId);
 
             if (document.getFilePath() == null || document.getFilePath().isEmpty()) {
                 response.setStatus(HttpServletResponse.SC_NOT_FOUND);
@@ -213,8 +249,10 @@ public class CaseDocumentController {
             }
 
             response.setContentType(contentType != null ? contentType : "application/octet-stream");
+            String encodedFilename = URLEncoder.encode(document.getDocumentName(), StandardCharsets.UTF_8.name())
+                    .replace("+", "%20");
             response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
-                    "attachment; filename=\"" + document.getDocumentName() + "\"");
+                    "attachment; filename*=UTF-8''" + encodedFilename);
 
             java.io.InputStream inputStream = resource.getInputStream();
             org.springframework.util.StreamUtils.copy(inputStream, response.getOutputStream());
@@ -224,6 +262,17 @@ public class CaseDocumentController {
             log.error("下载文档失败", e);
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
             response.getWriter().write("下载失败: " + e.getMessage());
+        }
+    }
+
+    private void assertCaseVisible(Long caseId) {
+        Long userId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(caseId, userId);
+    }
+
+    private void assertDocumentInCase(CaseDocumentDTO document, Long caseId) {
+        if (document.getCaseId() == null || !document.getCaseId().equals(caseId)) {
+            throw new IllegalArgumentException("文档不属于当前案件");
         }
     }
 }

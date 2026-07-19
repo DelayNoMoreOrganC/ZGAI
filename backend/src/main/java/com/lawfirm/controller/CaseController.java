@@ -77,7 +77,8 @@ public class CaseController {
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public Result<CaseDetailVO> getCaseDetail(@PathVariable Long id) {
-        CaseDetailVO caseDetail = caseService.getCaseDetail(id);
+        Long currentUserId = securityUtils.getCurrentUserId();
+        CaseDetailVO caseDetail = caseService.getCaseDetail(id, currentUserId);
         return Result.success(caseDetail);
     }
 
@@ -89,6 +90,9 @@ public class CaseController {
     public Result<CaseDetailVO> updateCase(
             @PathVariable Long id,
             @Valid @RequestBody CaseUpdateRequest request) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(id, currentUserId);
+        caseService.assertCaseEditable(id, currentUserId);
         CaseDetailVO caseDetail = caseService.updateCase(id, request);
         return Result.success("案件更新成功", caseDetail);
     }
@@ -99,6 +103,8 @@ public class CaseController {
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('CASE_DELETE')")
     public Result<Void> deleteCase(@PathVariable Long id) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(id, currentUserId);
         caseService.deleteCase(id);
         return Result.success();
     }
@@ -109,6 +115,8 @@ public class CaseController {
     @PutMapping("/{id}/restore")
     @PreAuthorize("hasAuthority('CASE_DELETE')")
     public Result<String> restoreCase(@PathVariable Long id) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(id, currentUserId);
         caseService.restoreCase(id);
         return Result.success("案件恢复成功");
     }
@@ -123,6 +131,7 @@ public class CaseController {
             @Valid @RequestBody StatusChangeRequest request) {
         try {
             Long currentUserId = securityUtils.getCurrentUserId();
+            caseService.assertCaseVisible(id, currentUserId);
             caseStageService.changeStatus(id, request.getTargetStage(), request.getReason(), currentUserId);
             return Result.success();
         } catch (RuntimeException e) {
@@ -137,6 +146,8 @@ public class CaseController {
     @GetMapping("/{id}/status-history")
     @PreAuthorize("hasAuthority('CASE_VIEW')")
     public Result<List<com.lawfirm.service.CaseStageService.StageHistoryVO>> getStatusHistory(@PathVariable Long id) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(id, currentUserId);
         List<com.lawfirm.service.CaseStageService.StageHistoryVO> history = caseStageService.getStatusHistory(id);
         return Result.success(history);
     }
@@ -151,6 +162,7 @@ public class CaseController {
             @Valid @RequestBody StatusChangeRequest request,
             @AuthenticationPrincipal UserDetails userDetails) {
         Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(id, currentUserId);
         caseStageService.rollbackStatus(id, request.getTargetStage(), request.getReason(), currentUserId);
         return Result.success();
     }
@@ -163,6 +175,8 @@ public class CaseController {
     public Result<Void> archiveCase(
             @PathVariable Long id,
             @Valid @RequestBody ArchiveRequest request) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(id, currentUserId);
         caseService.archiveCase(id, request.getArchiveLocation());
         return Result.success();
     }
@@ -179,7 +193,8 @@ public class CaseController {
     public Result<List<CaseListVO>> checkDuplicate(
             @RequestParam String name,
             @RequestParam(required = false) String caseNumber) {
-        List<CaseListVO> duplicates = caseService.checkDuplicate(name, caseNumber);
+        Long currentUserId = securityUtils.getCurrentUserId();
+        List<CaseListVO> duplicates = caseService.checkDuplicate(name, caseNumber, currentUserId);
         return Result.success(duplicates);
     }
 
@@ -201,6 +216,7 @@ public class CaseController {
     @GetMapping("/{id}/parties")
     @PreAuthorize("hasAuthority('CASE_VIEW')")
     public Result<List<PartyVO>> getParties(@PathVariable Long id) {
+        assertCaseVisible(id);
         List<PartyVO> parties = partyService.getByCaseId(id);
         return Result.success(parties);
     }
@@ -213,6 +229,7 @@ public class CaseController {
     public Result<PartyVO> addParty(
             @PathVariable Long id,
             @Valid @RequestBody PartyDTO dto) {
+        assertCaseVisible(id);
         var party = partyService.create(dto, id);
         return Result.success("当事人添加成功", partyService.getById(party.getId()));
     }
@@ -226,6 +243,7 @@ public class CaseController {
             @PathVariable Long caseId,
             @PathVariable Long partyId,
             @Valid @RequestBody PartyDTO dto) {
+        assertCaseVisible(caseId);
         partyService.update(partyId, dto);
         return Result.success("当事人更新成功", partyService.getById(partyId));
     }
@@ -236,6 +254,7 @@ public class CaseController {
     @DeleteMapping("/{caseId}/parties/{partyId}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
     public Result<Void> deleteParty(@PathVariable Long caseId, @PathVariable Long partyId) {
+        assertCaseVisible(caseId);
         partyService.delete(partyId);
         return Result.success();
     }
@@ -248,6 +267,7 @@ public class CaseController {
     @GetMapping("/{id}/procedures")
     @PreAuthorize("hasAuthority('CASE_VIEW')")
     public Result<List<CaseProcedureVO>> getProcedures(@PathVariable Long id) {
+        assertCaseVisible(id);
         List<CaseProcedureVO> procedures = caseProcedureService.getByCaseId(id);
         return Result.success(procedures);
     }
@@ -260,6 +280,7 @@ public class CaseController {
     public Result<CaseProcedureVO> addProcedure(
             @PathVariable Long id,
             @Valid @RequestBody CaseProcedureDTO dto) {
+        assertCaseVisible(id);
         var procedure = caseProcedureService.create(dto, id);
         return Result.success("案件程序添加成功", caseProcedureService.getById(procedure.getId()));
     }
@@ -273,6 +294,7 @@ public class CaseController {
             @PathVariable Long caseId,
             @PathVariable Long procedureId,
             @Valid @RequestBody CaseProcedureDTO dto) {
+        assertCaseVisible(caseId);
         caseProcedureService.update(procedureId, dto);
         return Result.success("案件程序更新成功", caseProcedureService.getById(procedureId));
     }
@@ -283,6 +305,7 @@ public class CaseController {
     @DeleteMapping("/{caseId}/procedures/{procedureId}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
     public Result<Void> deleteProcedure(@PathVariable Long caseId, @PathVariable Long procedureId) {
+        assertCaseVisible(caseId);
         caseProcedureService.delete(procedureId);
         return Result.success();
     }
@@ -295,6 +318,7 @@ public class CaseController {
     @GetMapping("/{id}/records")
     @PreAuthorize("hasAuthority('CASE_VIEW')")
     public Result<List<com.lawfirm.vo.CaseRecordVO>> getRecords(@PathVariable Long id) {
+        assertCaseVisible(id);
         List<CaseRecord> records = caseRecordService.getByCaseId(id);
         List<com.lawfirm.vo.CaseRecordVO> voList = caseRecordService.toVOList(records);
         return Result.success(voList);
@@ -310,6 +334,7 @@ public class CaseController {
             @Valid @RequestBody CaseRecordDTO dto,
             @AuthenticationPrincipal UserDetails userDetails) {
         Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(id, currentUserId);
         CaseRecord record = caseRecordService.create(dto, id, currentUserId);
         com.lawfirm.vo.CaseRecordVO vo = caseRecordService.toVO(record);
         return Result.success("办案记录添加成功", vo);
@@ -324,6 +349,7 @@ public class CaseController {
             @PathVariable Long caseId,
             @PathVariable Long recordId,
             @Valid @RequestBody CaseRecordDTO dto) {
+        assertCaseVisible(caseId);
         CaseRecord record = caseRecordService.update(recordId, dto);
         com.lawfirm.vo.CaseRecordVO vo = caseRecordService.toVO(record);
         return Result.success("办案记录更新成功", vo);
@@ -335,6 +361,7 @@ public class CaseController {
     @DeleteMapping("/{caseId}/records/{recordId}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
     public Result<Void> deleteRecord(@PathVariable Long caseId, @PathVariable Long recordId) {
+        assertCaseVisible(caseId);
         caseRecordService.delete(recordId);
         return Result.success();
     }
@@ -355,6 +382,7 @@ public class CaseController {
             String keyword,
             javax.servlet.http.HttpServletResponse response) {
         try {
+            assertCaseVisible(id);
             byte[] excelData = excelExportService.exportCaseRecords(id, stage, startDate, endDate, keyword);
 
             // 设置响应头
@@ -386,6 +414,7 @@ public class CaseController {
             String keyword,
             javax.servlet.http.HttpServletResponse response) {
         try {
+            assertCaseVisible(id);
             byte[] wordData = excelExportService.exportCaseRecordsToWord(id, stage, startDate, endDate, keyword);
 
             // 设置响应头
@@ -411,6 +440,7 @@ public class CaseController {
     @GetMapping("/{id}/timeline")
     @PreAuthorize("hasAuthority('CASE_VIEW')")
     public Result<List<CaseTimeline>> getTimeline(@PathVariable Long id) {
+        assertCaseVisible(id);
         List<CaseTimeline> timeline = caseTimelineService.getByCaseId(id);
         return Result.success(timeline);
     }
@@ -425,6 +455,7 @@ public class CaseController {
             @Valid @RequestBody CommentRequest request,
             @AuthenticationPrincipal UserDetails userDetails) {
         Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(id, currentUserId);
         CaseTimeline timeline = caseTimelineService.addComment(id, request.getContent(), currentUserId, request.getParentId());
         return Result.success("评论添加成功", timeline);
     }
@@ -435,6 +466,7 @@ public class CaseController {
     @DeleteMapping("/{caseId}/timeline/{timelineId}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
     public Result<Void> deleteTimeline(@PathVariable Long caseId, @PathVariable Long timelineId) {
+        assertCaseVisible(caseId);
         caseTimelineService.delete(timelineId);
         return Result.success();
     }
@@ -445,6 +477,7 @@ public class CaseController {
     @PostMapping("/{id}/archive-pdf")
     @PreAuthorize("hasAuthority('CASE_VIEW')")
     public Result<String> generateArchivePdf(@PathVariable Long id) {
+        assertCaseVisible(id);
         String pdfUrl = archivePdfService.generateArchivePdf(id);
         return Result.success("PDF生成成功", pdfUrl);
     }
@@ -455,6 +488,7 @@ public class CaseController {
     @GetMapping("/{id}/archive-pdf/download")
     @PreAuthorize("hasAuthority('CASE_VIEW')")
     public void downloadArchivePdf(@PathVariable Long id, javax.servlet.http.HttpServletResponse response) {
+        assertCaseVisible(id);
         archivePdfService.downloadArchivePdf(id, response);
     }
 
@@ -483,6 +517,11 @@ public class CaseController {
     }
 
     // 辅助方法
+    private void assertCaseVisible(Long caseId) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(caseId, currentUserId);
+    }
+
     private Long getCurrentUserId(UserDetails userDetails) {
         if (userDetails == null) {
             throw new InvalidParameterException("userDetails", "用户信息不能为空");

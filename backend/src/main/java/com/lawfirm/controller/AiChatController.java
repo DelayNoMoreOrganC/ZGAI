@@ -2,6 +2,7 @@ package com.lawfirm.controller;
 
 import com.lawfirm.dto.AiChatRequest;
 import com.lawfirm.service.AiChatService;
+import com.lawfirm.service.CaseService;
 import com.lawfirm.util.Result;
 import com.lawfirm.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 public class AiChatController {
 
     private final AiChatService aiChatService;
+    private final CaseService caseService;
     private final SecurityUtils securityUtils;
 
     /**
@@ -47,6 +49,7 @@ public class AiChatController {
     @PostMapping("/case-chat/{caseId}")
     public Result<String> caseChat(@PathVariable Long caseId, @RequestBody AiChatRequest request) {
         Long userId = getCurrentUserId();
+        caseService.assertCaseVisible(caseId, userId);
         request.setCaseId(caseId);
         String response = aiChatService.caseChat(request, userId);
         return Result.success(response);

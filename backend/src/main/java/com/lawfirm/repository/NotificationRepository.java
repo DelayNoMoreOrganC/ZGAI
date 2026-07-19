@@ -20,6 +20,11 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     Page<Notification> findByReceiverIdOrderByCreatedAtDesc(Long receiverId, Pageable pageable);
 
     /**
+     * 管理员查看全部通知
+     */
+    Page<Notification> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
+    /**
      * 查找未读通知
      */
     List<Notification> findByReceiverIdAndIsReadFalseOrderByCreatedAtDesc(Long receiverId);
@@ -33,4 +38,9 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
      * 根据分类查找通知
      */
     Page<Notification> findByReceiverIdAndCategoryOrderByCreatedAtDesc(Long receiverId, String category, Pageable pageable);
+
+    /**
+     * 检查指定审批通知是否已存在
+     */
+    boolean existsByReceiverIdAndRelatedIdAndRelatedType(Long receiverId, Long relatedId, String relatedType);
 }

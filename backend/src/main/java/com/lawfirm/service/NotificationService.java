@@ -2,6 +2,7 @@ package com.lawfirm.service;
 
 import com.lawfirm.entity.Notification;
 import com.lawfirm.repository.NotificationRepository;
+import com.lawfirm.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -25,6 +26,7 @@ import java.util.stream.Collectors;
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
+    private final UserRepository userRepository;
 
     // 通知分类常量
     public static final String CATEGORY_TODO = "待办";
@@ -138,11 +140,13 @@ public class NotificationService {
      */
     @Transactional(readOnly = true)
     public Page<Map<String, Object>> getNotificationList(Long userId, int page, int size, String category) {
-        Pageable pageable = PageRequest.of(page - 1, size,
+        Pageable pageable = PageRequest.of(Math.max(0, page - 1), size,
             org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
 
         Page<Notification> notificationPage;
-        if (category != null && !category.isEmpty()) {
+        if (isDevelopmentAdmin(userId)) {
+            notificationPage = notificationRepository.findAllByOrderByCreatedAtDesc(pageable);
+        } else if (category != null && !category.isEmpty()) {
             notificationPage = notificationRepository.findByReceiverIdAndCategoryOrderByCreatedAtDesc(userId, category, pageable);
         } else {
             notificationPage = notificationRepository.findByReceiverIdOrderByCreatedAtDesc(userId, pageable);
@@ -230,5 +234,18 @@ public class NotificationService {
                 return map;
             })
             .collect(Collectors.toList());
+    }
+
+    public boolean existsNotification(Long receiverId, Long relatedId, String relatedType) {
+        return notificationRepository.existsByReceiverIdAndRelatedIdAndRelatedType(receiverId, relatedId, relatedType);
+    }
+
+    private boolean isDevelopmentAdmin(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        return userRepository.findById(userId)
+                .map(user -> "admin".equals(user.getUsername()))
+                .orElse(false);
     }
 }

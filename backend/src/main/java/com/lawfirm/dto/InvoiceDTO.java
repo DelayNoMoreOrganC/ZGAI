@@ -20,6 +20,8 @@ public class InvoiceDTO {
 
     private String caseName;
 
+    private String contractNo;
+
     private String invoiceNumber;
 
     @NotBlank(message = "发票类型不能为空")
@@ -33,8 +35,25 @@ public class InvoiceDTO {
 
     private String taxNumber;
 
-    @NotNull(message = "开票日期不能为空")
     private LocalDate billingDate;
+
+    private String executionDepartment;
+
+    private String sourceUserName;
+
+    private String invoiceContent;
+
+    private String remark;
+
+    private String addressPhone;
+
+    private String bankAccount;
+
+    private Long applicantId;
+
+    private Long cashierId;
+
+    private String invoiceFilePath;
 
     private String status = "PENDING";
 

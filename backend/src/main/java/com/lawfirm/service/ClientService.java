@@ -3,6 +3,9 @@ package com.lawfirm.service;
 import com.lawfirm.dto.ClientDTO;
 import com.lawfirm.entity.Client;
 import com.lawfirm.entity.Case;
+import com.lawfirm.entity.ConflictCheckRecord;
+import com.lawfirm.entity.User;
+import com.lawfirm.exception.ResourceNotFoundException;
 import com.lawfirm.repository.ClientRepository;
 import com.lawfirm.repository.CaseRepository;
 import com.lawfirm.repository.UserRepository;
@@ -31,12 +34,17 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ClientService {
 
+    private static final Set<String> ALL_CLIENT_VIEW_USER_NAMES = new HashSet<>(Arrays.asList(
+            "田颖思", "黄智明", "邝凤兰", "何俊慧", "吴兴印"
+    ));
+
     private final ClientRepository clientRepository;
     private final CaseRepository caseRepository;
     private final UserRepository userRepository;
     private final com.lawfirm.repository.CommunicationRecordRepository communicationRecordRepository;
     private final com.lawfirm.repository.PartyRepository partyRepository;
     private final com.lawfirm.repository.DepartmentRepository departmentRepository;
+    private final com.lawfirm.repository.ConflictCheckRecordRepository conflictCheckRecordRepository;
 
     /**
      * 创建客户
@@ -106,6 +114,14 @@ public class ClientService {
     }
 
     /**
+     * 根据ID查询当前用户可见客户
+     */
+    public ClientDTO getClientById(Long id, Long currentUserId) {
+        assertClientVisible(id, currentUserId);
+        return getClientById(id);
+    }
+
+    /**
      * 搜索客户
      */
     public List<ClientDTO> searchClients(String keyword) {
@@ -120,12 +136,27 @@ public class ClientService {
     }
 
     /**
+     * 搜索当前用户可见客户
+     */
+    public List<ClientDTO> searchClients(String keyword, Long currentUserId) {
+        return searchClients(keyword).stream()
+                .filter(client -> canAccessClient(client.getId(), currentUserId))
+                .collect(Collectors.toList());
+    }
+
+    /**
      * 按类型查询客户
      */
     public List<ClientDTO> getClientsByType(String clientType) {
         // 使用数据库查询优化
         return clientRepository.findByClientTypeAndDeletedFalse(clientType).stream()
                 .map(this::convertToDTO)
+                .collect(Collectors.toList());
+    }
+
+    public List<ClientDTO> getClientsByType(String clientType, Long currentUserId) {
+        return getClientsByType(clientType).stream()
+                .filter(client -> canAccessClient(client.getId(), currentUserId))
                 .collect(Collectors.toList());
     }
 
@@ -139,6 +170,12 @@ public class ClientService {
                 .collect(Collectors.toList());
     }
 
+    public List<ClientDTO> getClientsByStatus(String status, Long currentUserId) {
+        return getClientsByStatus(status).stream()
+                .filter(client -> canAccessClient(client.getId(), currentUserId))
+                .collect(Collectors.toList());
+    }
+
     /**
      * 查询用户的客户
      */
@@ -146,6 +183,12 @@ public class ClientService {
         // 使用数据库查询优化
         return clientRepository.findByOwnerIdAndDeletedFalse(ownerId).stream()
                 .map(this::convertToDTO)
+                .collect(Collectors.toList());
+    }
+
+    public List<ClientDTO> getClientsByOwner(Long ownerId, Long currentUserId) {
+        return getClientsByOwner(ownerId).stream()
+                .filter(client -> canAccessClient(client.getId(), currentUserId))
                 .collect(Collectors.toList());
     }
 
@@ -177,6 +220,92 @@ public class ClientService {
     }
 
     /**
+     * 分页查询当前用户可见客户
+     */
+    public com.lawfirm.util.PageResult<ClientDTO> getClients(int page, int size, Long currentUserId) {
+        Pageable pageable = PageRequest.of(Math.max(0, page - 1), size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        List<Client> visibleClients = clientRepository.findByDeletedFalse().stream()
+                .filter(client -> canAccessClient(client, currentUserId))
+                .collect(Collectors.toList());
+
+        int start = (int) pageable.getOffset();
+        int end = Math.min(start + pageable.getPageSize(), visibleClients.size());
+        List<Client> pageClients;
+        if (start >= end || start >= visibleClients.size()) {
+            pageClients = new ArrayList<>();
+        } else {
+            pageClients = visibleClients.subList(start, end);
+        }
+
+        List<ClientDTO> dtoList = pageClients.stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+        return new com.lawfirm.util.PageResult<>((long) page, (long) size, (long) visibleClients.size(), dtoList);
+    }
+
+    public void assertClientVisible(Long clientId, Long currentUserId) {
+        if (!canAccessClient(clientId, currentUserId)) {
+            throw new IllegalArgumentException("无权访问非本部门相关客户");
+        }
+    }
+
+    public boolean canAccessClient(Long clientId, Long currentUserId) {
+        Client client = clientRepository.findById(clientId)
+                .orElseThrow(() -> new ResourceNotFoundException("客户", clientId));
+        return canAccessClient(client, currentUserId);
+    }
+
+    public boolean canAccessClient(Client client, Long currentUserId) {
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
+        if (isDevelopmentAdmin(currentUser)) {
+            return true;
+        }
+        if (hasAllClientViewAccess(currentUser)) {
+            return true;
+        }
+        if (client == null || Boolean.TRUE.equals(client.getDeleted())) {
+            return false;
+        }
+        List<Long> relatedUserIds = new ArrayList<>();
+        relatedUserIds.addAll(parseIds(client.getSourceUserIds()));
+        relatedUserIds.addAll(parseIds(client.getClientOwnerIds()));
+        if (client.getOwnerId() != null) {
+            relatedUserIds.add(client.getOwnerId());
+        }
+        if (relatedUserIds.isEmpty()) {
+            return false;
+        }
+        if (currentUser.getDepartmentId() == null) {
+            return relatedUserIds.contains(currentUserId);
+        }
+        return relatedUserIds.stream()
+                .distinct()
+                .map(userRepository::findById)
+                .filter(java.util.Optional::isPresent)
+                .map(java.util.Optional::get)
+                .filter(user -> !Boolean.TRUE.equals(user.getDeleted()))
+                .filter(user -> user.getStatus() == null || user.getStatus() == 1)
+                .anyMatch(user -> currentUser.getDepartmentId().equals(user.getDepartmentId()));
+    }
+
+    private boolean isDevelopmentAdmin(User user) {
+        return user != null && "admin".equals(user.getUsername());
+    }
+
+    private boolean hasAllClientViewAccess(User user) {
+        if (user == null) {
+            return false;
+        }
+        String position = user.getPosition();
+        return ALL_CLIENT_VIEW_USER_NAMES.contains(user.getUsername())
+                || ALL_CLIENT_VIEW_USER_NAMES.contains(user.getRealName())
+                || "主任".equals(position)
+                || "财务管理".equals(position)
+                || (position != null && position.startsWith("行政管理"));
+    }
+
+    /**
      * 利益冲突检索
      */
     public ClientDTO checkConflict(Long clientId) {
@@ -189,10 +318,27 @@ public class ClientService {
      * 客户建档前利益冲突预检。
      */
     public ClientDTO checkConflictPreview(ClientDTO dto) {
-        return checkConflictPreview(dto, null);
+        return checkConflictPreview(dto, null, null);
+    }
+
+    public ClientDTO checkConflictPreviewAndRecord(ClientDTO dto, Long checkedBy) {
+        ClientDTO result = checkConflictPreview(dto, null, checkedBy);
+        saveConflictCheckRecord(dto, result, checkedBy);
+        return result;
+    }
+
+    public List<ConflictCheckRecord> getConflictCheckRecords(String subjectName) {
+        if (!StringUtils.hasText(subjectName)) {
+            return new ArrayList<>();
+        }
+        return conflictCheckRecordRepository.findBySubjectNameOrderByCreatedAtDesc(subjectName);
     }
 
     private ClientDTO checkConflictPreview(ClientDTO dto, Long excludedClientId) {
+        return checkConflictPreview(dto, excludedClientId, null);
+    }
+
+    private ClientDTO checkConflictPreview(ClientDTO dto, Long excludedClientId, Long checkedBy) {
         ClientDTO result = new ClientDTO();
         result.setClientName(dto.getClientName());
         result.setClientType(dto.getClientType());
@@ -255,6 +401,31 @@ public class ClientService {
         return result;
     }
 
+    private void saveConflictCheckRecord(ClientDTO request, ClientDTO result, Long checkedBy) {
+        if (!StringUtils.hasText(request.getClientName())) {
+            return;
+        }
+        ConflictCheckRecord record = new ConflictCheckRecord();
+        record.setSubjectName(request.getClientName());
+        record.setClientType(request.getClientType());
+        record.setClientRelationship(request.getClientRelationship());
+        record.setClientRole(request.getClientRole());
+        record.setIdCard(request.getIdCard());
+        record.setCreditCode(request.getCreditCode());
+        record.setCheckedBy(checkedBy);
+        record.setConflictLevel(result.getConflictLevel());
+        record.setConclusion(result.getConflictDescription());
+        record.setSimilarNames(result.getSimilarClientNames() == null ? null : String.join(",", result.getSimilarClientNames()));
+        record.setMatchedCaseIds(result.getConflictCaseIds() == null ? null : result.getConflictCaseIds().stream()
+                .map(String::valueOf)
+                .collect(Collectors.joining(",")));
+        record.setMatchedClientIds(clientRepository.findAllByClientNameAndDeletedFalse(request.getClientName()).stream()
+                .map(Client::getId)
+                .map(String::valueOf)
+                .collect(Collectors.joining(",")));
+        conflictCheckRecordRepository.save(record);
+    }
+
     /**
      * 关键词匹配
      */
@@ -266,9 +437,6 @@ public class ClientService {
     }
 
     private void validateClientBeforeSave(ClientDTO dto, Long currentClientId) {
-        if ("个人".equals(dto.getClientType()) && !StringUtils.hasText(dto.getIdCard())) {
-            throw new IllegalArgumentException("个人客户必须填写身份证号码");
-        }
         if ("委托人".equals(dto.getClientRelationship())) {
             if (dto.getDepartmentId() == null) {
                 throw new IllegalArgumentException("委托人客户必须选择客户所属部门");
@@ -285,18 +453,9 @@ public class ClientService {
             if (StringUtils.hasText(dto.getIdCard())) {
                 clientRepository.findByIdCardAndDeletedFalse(dto.getIdCard())
                         .filter(c -> currentClientId == null || !currentClientId.equals(c.getId()))
-                        .ifPresent(c -> {
-                            throw new IllegalArgumentException("身份证号码已存在，疑似同一客户");
-                        });
+                        .ifPresent(c -> log.warn("身份证号码已存在，保留历史客户重复记录: {}", dto.getClientName()));
             }
             return;
-        }
-
-        List<Client> sameNameClients = clientRepository.findAllByClientNameAndDeletedFalse(dto.getClientName()).stream()
-                .filter(c -> currentClientId == null || !currentClientId.equals(c.getId()))
-                .collect(Collectors.toList());
-        if (!sameNameClients.isEmpty()) {
-            throw new IllegalArgumentException("客户已存在");
         }
     }
 
@@ -498,6 +657,11 @@ public class ClientService {
                 .collect(Collectors.toList());
     }
 
+    public List<com.lawfirm.vo.CaseListVO> getClientCases(Long clientId, Long currentUserId) {
+        assertClientVisible(clientId, currentUserId);
+        return getClientCases(clientId);
+    }
+
     /**
      * 获取客户的沟通记录
      */
@@ -514,11 +678,17 @@ public class ClientService {
         return allRecords.subList(start, end);
     }
 
+    public List<com.lawfirm.entity.CommunicationRecord> getCommunications(Long clientId, int page, int size, Long currentUserId) {
+        assertClientVisible(clientId, currentUserId);
+        return getCommunications(clientId, page, size);
+    }
+
     /**
      * 创建沟通记录
      */
     @Transactional
     public com.lawfirm.entity.CommunicationRecord createCommunication(Long clientId, com.lawfirm.dto.CommunicationRecordDTO dto, Long operatorId) {
+        assertClientVisible(clientId, operatorId);
         if (!clientRepository.existsById(clientId)) {
             throw new IllegalArgumentException("客户不存在");
         }
@@ -554,6 +724,11 @@ public class ClientService {
         return communicationRecordRepository.save(record);
     }
 
+    public com.lawfirm.entity.CommunicationRecord updateCommunication(Long clientId, Long communicationId, com.lawfirm.dto.CommunicationRecordDTO dto, Long currentUserId) {
+        assertClientVisible(clientId, currentUserId);
+        return updateCommunication(clientId, communicationId, dto);
+    }
+
     /**
      * 删除沟通记录
      */
@@ -567,6 +742,11 @@ public class ClientService {
         }
 
         communicationRecordRepository.delete(record);
+    }
+
+    public void deleteCommunication(Long clientId, Long communicationId, Long currentUserId) {
+        assertClientVisible(clientId, currentUserId);
+        deleteCommunication(clientId, communicationId);
     }
 
     /**

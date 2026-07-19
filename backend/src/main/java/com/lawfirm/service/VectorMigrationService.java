@@ -60,8 +60,10 @@ public class VectorMigrationService {
         log.info("开始迁移现有知识库文章到向量数据库...");
 
         try {
-            // 获取所有文章
-            List<KnowledgeArticle> articles = knowledgeArticleRepository.findAll();
+            // 第一阶段只索引全所知识和公共模板，案件沉淀需人工审核后再进入。
+            List<KnowledgeArticle> articles = knowledgeArticleRepository.findAll().stream()
+                    .filter(this::isRagIndexable)
+                    .collect(java.util.stream.Collectors.toList());
             if (articles.isEmpty()) {
                 log.info("知识库为空，无需迁移");
                 return 0;
@@ -142,6 +144,10 @@ public class VectorMigrationService {
             }
 
             qdrantVectorService.insertPointsBatch(points);
+            articles.forEach(article -> {
+                article.setIndexStatus("INDEXED");
+                knowledgeArticleRepository.save(article);
+            });
             log.debug("成功迁移批次: {} 篇文章", articles.size());
 
             return articles.size();
@@ -164,6 +170,12 @@ public class VectorMigrationService {
         }
 
         try {
+            if (!isRagIndexable(article)) {
+                article.setIndexStatus("FORBIDDEN");
+                knowledgeArticleRepository.save(article);
+                log.info("文章不在RAG第一阶段索引范围内，跳过: id={}, source={}", article.getId(), article.getKnowledgeSource());
+                return;
+            }
             // 提取文本
             String text = extractTextForEmbedding(article);
 
@@ -179,10 +191,14 @@ public class VectorMigrationService {
 
             // 插入Qdrant
             qdrantVectorService.insertPoint(article.getId(), embedding, payload);
+            article.setIndexStatus("INDEXED");
+            knowledgeArticleRepository.save(article);
 
             log.info("成功为新文章生成向量: id={}, title={}", article.getId(), article.getTitle());
 
         } catch (Exception e) {
+            article.setIndexStatus("INDEX_FAILED");
+            knowledgeArticleRepository.save(article);
             log.error("为新文章生成向量失败: id={}", article.getId(), e);
             // 不抛出异常，避免影响文章创建流程
         }
@@ -232,5 +248,18 @@ public class VectorMigrationService {
         }
 
         return result;
+    }
+
+    private boolean isRagIndexable(KnowledgeArticle article) {
+        if (article == null || Boolean.TRUE.equals(article.getDeleted())) {
+            return false;
+        }
+        if (!Boolean.TRUE.equals(article.getKnowledgeEligible())) {
+            return false;
+        }
+        String source = article.getKnowledgeSource();
+        return source == null
+                || "FIRM_KNOWLEDGE".equals(source)
+                || "PUBLIC_TEMPLATE".equals(source);
     }
 }

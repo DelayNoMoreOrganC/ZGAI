@@ -6,6 +6,8 @@ import com.lawfirm.entity.UserRole;
 import com.lawfirm.repository.UserRepository;
 import com.lawfirm.repository.UserRoleRepository;
 import com.lawfirm.repository.RoleRepository;
+import com.lawfirm.repository.PermissionRepository;
+import com.lawfirm.repository.RolePermissionRepository;
 import com.lawfirm.util.JwtUtil;
 import javax.servlet.FilterChain;
 import javax.servlet.ServletException;
@@ -37,6 +39,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final UserRepository userRepository;
     private final UserRoleRepository userRoleRepository;
     private final RoleRepository roleRepository;
+    private final RolePermissionRepository rolePermissionRepository;
+    private final PermissionRepository permissionRepository;
 
     private static final String HEADER_NAME = "Authorization";
     private static final String TOKEN_PREFIX = "Bearer ";
@@ -92,6 +96,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (role != null) {
                 // 添加角色权限（ROLE_角色编码）
                 authorities.add(new SimpleGrantedAuthority("ROLE_" + role.getRoleCode()));
+                rolePermissionRepository.findByRoleId(role.getId()).forEach(rolePermission ->
+                        permissionRepository.findById(rolePermission.getPermissionId())
+                                .ifPresent(permission -> authorities.add(
+                                        new SimpleGrantedAuthority(permission.getPermissionCode()))));
 
                 // ADMIN用户拥有所有权限
                 if ("ADMIN".equals(role.getRoleCode())) {
@@ -130,7 +138,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
         }
 
+        userRepository.findById(userId)
+                .filter(this::isCaseFilingAdministrator)
+                .ifPresent(user -> authorities.add(new SimpleGrantedAuthority("CASE_EDIT")));
+
         return authorities;
+    }
+
+    private boolean isCaseFilingAdministrator(User user) {
+        return user != null && "田颖思".equals(user.getRealName());
     }
 
     /**

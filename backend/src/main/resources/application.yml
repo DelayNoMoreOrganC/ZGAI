@@ -86,6 +86,7 @@ minio:
 
 file:
   upload-path: ./uploads/
+  case-library-root: /Volumes/ZGAI/case-files
   max-size: 52428800
   allowed-types:
     - image/jpeg

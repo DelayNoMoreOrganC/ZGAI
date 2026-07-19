@@ -45,6 +45,7 @@ public class CaseService {
     private final UserRepository userRepository;
     private final UserRoleRepository userRoleRepository;
     private final RoleRepository roleRepository;
+    private final CaseMemberRepository caseMemberRepository;
     private final FinanceRecordService financeRecordService;
     private final CaseFlowTemplateRepository caseFlowTemplateRepository;
     private final CaseStageTodoTemplateRepository caseStageTodoTemplateRepository;
@@ -262,7 +263,7 @@ public class CaseService {
             caseTimelineService.createSystemTimeline(
                     caseEntity.getId(),
                     "CASE_FILING_APPROVER_MISSING",
-                    "未找到身份类别为“行政管理”的审批人，请在用户管理中配置后转交审批"
+                    "未找到身份类别为“行政管理1/行政管理2”的审批人，请在用户管理中配置后转交审批"
             );
             return;
         }
@@ -283,13 +284,24 @@ public class CaseService {
     }
 
     private Long findUserIdByPosition(String position) {
-        return userRepository.findByPosition(position).stream()
+        return userRepository.findAll().stream()
                 .filter(user -> !Boolean.TRUE.equals(user.getDeleted()))
                 .filter(user -> user.getStatus() == null || user.getStatus() == 1)
+                .filter(user -> matchesPosition(user.getPosition(), position))
                 .sorted(Comparator.comparing((User user) -> user.getDepartmentId() == null))
                 .map(User::getId)
                 .findFirst()
                 .orElse(null);
+    }
+
+    private boolean matchesPosition(String actual, String expected) {
+        if (!hasText(actual) || !hasText(expected)) {
+            return false;
+        }
+        if ("行政管理".equals(expected)) {
+            return actual.startsWith("行政管理");
+        }
+        return expected.equals(actual);
     }
 
     private String buildFilingApprovalContent(Case caseEntity) {
@@ -476,6 +488,18 @@ public class CaseService {
      */
     @Transactional(readOnly = true)
     public PageResult<CaseListVO> getCaseList(CaseQueryRequest request, Long currentUserId) {
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
+        boolean hasAllCaseViewAccess = hasAllCaseViewAccess(currentUser);
+        List<Long> departmentUserIds = hasAllCaseViewAccess ? Collections.emptyList() : getDepartmentScopedUserIds(currentUser);
+        List<Long> departmentCaseIds = hasAllCaseViewAccess ? Collections.emptyList() : getDepartmentScopedCaseIds(departmentUserIds);
+        List<Long> filterDepartmentUserIds = request.getDepartmentId() == null
+                ? Collections.emptyList()
+                : getActiveUserIdsByDepartment(request.getDepartmentId());
+        List<Long> filterDepartmentCaseIds = request.getDepartmentId() == null
+                ? Collections.emptyList()
+                : getDepartmentScopedCaseIds(filterDepartmentUserIds);
+
         // 构建查询条件（接口统一使用0基页码）
         Pageable pageable = PageRequest.of(
                 Math.max(0, request.getPage()),
@@ -487,15 +511,19 @@ public class CaseService {
         Specification<Case> spec = (root, query, cb) -> {
             List<javax.persistence.criteria.Predicate> predicates = new ArrayList<>();
 
-            // 数据权限隔离：律师看自己，主任看全部
-            User currentUser = userRepository.findById(currentUserId)
-                    .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
-
-            boolean isAdmin = hasAdminRole(currentUser);
-
-            if (!isAdmin) {
-                // 非管理员只能看到自己作为主办律师的案件
-                predicates.add(cb.equal(root.get("ownerId"), currentUserId));
+            if (!hasAllCaseViewAccess) {
+                List<javax.persistence.criteria.Predicate> accessPredicates = new ArrayList<>();
+                if (!departmentUserIds.isEmpty()) {
+                    accessPredicates.add(root.get("ownerId").in(departmentUserIds));
+                }
+                if (!departmentCaseIds.isEmpty()) {
+                    accessPredicates.add(root.get("id").in(departmentCaseIds));
+                }
+                if (accessPredicates.isEmpty()) {
+                    predicates.add(cb.disjunction());
+                } else {
+                    predicates.add(cb.or(accessPredicates.toArray(new javax.persistence.criteria.Predicate[0])));
+                }
             }
 
             // 基础条件
@@ -505,14 +533,28 @@ public class CaseService {
             if (hasText(request.getStatus())) {
                 predicates.add(cb.equal(root.get("status"), request.getStatus()));
             }
+            if (hasText(request.getCaseReason())) {
+                predicates.add(cb.like(root.get("caseReason"), "%" + request.getCaseReason().trim() + "%"));
+            }
+            if (request.getDepartmentId() != null) {
+                List<javax.persistence.criteria.Predicate> departmentPredicates = new ArrayList<>();
+                if (!filterDepartmentUserIds.isEmpty()) {
+                    departmentPredicates.add(root.get("ownerId").in(filterDepartmentUserIds));
+                }
+                if (!filterDepartmentCaseIds.isEmpty()) {
+                    departmentPredicates.add(root.get("id").in(filterDepartmentCaseIds));
+                }
+                if (departmentPredicates.isEmpty()) {
+                    predicates.add(cb.disjunction());
+                } else {
+                    predicates.add(cb.or(departmentPredicates.toArray(new javax.persistence.criteria.Predicate[0])));
+                }
+            }
             if (hasText(request.getLevel())) {
                 predicates.add(cb.equal(root.get("level"), request.getLevel()));
             }
             if (request.getOwnerId() != null) {
-                // 管理员可以按ownerId筛选，非管理员已经在上面过滤了
-                if (isAdmin) {
-                    predicates.add(cb.equal(root.get("ownerId"), request.getOwnerId()));
-                }
+                predicates.add(cb.equal(root.get("ownerId"), request.getOwnerId()));
             }
             if (hasText(request.getCourt())) {
                 predicates.add(cb.like(root.get("court"), "%" + request.getCourt() + "%"));
@@ -567,6 +609,63 @@ public class CaseService {
     }
 
     /**
+     * 开发管理员账号保留全所可见能力，其余账号按所属部门隔离案件。
+     */
+    private boolean isDevelopmentAdmin(User user) {
+        return user != null && "admin".equals(user.getUsername());
+    }
+
+    private boolean hasAllCaseViewAccess(User user) {
+        if (isDevelopmentAdmin(user)) {
+            return true;
+        }
+        String position = user == null ? null : user.getPosition();
+        return "主任".equals(position)
+                || "财务管理".equals(position)
+                || (position != null && position.startsWith("行政管理"));
+    }
+
+    private boolean isCaseFilingAdministrator(User user) {
+        return user != null && "田颖思".equals(user.getRealName());
+    }
+
+    private List<Long> getDepartmentScopedUserIds(User currentUser) {
+        if (currentUser.getDepartmentId() == null) {
+            return Collections.singletonList(currentUser.getId());
+        }
+        return getActiveUserIdsByDepartment(currentUser.getDepartmentId(), currentUser.getId());
+    }
+
+    private List<Long> getActiveUserIdsByDepartment(Long departmentId) {
+        return getActiveUserIdsByDepartment(departmentId, null);
+    }
+
+    private List<Long> getActiveUserIdsByDepartment(Long departmentId, Long fallbackUserId) {
+        if (departmentId == null) {
+            return fallbackUserId == null ? Collections.emptyList() : Collections.singletonList(fallbackUserId);
+        }
+        List<Long> userIds = userRepository.findByDepartmentId(departmentId).stream()
+                .filter(user -> !Boolean.TRUE.equals(user.getDeleted()))
+                .filter(user -> user.getStatus() == null || user.getStatus() == 1)
+                .map(User::getId)
+                .collect(Collectors.toList());
+        if (fallbackUserId != null && !userIds.contains(fallbackUserId)) {
+            userIds.add(fallbackUserId);
+        }
+        return userIds;
+    }
+
+    private List<Long> getDepartmentScopedCaseIds(List<Long> departmentUserIds) {
+        if (departmentUserIds == null || departmentUserIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return caseMemberRepository.findByUserIdInAndDeletedFalse(departmentUserIds).stream()
+                .map(CaseMember::getCaseId)
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    /**
      * 判断用户是否有管理员角色
      */
     private boolean hasAdminRole(User user) {
@@ -618,6 +717,58 @@ public class CaseService {
         vo.setStageProgress(caseStageService.getStageProgress(caseId));
 
         return vo;
+    }
+
+    @Transactional(readOnly = true)
+    public CaseDetailVO getCaseDetail(Long caseId, Long currentUserId) {
+        assertCaseVisible(caseId, currentUserId);
+        return getCaseDetail(caseId);
+    }
+
+    @Transactional(readOnly = true)
+    public void assertCaseVisible(Long caseId, Long currentUserId) {
+        if (!canAccessCase(caseId, currentUserId)) {
+            throw new InvalidParameterException("caseId", "无权访问非本部门案件");
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public void assertCaseEditable(Long caseId, Long currentUserId) {
+        Case caseEntity = caseRepository.findById(caseId)
+                .orElseThrow(() -> new ResourceNotFoundException("案件", caseId));
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
+        if (isCaseFilingAdministrator(currentUser)
+                && ("CLOSED".equals(caseEntity.getStatus()) || "ARCHIVED".equals(caseEntity.getStatus()))) {
+            throw new InvalidParameterException("caseId", "案件已结案或归档，行政立案人员不能继续修改案件信息");
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canAccessCase(Long caseId, Long currentUserId) {
+        Case caseEntity = caseRepository.findById(caseId)
+                .orElseThrow(() -> new ResourceNotFoundException("案件", caseId));
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
+        if (hasAllCaseViewAccess(currentUser)) {
+            return true;
+        }
+        if (Objects.equals(caseEntity.getOwnerId(), currentUserId)) {
+            return true;
+        }
+        if (currentUser.getDepartmentId() == null) {
+            return false;
+        }
+        User owner = userRepository.findById(caseEntity.getOwnerId()).orElse(null);
+        if (owner != null && Objects.equals(owner.getDepartmentId(), currentUser.getDepartmentId())) {
+            return true;
+        }
+        return caseMemberRepository.findByCaseIdAndDeletedFalse(caseId).stream()
+                .map(CaseMember::getUserId)
+                .map(userRepository::findById)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .anyMatch(user -> Objects.equals(user.getDepartmentId(), currentUser.getDepartmentId()));
     }
 
     private List<Long> resolveClientIds(Case caseEntity, List<com.lawfirm.vo.PartyVO> parties) {
@@ -710,7 +861,7 @@ public class CaseService {
      * 查重检查
      * PRD要求（228行）：按案件名称和案号查重
      */
-    public List<CaseListVO> checkDuplicate(String name, String caseNumber) {
+    public List<CaseListVO> checkDuplicate(String name, String caseNumber, Long currentUserId) {
         List<Case> duplicates = new ArrayList<>();
 
         if (name != null && !name.trim().isEmpty()) {
@@ -725,6 +876,7 @@ public class CaseService {
         // 去重
         duplicates = duplicates.stream()
                 .distinct()
+                .filter(c -> canAccessCase(c.getId(), currentUserId))
                 .collect(Collectors.toList());
 
         return duplicates.stream()

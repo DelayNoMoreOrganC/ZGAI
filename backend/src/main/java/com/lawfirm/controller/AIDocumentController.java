@@ -3,6 +3,7 @@ package com.lawfirm.controller;
 import com.lawfirm.dto.AIDocumentRecognitionResult;
 import com.lawfirm.security.SecurityUtils;
 import com.lawfirm.service.AIDocumentService;
+import com.lawfirm.service.CaseService;
 import com.lawfirm.util.Result;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +20,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class AIDocumentController {
 
     private final AIDocumentService aiDocumentService;
+    private final CaseService caseService;
     private final SecurityUtils securityUtils;
 
     /**
@@ -54,6 +56,9 @@ public class AIDocumentController {
 
             // 获取当前用户ID
             Long userId = securityUtils.getCurrentUserId();
+            if (caseId != null) {
+                caseService.assertCaseVisible(caseId, userId);
+            }
 
             log.info("开始AI文档识别，文件名: {}, 大小: {}, 用户: {}, 关联案件: {}",
                     file.getOriginalFilename(), file.getSize(), userId, caseId);
@@ -96,6 +101,9 @@ public class AIDocumentController {
             }
 
             Long userId = securityUtils.getCurrentUserId();
+            if (caseId != null) {
+                caseService.assertCaseVisible(caseId, userId);
+            }
             java.util.List<AIDocumentRecognitionResult> results = new java.util.ArrayList<>();
 
             for (MultipartFile file : files) {

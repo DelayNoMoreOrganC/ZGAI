@@ -3,6 +3,7 @@ package com.lawfirm.service;
 import com.lawfirm.dto.CaseDocumentDTO;
 import com.lawfirm.entity.Case;
 import com.lawfirm.entity.CaseDocument;
+import com.lawfirm.entity.DocumentFolder;
 import com.lawfirm.repository.CaseDocumentRepository;
 import com.lawfirm.repository.CaseRepository;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -30,8 +33,7 @@ public class CaseDocumentService {
 
     private final CaseDocumentRepository caseDocumentRepository;
     private final CaseRepository caseRepository;
-
-    private static final String UPLOAD_BASE_DIR = "uploads/cases/";
+    private final CaseFileLibraryService caseFileLibraryService;
 
     /**
      * 上传案件文档
@@ -48,29 +50,42 @@ public class CaseDocumentService {
         }
 
         // 创建目录
-        Path caseFolder = ensureCaseFolder(caseEntity);
+        Path caseFolder = caseFileLibraryService.ensureCaseFolder(caseEntity);
         Path uploadPath = caseFolder;
+        Long folderId = null;
         if (folderPath != null && !folderPath.trim().isEmpty()) {
-            uploadPath = caseFolder.resolve(sanitizeFolderPath(folderPath));
+            String sanitizedFolderPath = caseFileLibraryService.sanitizeFolderPath(folderPath);
+            uploadPath = caseFolder.resolve(sanitizedFolderPath);
+            folderPath = sanitizedFolderPath;
+            folderId = caseFileLibraryService.findCaseFolder(caseId, folderPath)
+                    .map(DocumentFolder::getId)
+                    .orElse(null);
         }
         Files.createDirectories(uploadPath);
 
         // 保存文件
         String originalFilename = file.getOriginalFilename();
-        String fileExtension = originalFilename.substring(originalFilename.lastIndexOf("."));
-        String newFilename = System.currentTimeMillis() + "_" + originalFilename;
+        String safeOriginalFilename = sanitizeFileName(originalFilename);
+        int versionNo = resolveNextVersion(caseId, folderPath, safeOriginalFilename);
+        String newFilename = System.currentTimeMillis() + "_v" + versionNo + "_" + safeOriginalFilename;
         Path filePath = uploadPath.resolve(newFilename);
         Files.copy(file.getInputStream(), filePath);
 
         // 创建文档记录
         CaseDocument document = new CaseDocument();
         document.setCaseId(caseId);
-        document.setDocumentName(originalFilename);
+        document.setFolderId(folderId);
+        document.setDocumentName(safeOriginalFilename);
+        document.setOriginalFileName(originalFilename);
         document.setDocumentType(documentType);
         document.setFilePath(filePath.toString());
         document.setFileSize(file.getSize());
+        document.setMimeType(file.getContentType());
         document.setFolderPath(folderPath);
+        document.setVersionNo(versionNo);
         document.setUploadBy(userId);
+        document.setKnowledgeEligible(false);
+        document.setIndexStatus("NOT_INDEXED");
 
         CaseDocument saved = caseDocumentRepository.save(document);
         log.info("上传案件文档成功: caseId={}, fileName={}", caseId, originalFilename);
@@ -78,40 +93,33 @@ public class CaseDocumentService {
         return convertToDTO(saved);
     }
 
-    private Path ensureCaseFolder(Case caseEntity) throws IOException {
-        if (caseEntity.getCaseFolderPath() != null && !caseEntity.getCaseFolderPath().trim().isEmpty()) {
-            Path existing = Paths.get(caseEntity.getCaseFolderPath());
-            Files.createDirectories(existing);
-            return existing;
-        }
-
-        String safeName = sanitizePathSegment(caseEntity.getCaseNumber() + "_" + caseEntity.getCaseName());
-        Path folder = Paths.get(UPLOAD_BASE_DIR, caseEntity.getId() + "_" + safeName);
-        Files.createDirectories(folder);
-        caseEntity.setCaseFolderPath(folder.toString());
-        caseRepository.save(caseEntity);
-        return folder;
-    }
-
-    private String sanitizeFolderPath(String folderPath) {
-        return folderPath.replace("\\", "/")
-                .replaceAll("\\.\\.", "")
-                .replaceAll("^/+", "")
-                .replaceAll("[*?\"<>|]+", "_");
-    }
-
-    private String sanitizePathSegment(String value) {
+    private String sanitizeFileName(String value) {
         if (value == null || value.trim().isEmpty()) {
-            return "未命名案件";
+            return "未命名文件";
         }
         return value.replaceAll("[\\\\/:*?\"<>|\\s]+", "_");
+    }
+
+    private int resolveNextVersion(Long caseId, String folderPath, String documentName) {
+        return caseDocumentRepository.findByCaseIdAndDeletedFalseOrderByCreatedAtDesc(caseId).stream()
+                .filter(doc -> documentName.equals(doc.getDocumentName()))
+                .filter(doc -> {
+                    if (folderPath == null) {
+                        return doc.getFolderPath() == null;
+                    }
+                    return folderPath.equals(doc.getFolderPath());
+                })
+                .map(CaseDocument::getVersionNo)
+                .filter(version -> version != null)
+                .max(Integer::compareTo)
+                .orElse(0) + 1;
     }
 
     /**
      * 获取案件文档列表
      */
     public List<CaseDocumentDTO> getCaseDocuments(Long caseId) {
-        return caseDocumentRepository.findByCaseIdOrderByCreatedAtDesc(caseId).stream()
+        return caseDocumentRepository.findByCaseIdAndDeletedFalseOrderByCreatedAtDesc(caseId).stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
@@ -120,7 +128,16 @@ public class CaseDocumentService {
      * 根据类型获取文档列表
      */
     public List<CaseDocumentDTO> getDocumentsByType(String documentType) {
-        return caseDocumentRepository.findByDocumentType(documentType).stream()
+        return caseDocumentRepository.findByDocumentTypeAndDeletedFalse(documentType).stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 根据案件和类型获取文档列表
+     */
+    public List<CaseDocumentDTO> getDocumentsByCaseAndType(Long caseId, String documentType) {
+        return caseDocumentRepository.findByCaseIdAndDocumentTypeAndDeletedFalseOrderByCreatedAtDesc(caseId, documentType).stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
@@ -129,7 +146,7 @@ public class CaseDocumentService {
      * 获取全部文档（跨案件聚合视图）
      */
     public List<CaseDocumentDTO> getAllDocuments() {
-        return caseDocumentRepository.findAll().stream()
+        return caseDocumentRepository.findByDeletedFalse().stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
@@ -140,6 +157,9 @@ public class CaseDocumentService {
     public CaseDocumentDTO getDocumentById(Long id) {
         CaseDocument document = caseDocumentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("文档不存在"));
+        if (Boolean.TRUE.equals(document.getDeleted())) {
+            throw new IllegalArgumentException("文档已删除");
+        }
         return convertToDTO(document);
     }
 
@@ -155,6 +175,8 @@ public class CaseDocumentService {
         document.setDocumentType(dto.getDocumentType());
         document.setFolderPath(dto.getFolderPath());
         document.setTags(dto.getTags());
+        if (dto.getKnowledgeEligible() != null) document.setKnowledgeEligible(dto.getKnowledgeEligible());
+        if (dto.getIndexStatus() != null) document.setIndexStatus(dto.getIndexStatus());
         document.setOcrResult(dto.getOcrResult());
 
         CaseDocument updated = caseDocumentRepository.save(document);
@@ -171,18 +193,27 @@ public class CaseDocumentService {
         CaseDocument document = caseDocumentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("文档不存在"));
 
-        // 删除物理文件
+        // 删除不直接清除NAS文件，先移入文件库回收区，便于误删恢复。
         try {
-            Path filePath = Paths.get(document.getFilePath());
-            if (Files.exists(filePath)) {
-                Files.delete(filePath);
+            if (document.getFilePath() != null && !document.getFilePath().trim().isEmpty()) {
+                Path filePath = Paths.get(document.getFilePath());
+                if (Files.exists(filePath)) {
+                    Path trashDir = caseFileLibraryService.getCaseLibraryRootPath()
+                            .resolve(".trash")
+                            .resolve(LocalDate.now().toString())
+                            .resolve(String.valueOf(document.getCaseId()));
+                    Files.createDirectories(trashDir);
+                    Path trashPath = trashDir.resolve(System.currentTimeMillis() + "_" + filePath.getFileName());
+                    Files.move(filePath, trashPath, StandardCopyOption.REPLACE_EXISTING);
+                    document.setFilePath(trashPath.toString());
+                }
             }
         } catch (IOException e) {
-            log.warn("删除物理文件失败: {}", document.getFilePath(), e);
+            log.warn("移动文件到回收区失败: {}", document.getFilePath(), e);
         }
 
-        // 删除数据库记录
-        caseDocumentRepository.deleteById(id);
+        document.setDeleted(true);
+        caseDocumentRepository.save(document);
         log.info("删除案件文档成功: id={}", id);
     }
 
@@ -208,13 +239,19 @@ public class CaseDocumentService {
         CaseDocumentDTO dto = new CaseDocumentDTO();
         dto.setId(document.getId());
         dto.setCaseId(document.getCaseId());
+        dto.setFolderId(document.getFolderId());
         dto.setDocumentName(document.getDocumentName());
+        dto.setOriginalFileName(document.getOriginalFileName());
         dto.setDocumentType(document.getDocumentType());
         dto.setFilePath(document.getFilePath());
         dto.setFileSize(document.getFileSize());
+        dto.setMimeType(document.getMimeType());
         dto.setFolderPath(document.getFolderPath());
+        dto.setVersionNo(document.getVersionNo());
         dto.setUploadBy(document.getUploadBy());
         dto.setTags(document.getTags());
+        dto.setKnowledgeEligible(document.getKnowledgeEligible());
+        dto.setIndexStatus(document.getIndexStatus());
         dto.setOcrResult(document.getOcrResult());
         dto.setCreatedAt(document.getCreatedAt());
         dto.setUpdatedAt(document.getUpdatedAt());

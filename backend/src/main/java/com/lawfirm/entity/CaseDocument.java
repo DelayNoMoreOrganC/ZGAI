@@ -23,9 +23,15 @@ public class CaseDocument extends LogicalDeleteEntity {
     @Column(name = "case_id", nullable = false)
     private Long caseId;
 
+    @Column(name = "folder_id")
+    private Long folderId;
+
     @NotBlank(message = "文档名称不能为空")
     @Column(name = "document_name", nullable = false)
     private String documentName;
+
+    @Column(name = "original_file_name")
+    private String originalFileName;
 
     @NotBlank(message = "文档类型不能为空")
     @Column(name = "document_type", nullable = false, length = 20)
@@ -38,8 +44,14 @@ public class CaseDocument extends LogicalDeleteEntity {
     @Column(name = "file_size")
     private Long fileSize;
 
+    @Column(name = "mime_type", length = 100)
+    private String mimeType;
+
     @Column(name = "folder_path")
     private String folderPath;
+
+    @Column(name = "version_no")
+    private Integer versionNo = 1;
 
     @NotNull(message = "上传人不能为空")
     @Column(name = "upload_by", nullable = false)
@@ -47,6 +59,12 @@ public class CaseDocument extends LogicalDeleteEntity {
 
     @Column
     private String tags;
+
+    @Column(name = "knowledge_eligible")
+    private Boolean knowledgeEligible = false;
+
+    @Column(name = "index_status", length = 30)
+    private String indexStatus = "NOT_INDEXED";
 
     @Column(name = "ocr_result")
     private String ocrResult;

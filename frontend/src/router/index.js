@@ -167,6 +167,12 @@ const routes = [
         component: () => import('@/views/finance/index.vue'),
         meta: { title: '财务', icon: '💰' }
       },
+      {
+        path: 'finance/invoices',
+        name: 'FinanceInvoices',
+        component: () => import('@/views/finance/index.vue'),
+        meta: { title: '发票申请', icon: '💰' }
+      },
       // 审批管理
       {
         path: 'approval',

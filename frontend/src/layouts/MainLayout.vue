@@ -55,7 +55,7 @@
       </el-menu>
       <div v-if="!isCollapse" class="sidebar-footer">
         <span class="footer-label">下一阶段</span>
-        <span class="footer-text">文档、财务、审批等模块将在稳定后逐步开放。</span>
+        <span class="footer-text">文档、审批等模块将在稳定后逐步开放。</span>
       </div>
     </el-aside>
 
@@ -233,6 +233,17 @@ const menuRoutes = computed(() => {
         { path: '/client/create', meta: { title: '新建客户' } },
         { path: '/client/conflict-check', meta: { title: '利冲检查' } }
       ]
+    },
+    {
+      path: '/finance',
+      meta: { title: '财务管理', icon: '💰' },
+      children: [
+        { path: '/finance/invoices', meta: { title: '发票申请' } }
+      ]
+    },
+    {
+      path: '/approval',
+      meta: { title: '审批管理', icon: '✅' }
     }
   ]
   return routes

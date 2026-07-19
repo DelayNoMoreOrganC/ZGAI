@@ -51,6 +51,7 @@ public class ClientController {
     @PutMapping("/{id}")
     public Result<ClientDTO> updateClient(@PathVariable Long id, @Valid @RequestBody ClientDTO dto) {
         try {
+            clientService.assertClientVisible(id, getCurrentUserId());
             ClientDTO result = clientService.updateClient(id, dto);
             return Result.success(result);
         } catch (IllegalArgumentException e) {
@@ -69,6 +70,7 @@ public class ClientController {
     @DeleteMapping("/{id}")
     public Result<Void> deleteClient(@PathVariable Long id) {
         try {
+            clientService.assertClientVisible(id, getCurrentUserId());
             clientService.deleteClient(id);
             return Result.success();
         } catch (IllegalArgumentException e) {
@@ -87,7 +89,7 @@ public class ClientController {
     @GetMapping("/{id}")
     public Result<ClientDTO> getClient(@PathVariable Long id) {
         try {
-            ClientDTO result = clientService.getClientById(id);
+            ClientDTO result = clientService.getClientById(id, getCurrentUserId());
             return Result.success(result);
         } catch (IllegalArgumentException e) {
             log.error("查询客户失败: {}", e.getMessage());
@@ -105,7 +107,7 @@ public class ClientController {
     @GetMapping("/search")
     public Result<List<ClientDTO>> searchClients(@RequestParam String keyword) {
         try {
-            List<ClientDTO> result = clientService.searchClients(keyword);
+            List<ClientDTO> result = clientService.searchClients(keyword, getCurrentUserId());
             return Result.success(result);
         } catch (Exception e) {
             log.error("搜索客户异常", e);
@@ -120,7 +122,7 @@ public class ClientController {
     @GetMapping("/type/{clientType}")
     public Result<List<ClientDTO>> getClientsByType(@PathVariable String clientType) {
         try {
-            List<ClientDTO> result = clientService.getClientsByType(clientType);
+            List<ClientDTO> result = clientService.getClientsByType(clientType, getCurrentUserId());
             return Result.success(result);
         } catch (Exception e) {
             log.error("查询客户异常", e);
@@ -135,7 +137,7 @@ public class ClientController {
     @GetMapping("/status/{status}")
     public Result<List<ClientDTO>> getClientsByStatus(@PathVariable String status) {
         try {
-            List<ClientDTO> result = clientService.getClientsByStatus(status);
+            List<ClientDTO> result = clientService.getClientsByStatus(status, getCurrentUserId());
             return Result.success(result);
         } catch (Exception e) {
             log.error("查询客户异常", e);
@@ -150,7 +152,7 @@ public class ClientController {
     @GetMapping("/owner/{ownerId}")
     public Result<List<ClientDTO>> getClientsByOwner(@PathVariable Long ownerId) {
         try {
-            List<ClientDTO> result = clientService.getClientsByOwner(ownerId);
+            List<ClientDTO> result = clientService.getClientsByOwner(ownerId, getCurrentUserId());
             return Result.success(result);
         } catch (Exception e) {
             log.error("查询客户异常", e);
@@ -180,11 +182,26 @@ public class ClientController {
     @PostMapping("/conflict-check")
     public Result<ClientDTO> checkConflictPreview(@RequestBody ClientDTO dto) {
         try {
-            ClientDTO result = clientService.checkConflictPreview(dto);
+            Long userId = getCurrentUserId();
+            ClientDTO result = clientService.checkConflictPreviewAndRecord(dto, userId);
             return Result.success(result);
         } catch (Exception e) {
             log.error("利益冲突预检异常", e);
             return Result.error("利益冲突预检失败");
+        }
+    }
+
+    /**
+     * 查询客户名称的利冲检查历史
+     * GET /api/clients/conflict-check/records?subjectName={subjectName}
+     */
+    @GetMapping("/conflict-check/records")
+    public Result<List<com.lawfirm.entity.ConflictCheckRecord>> getConflictCheckRecords(@RequestParam String subjectName) {
+        try {
+            return Result.success(clientService.getConflictCheckRecords(subjectName));
+        } catch (Exception e) {
+            log.error("查询利冲检查记录异常", e);
+            return Result.error("查询利冲检查记录失败");
         }
     }
 
@@ -195,7 +212,7 @@ public class ClientController {
     @GetMapping("/{id}/cases")
     public Result<List<com.lawfirm.vo.CaseListVO>> getClientCases(@PathVariable Long id) {
         try {
-            List<com.lawfirm.vo.CaseListVO> cases = clientService.getClientCases(id);
+            List<com.lawfirm.vo.CaseListVO> cases = clientService.getClientCases(id, getCurrentUserId());
             return Result.success(cases);
         } catch (Exception e) {
             log.error("获取客户案件异常", e);
@@ -213,7 +230,7 @@ public class ClientController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
         try {
-            List<com.lawfirm.entity.CommunicationRecord> records = clientService.getCommunications(id, page, size);
+            List<com.lawfirm.entity.CommunicationRecord> records = clientService.getCommunications(id, page, size, getCurrentUserId());
             return Result.success(records);
         } catch (Exception e) {
             log.error("获取沟通记录异常", e);
@@ -249,7 +266,7 @@ public class ClientController {
             @PathVariable Long communicationId,
             @Valid @RequestBody com.lawfirm.dto.CommunicationRecordDTO dto) {
         try {
-            com.lawfirm.entity.CommunicationRecord record = clientService.updateCommunication(id, communicationId, dto);
+            com.lawfirm.entity.CommunicationRecord record = clientService.updateCommunication(id, communicationId, dto, getCurrentUserId());
             return Result.success("沟通记录更新成功", record);
         } catch (IllegalArgumentException e) {
             log.error("更新沟通记录失败: {}", e.getMessage());
@@ -269,7 +286,7 @@ public class ClientController {
             @PathVariable Long id,
             @PathVariable Long communicationId) {
         try {
-            clientService.deleteCommunication(id, communicationId);
+            clientService.deleteCommunication(id, communicationId, getCurrentUserId());
             return Result.success();
         } catch (IllegalArgumentException e) {
             log.error("删除沟通记录失败: {}", e.getMessage());
@@ -289,7 +306,7 @@ public class ClientController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
         try {
-            var result = clientService.getClients(page, size);
+            var result = clientService.getClients(page, size, getCurrentUserId());
             return Result.success(result);
         } catch (Exception e) {
             log.error("分页查询客户异常", e);

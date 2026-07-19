@@ -3,6 +3,8 @@ package com.lawfirm.security;
 import com.lawfirm.entity.User;
 import com.lawfirm.entity.UserRole;
 import com.lawfirm.entity.Role;
+import com.lawfirm.repository.PermissionRepository;
+import com.lawfirm.repository.RolePermissionRepository;
 import com.lawfirm.repository.UserRepository;
 import com.lawfirm.repository.UserRoleRepository;
 import com.lawfirm.repository.RoleRepository;
@@ -27,10 +29,12 @@ public class CustomUserDetailsService implements UserDetailsService {
     private final UserRepository userRepository;
     private final UserRoleRepository userRoleRepository;
     private final RoleRepository roleRepository;
+    private final RolePermissionRepository rolePermissionRepository;
+    private final PermissionRepository permissionRepository;
 
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findByUsername(username)
+        User user = userRepository.findByUsernameAndDeletedFalse(username)
                 .orElseThrow(() -> new UsernameNotFoundException("用户不存在: " + username));
 
         // 加载用户角色
@@ -46,6 +50,10 @@ public class CustomUserDetailsService implements UserDetailsService {
             if (role != null) {
                 // 添加角色权限（ROLE_角色编码）
                 authorities.add(new SimpleGrantedAuthority("ROLE_" + role.getRoleCode()));
+                rolePermissionRepository.findByRoleId(role.getId()).forEach(rolePermission ->
+                        permissionRepository.findById(rolePermission.getPermissionId())
+                                .ifPresent(permission -> authorities.add(
+                                        new SimpleGrantedAuthority(permission.getPermissionCode()))));
 
                 // ADMIN用户拥有所有权限
                 if ("ADMIN".equals(role.getRoleCode())) {
@@ -85,6 +93,10 @@ public class CustomUserDetailsService implements UserDetailsService {
             }
         }
 
+        if (isCaseFilingAdministrator(user)) {
+            authorities.add(new SimpleGrantedAuthority("CASE_EDIT"));
+        }
+
         return org.springframework.security.core.userdetails.User.builder()
                 .username(user.getUsername())
                 .password(user.getPassword())
@@ -92,5 +104,9 @@ public class CustomUserDetailsService implements UserDetailsService {
                 .accountLocked(user.getStatus() == 0)
                 .disabled(user.getStatus() == 0)
                 .build();
+    }
+
+    private boolean isCaseFilingAdministrator(User user) {
+        return user != null && "田颖思".equals(user.getRealName());
     }
 }

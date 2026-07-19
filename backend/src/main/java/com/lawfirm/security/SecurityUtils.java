@@ -42,7 +42,7 @@ public class SecurityUtils {
                 return Long.parseLong((String) principal);
             } catch (NumberFormatException e) {
                 // 如果是字符串格式的用户名，查询数据库
-                return userRepository.findByUsername((String) principal)
+                return userRepository.findByUsernameAndDeletedFalse((String) principal)
                         .map(User::getId)
                         .orElseThrow(() -> new InvalidParameterException("principal", "无效的用户信息"));
             }
@@ -52,7 +52,7 @@ public class SecurityUtils {
             try {
                 return Long.parseLong(username);
             } catch (NumberFormatException e) {
-                return userRepository.findByUsername(username)
+                return userRepository.findByUsernameAndDeletedFalse(username)
                         .map(User::getId)
                         .orElseThrow(() -> new InvalidParameterException("principal", "无效的用户信息"));
             }

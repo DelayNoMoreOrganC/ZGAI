@@ -3,8 +3,6 @@ package com.lawfirm.service;
 import com.lawfirm.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -24,6 +22,7 @@ public class DashboardService {
     private final CaseRepository caseRepository;
     private final CalendarRepository calendarRepository;
     private final PaymentRepository paymentRepository;
+    private final CaseService caseService;
 
     /**
      * 获取工作台统计数据
@@ -38,15 +37,22 @@ public class DashboardService {
 
             // 1. 本月新建案件数
             List<com.lawfirm.entity.Case> monthlyCases = caseRepository.findByCreatedAtBetweenAndDeletedFalseOrderByCreatedAtAsc(monthStart, monthEnd);
+            monthlyCases = monthlyCases.stream()
+                    .filter(caseEntity -> caseService.canAccessCase(caseEntity.getId(), userId))
+                    .collect(java.util.stream.Collectors.toList());
             stats.put("monthlyCases", (long) monthlyCases.size());
 
             // 2. 进行中案件数（status='active'或'审理中'）
-            Page<com.lawfirm.entity.Case> activeCasesPage = caseRepository.findByStatusAndDeletedFalse("active", PageRequest.of(0, 1));
-            long activeCasesCount = activeCasesPage.getTotalElements();
+            List<com.lawfirm.entity.Case> activeCases = caseRepository.findByDeletedFalse().stream()
+                    .filter(caseEntity -> "active".equals(caseEntity.getStatus()))
+                    .collect(java.util.stream.Collectors.toList());
+            long activeCasesCount = countVisibleCases(activeCases, userId);
             // 如果active状态没有数据，尝试其他可能的状态值
             if (activeCasesCount == 0) {
-                Page<com.lawfirm.entity.Case> processingCases = caseRepository.findByStatusAndDeletedFalse("审理中", PageRequest.of(0, 1));
-                activeCasesCount = processingCases.getTotalElements();
+                List<com.lawfirm.entity.Case> processingCases = caseRepository.findByDeletedFalse().stream()
+                        .filter(caseEntity -> "审理中".equals(caseEntity.getStatus()))
+                        .collect(java.util.stream.Collectors.toList());
+                activeCasesCount = countVisibleCases(processingCases, userId);
             }
             stats.put("activeCases", activeCasesCount);
 
@@ -54,10 +60,14 @@ public class DashboardService {
             List<com.lawfirm.entity.Calendar> monthlyHearings = calendarRepository.findByDeletedFalseAndCalendarTypeAndStartTimeBetween(
                 "HEARING", monthStart, monthEnd
             );
+            monthlyHearings = monthlyHearings.stream()
+                    .filter(calendar -> calendar.getCaseId() != null)
+                    .filter(calendar -> caseService.canAccessCase(calendar.getCaseId(), userId))
+                    .collect(java.util.stream.Collectors.toList());
             stats.put("monthlyHearings", (long) monthlyHearings.size());
 
             // 4. 待办数（未删除且未完成）
-            long pendingTodosCount = todoRepository.countByDeletedFalseAndStatusNotCompleted();
+            long pendingTodosCount = todoRepository.countByAssigneeIdAndDeletedFalseAndStatusNotCompleted(userId);
             stats.put("pendingTodos", pendingTodosCount);
 
             // 5. 本月收费（本月paymentDate的收款总额）
@@ -65,6 +75,8 @@ public class DashboardService {
                 monthStart.toLocalDate(), monthEnd.toLocalDate()
             );
             double monthlyIncome = monthlyPayments.stream()
+                .filter(payment -> payment.getCaseId() != null)
+                .filter(payment -> caseService.canAccessCase(payment.getCaseId(), userId))
                 .mapToDouble(p -> p.getPaymentAmount() != null ? p.getPaymentAmount().doubleValue() : 0.0)
                 .sum();
             stats.put("monthlyIncome", monthlyIncome);
@@ -81,6 +93,12 @@ public class DashboardService {
         }
 
         return stats;
+    }
+
+    private long countVisibleCases(List<com.lawfirm.entity.Case> cases, Long userId) {
+        return cases.stream()
+                .filter(caseEntity -> caseService.canAccessCase(caseEntity.getId(), userId))
+                .count();
     }
 
     /**

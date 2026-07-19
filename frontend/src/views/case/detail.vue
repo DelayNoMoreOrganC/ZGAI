@@ -94,6 +94,12 @@
     <div class="tab-content">
       <router-view :case-data="caseDetail" @refresh="fetchCaseDetail" />
     </div>
+
+    <ApprovalDetailDrawer
+      v-model="approvalDrawerVisible"
+      :case-id="caseDetail.id"
+      @handled="handleApprovalHandled"
+    />
   </div>
 </template>
 
@@ -108,11 +114,13 @@ import { getCaseDetail, updateCaseStatus, archiveCase, deleteCase, createCase } 
 import { createTodo } from '@/api/todo'
 import { getStagesByCaseType, getStageAutoTodos, generateStageTodos } from '@/config/case-lifecycle'
 import AIAssistant from '@/views/ai/assistant.vue'
+import ApprovalDetailDrawer from '@/components/ApprovalDetailDrawer.vue'
 
 const route = useRoute()
 const router = useRouter()
 
 const loading = ref(false)
+const approvalDrawerVisible = ref(false)
 const activeTab = ref('basic')
 const aiAssistantVisible = ref(false)
 const caseDetail = reactive({
@@ -196,10 +204,11 @@ const handleArchive = async () => {
 
 // 查看审批流程
 const handleViewApprovals = () => {
-  router.push({
-    path: '/approval',
-    query: { caseId: caseDetail.id }
-  })
+  approvalDrawerVisible.value = true
+}
+
+const handleApprovalHandled = async () => {
+  await fetchCaseDetail()
 }
 
 // 更多操作
@@ -697,6 +706,89 @@ onMounted(() => {
     background-color: #fff;
     border-radius: 4px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  }
+}
+
+.approval-drawer-body {
+  min-height: 240px;
+
+  .approval-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 0.2s, background-color 0.2s;
+
+    &.active,
+    &:hover {
+      border-color: #409eff;
+      background-color: #f5f9ff;
+    }
+  }
+
+  .approval-card-main {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+
+    strong {
+      color: #1f2937;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    span {
+      color: #909399;
+      font-size: 12px;
+    }
+  }
+
+  .approval-detail-panel {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid #ebeef5;
+  }
+
+  .approval-detail-header {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .approval-content {
+    margin-top: 18px;
+
+    h3 {
+      margin: 0 0 10px;
+      color: #1f2937;
+      font-size: 15px;
+    }
+
+    pre {
+      min-height: 96px;
+      padding: 12px;
+      margin: 0;
+      border-radius: 8px;
+      background-color: #f8fafc;
+      color: #374151;
+      font-family: inherit;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  }
+
+  .approval-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 18px;
   }
 }
 

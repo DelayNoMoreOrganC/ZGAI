@@ -30,6 +30,11 @@ public interface CaseMemberRepository extends JpaRepository<CaseMember, Long> {
     List<CaseMember> findByUserIdAndDeletedFalse(Long userId);
 
     /**
+     * 根据多个用户ID查询参与的所有案件
+     */
+    List<CaseMember> findByUserIdInAndDeletedFalse(List<Long> userIds);
+
+    /**
      * 根据案件ID和用户ID查询
      */
     @Query("SELECT cm FROM CaseMember cm WHERE cm.caseId = :caseId AND cm.userId = :userId AND cm.deleted = false")

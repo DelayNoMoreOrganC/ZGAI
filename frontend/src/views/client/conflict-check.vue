@@ -11,7 +11,7 @@
 
     <div class="check-container">
       <section class="search-panel">
-        <el-form ref="formRef" :model="formData" :rules="formRules" label-width="96px">
+        <el-form ref="formRef" :model="formData" :rules="formRules" label-width="118px">
           <el-form-item label="客户姓名" prop="clientName">
             <el-input
               v-model="formData.clientName"
@@ -26,6 +26,30 @@
               </template>
             </el-input>
           </el-form-item>
+
+          <el-row :gutter="16">
+            <el-col :span="8">
+              <el-form-item label="客户类型" prop="clientType">
+                <el-select v-model="formData.clientType" placeholder="请选择客户类型" style="width: 100%">
+                  <el-option v-for="item in clientTypeOptions" :key="item" :label="item" :value="item" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="8">
+              <el-form-item label="律所关系" prop="clientRelationship">
+                <el-select v-model="formData.clientRelationship" placeholder="请选择关系" style="width: 100%">
+                  <el-option v-for="item in relationshipOptions" :key="item" :label="item" :value="item" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="8" v-if="formData.clientType === '个人'">
+              <el-form-item label="身份证号码" prop="idCard">
+                <el-input v-model="formData.idCard" placeholder="个人客户必填" maxlength="18" />
+              </el-form-item>
+            </el-col>
+          </el-row>
         </el-form>
       </section>
 
@@ -103,12 +127,39 @@ const matchedClients = ref([])
 const previewResult = ref(null)
 
 const formData = reactive({
-  clientName: ''
+  clientName: '',
+  clientType: '个人',
+  clientRelationship: '',
+  idCard: ''
 })
 
-const formRules = {
-  clientName: [{ required: true, message: '请输入拟签约客户姓名或名称', trigger: 'blur' }]
+const clientTypeOptions = ['个人', '企业', '金融机构', '事业单位', '党政机关', '社会团体', '其他']
+const relationshipOptions = ['委托人', '当事人', '对方当事人', '顾问单位', '关联企业', '股东', '法定代表人']
+
+const validateIdCard = (_rule, value, callback) => {
+  if (formData.clientType !== '个人') {
+    callback()
+    return
+  }
+  if (!value) {
+    callback(new Error('个人客户利冲检查必须填写身份证号码'))
+    return
+  }
+  if (!/(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/.test(value)) {
+    callback(new Error('请输入正确的身份证号码'))
+    return
+  }
+  callback()
 }
+
+const formRules = {
+  clientName: [{ required: true, message: '请输入拟签约客户姓名或名称', trigger: 'blur' }],
+  clientType: [{ required: true, message: '请选择客户类型', trigger: 'change' }],
+  clientRelationship: [{ required: true, message: '请选择客户与律所关系', trigger: 'change' }],
+  idCard: [{ validator: validateIdCard, trigger: 'blur' }]
+}
+
+const isSuccessResponse = (response) => response?.success || response?.code === 200
 
 const similarNames = computed(() => previewResult.value?.similarClientNames || [])
 
@@ -163,14 +214,15 @@ const handleCheck = async () => {
       searchClients(keyword),
       previewConflictCheck({
         clientName: keyword,
-        clientType: '个人',
-        clientRelationship: '当事人',
+        clientType: formData.clientType,
+        clientRelationship: formData.clientRelationship,
+        idCard: formData.clientType === '个人' ? formData.idCard : '',
         clientRole: '原告'
       })
     ])
 
-    matchedClients.value = searchRes.success ? (searchRes.data || []) : []
-    previewResult.value = previewRes.success ? (previewRes.data || null) : null
+    matchedClients.value = isSuccessResponse(searchRes) ? (searchRes.data || []) : []
+    previewResult.value = isSuccessResponse(previewRes) ? (previewRes.data || null) : null
     checked.value = true
     ElMessage.success('客户库核对完成')
   } catch (error) {
@@ -185,6 +237,9 @@ const handleCheck = async () => {
 
 const handleReset = () => {
   formData.clientName = ''
+  formData.clientType = '个人'
+  formData.clientRelationship = ''
+  formData.idCard = ''
   checked.value = false
   matchedClients.value = []
   previewResult.value = null

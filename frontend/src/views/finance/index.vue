@@ -179,45 +179,60 @@
         </div>
       </el-tab-pane>
 
-      <!-- 开票记录 -->
-      <el-tab-pane label="开票记录" name="invoices">
+      <!-- 发票申请 -->
+      <el-tab-pane label="发票申请" name="invoices">
         <div class="tab-content">
           <div class="toolbar">
             <el-button type="primary" @click="handleAddInvoice" class="add-btn">
               <el-icon><Plus /></el-icon>
-              新增开票
+              发起申请
             </el-button>
           </div>
 
           <el-table :data="invoiceList" border class="finance-table"
             :header-cell-style="{ background: '#f0f5ff', color: '#333', fontWeight: '600' }"
             :row-class-name="tableRowClassName">
-            <el-table-column prop="invoiceDate" label="开票日期" width="120" sortable />
-            <el-table-column prop="invoiceNumber" label="发票号码" width="150" />
-            <el-table-column prop="type" label="发票类型" width="100">
+            <el-table-column prop="contractNo" label="合同号" width="130" />
+            <el-table-column prop="title" label="顾客名称" min-width="180" show-overflow-tooltip />
+            <el-table-column prop="invoiceType" label="发票种类" width="150">
               <template #default="{ row }">
-                <el-tag>{{ row.type }}</el-tag>
+                <el-tag>{{ formatInvoiceType(row.invoiceType) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="clientName" label="购买方" width="200" />
             <el-table-column prop="amount" label="金额(元)" width="120">
               <template #default="{ row }">
                 ¥{{ row.amount?.toLocaleString() || '0' }}
               </template>
             </el-table-column>
-            <el-table-column prop="status" label="状态" width="80">
+            <el-table-column prop="executionDepartment" label="执行部门" width="130" />
+            <el-table-column prop="sourceUserName" label="案源人" width="100" />
+            <el-table-column label="开票日期" width="120" sortable>
               <template #default="{ row }">
-                <el-tag :type="row.status === '已开票' ? 'success' : 'warning'">
-                  {{ row.status }}
+                {{ ['ISSUED', 'FEEDBACK_UPLOADED', 'COMPLETED'].includes(row.status) ? row.billingDate : '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="invoiceNumber" label="发票号码" width="150" />
+            <el-table-column prop="status" label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag :type="getInvoiceStatusTagType(row.status)">
+                  {{ formatInvoiceStatus(row.status) }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="remark" label="备注" show-overflow-tooltip />
-            <el-table-column label="操作" width="150">
+            <el-table-column label="操作" width="190">
               <template #default="{ row }">
-                <el-button link type="primary" size="small">查看</el-button>
-                <el-button link type="primary" size="small">打印</el-button>
-                <el-button link type="danger" size="small">作废</el-button>
+                <template v-if="isFinanceUser">
+                  <el-button link type="primary" size="small" @click="handleViewInvoice(row)">查看</el-button>
+                  <el-button v-if="row.status !== 'COMPLETED'" link type="primary" size="small" @click="handleIssueInvoice(row)">开票反馈</el-button>
+                  <el-button v-if="['ISSUED', 'FEEDBACK_UPLOADED'].includes(row.status) && row.invoiceFilePath" link type="success" size="small" @click="handleCompleteInvoice(row)">完成开票</el-button>
+                </template>
+                <template v-else-if="isInvoiceApplicant(row)">
+                  <el-button v-if="row.status === 'PENDING'" link type="primary" size="small" @click="handleEditInvoice(row)">修改</el-button>
+                  <el-button v-if="row.status === 'PENDING'" link type="danger" size="small" @click="handleDeleteInvoice(row)">删除</el-button>
+                  <el-button v-if="row.invoiceFilePath" link type="primary" size="small" @click="handleDownloadInvoiceFile(row)">反馈文件</el-button>
+                </template>
+                <el-button v-else link type="primary" size="small" @click="handleViewInvoice(row)">查看</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -358,29 +373,28 @@
       </template>
     </el-dialog>
 
-    <!-- 新增开票对话框 -->
-    <el-dialog v-model="invoiceDialogVisible" title="新增开票" width="600px">
-      <el-form :model="invoiceForm" label-width="100px">
-        <el-form-item label="开票日期" required>
-          <el-date-picker
-            v-model="invoiceForm.invoiceDate"
-            type="date"
-            placeholder="选择日期"
-            value-format="YYYY-MM-DD"
-            style="width: 100%"
-          />
+    <!-- 发票申请对话框 -->
+    <el-dialog v-model="invoiceDialogVisible" :title="editingInvoiceId ? '修改发票申请' : '发起发票申请'" width="760px">
+      <el-form :model="invoiceForm" label-width="120px">
+        <el-form-item label="合同号">
+          <el-input v-model="invoiceForm.contractNo" placeholder="如：2026民001" />
         </el-form-item>
 
-        <el-form-item label="发票号码" required>
-          <el-input v-model="invoiceForm.invoiceNumber" placeholder="请输入发票号码" />
-        </el-form-item>
-
-        <el-form-item label="发票类型" required>
-          <el-select v-model="invoiceForm.type" placeholder="请选择发票类型" style="width: 100%">
-            <el-option label="增值税专用发票" value="VAT_SPECIAL" />
-            <el-option label="增值税普通发票" value="VAT ordinary" />
-            <el-option label="电子发票" value="ELECTRONIC" />
+        <el-form-item label="发票种类" required>
+          <el-select v-model="invoiceForm.invoiceType" placeholder="请选择发票种类" style="width: 100%">
+            <el-option label="纸质普通发票" value="PAPER_NORMAL" />
+            <el-option label="纸质专用发票" value="PAPER_SPECIAL" />
+            <el-option label="电子普通发票" value="ELECTRONIC_NORMAL" />
+            <el-option label="电子专用发票" value="ELECTRONIC_SPECIAL" />
           </el-select>
+        </el-form-item>
+
+        <el-form-item label="顾客名称" required>
+          <el-input v-model="invoiceForm.title" placeholder="请输入顾客名称/发票抬头" />
+        </el-form-item>
+
+        <el-form-item label="发票金额" required>
+          <el-input-number v-model="invoiceForm.amount" :min="0" :precision="2" placeholder="请输入金额" style="width: 100%" />
         </el-form-item>
 
         <el-form-item label="关联案件">
@@ -400,22 +414,110 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="购买方" required>
-          <el-input v-model="invoiceForm.clientName" placeholder="请输入购买方名称" />
+        <el-form-item label="执行部门">
+          <el-input v-model="invoiceForm.executionDepartment" placeholder="请输入执行部门" />
         </el-form-item>
 
-        <el-form-item label="金额" required>
-          <el-input-number v-model="invoiceForm.amount" :min="0" :precision="2" placeholder="请输入金额" style="width: 100%" />
+        <el-form-item label="案源人">
+          <el-input v-model="invoiceForm.sourceUserName" placeholder="请输入案源人" />
         </el-form-item>
 
-        <el-form-item label="备注">
-          <el-input v-model="invoiceForm.remark" type="textarea" :rows="3" placeholder="请输入备注" />
+        <el-form-item label="发票内容">
+          <el-input v-model="invoiceForm.invoiceContent" placeholder="如：法律服务费" />
+        </el-form-item>
+
+        <el-form-item label="纳税人识别号">
+          <el-input v-model="invoiceForm.taxNumber" placeholder="请输入纳税人识别号/统一社会信用代码" />
+        </el-form-item>
+
+        <el-form-item label="地址、电话">
+          <el-input v-model="invoiceForm.addressPhone" placeholder="纸质专票必填" />
+        </el-form-item>
+
+        <el-form-item label="开户行及账号">
+          <el-input v-model="invoiceForm.bankAccount" placeholder="纸质专票必填" />
+        </el-form-item>
+
+        <el-form-item label="需备注内容">
+          <el-input v-model="invoiceForm.remark" type="textarea" :rows="3" placeholder="请输入发票备注内容" />
         </el-form-item>
       </el-form>
 
       <template #footer>
         <el-button @click="invoiceDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmitInvoice">确定</el-button>
+        <el-button type="primary" @click="handleSubmitInvoice">{{ editingInvoiceId ? '保存修改' : '提交申请' }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 出纳开票反馈对话框 -->
+    <el-dialog v-model="issueDialogVisible" title="开票反馈" width="620px">
+      <el-form :model="issueForm" label-width="110px">
+        <el-form-item label="顾客名称">
+          <el-input v-model="issueForm.title" disabled />
+        </el-form-item>
+
+        <el-form-item label="发票号码" required>
+          <el-input v-model="issueForm.invoiceNumber" placeholder="请输入已开具发票号码" />
+        </el-form-item>
+
+        <el-form-item label="开票日期" required>
+          <el-date-picker
+            v-model="issueForm.billingDate"
+            type="date"
+            placeholder="选择开票日期"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+
+        <el-form-item label="电子发票">
+          <el-upload
+            drag
+            :auto-upload="false"
+            :limit="1"
+            :on-change="handleInvoiceFileChange"
+            :on-remove="handleInvoiceFileRemove"
+            accept=".pdf,.ofd,.jpg,.jpeg,.png"
+            class="invoice-upload"
+          >
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+            <div class="el-upload__text">拖动电子发票到此处，或点击选择文件</div>
+          </el-upload>
+        </el-form-item>
+
+        <el-form-item label="反馈备注">
+          <el-input v-model="issueForm.remark" type="textarea" :rows="3" placeholder="请输入反馈备注" />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="issueDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleSubmitIssue">确认反馈</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 发票申请详情 -->
+    <el-dialog v-model="invoiceDetailVisible" title="发票申请信息" width="720px">
+      <el-descriptions :column="2" border>
+        <el-descriptions-item label="合同号">{{ selectedInvoice.contractNo || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="状态">{{ formatInvoiceStatus(selectedInvoice.status) }}</el-descriptions-item>
+        <el-descriptions-item label="顾客名称">{{ selectedInvoice.title || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="发票种类">{{ formatInvoiceType(selectedInvoice.invoiceType) }}</el-descriptions-item>
+        <el-descriptions-item label="发票金额">¥{{ selectedInvoice.amount?.toLocaleString() || '0' }}</el-descriptions-item>
+        <el-descriptions-item label="关联案件">{{ selectedInvoice.caseName || selectedInvoice.caseId || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="执行部门">{{ selectedInvoice.executionDepartment || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="案源人">{{ selectedInvoice.sourceUserName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="发票内容">{{ selectedInvoice.invoiceContent || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="纳税人识别号">{{ selectedInvoice.taxNumber || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="地址、电话">{{ selectedInvoice.addressPhone || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="开户行及账号">{{ selectedInvoice.bankAccount || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="发票号码">{{ selectedInvoice.invoiceNumber || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="开票日期">{{ ['ISSUED', 'FEEDBACK_UPLOADED', 'COMPLETED'].includes(selectedInvoice.status) ? selectedInvoice.billingDate : '-' }}</el-descriptions-item>
+        <el-descriptions-item label="备注" :span="2">{{ selectedInvoice.remark || '-' }}</el-descriptions-item>
+      </el-descriptions>
+      <template #footer>
+        <el-button @click="invoiceDetailVisible = false">关闭</el-button>
+        <el-button v-if="selectedInvoice.invoiceFilePath" type="primary" @click="handleDownloadInvoiceFile(selectedInvoice)">下载反馈文件</el-button>
       </template>
     </el-dialog>
   </div>
@@ -423,16 +525,19 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, UploadFilled } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
-import { getExpenses, getPayments, getInvoices, getFinanceDashboard, createExpense, createPayment, createInvoice } from '@/api/finance'
+import { getExpenses, getPayments, getInvoices, getFinanceDashboard, createExpense, createPayment, createInvoice, updateInvoice, downloadInvoiceFile, issueInvoice, completeInvoice, deleteInvoice } from '@/api/finance'
 import { getCaseList } from '@/api/case'
+import { useUserStore } from '@/stores'
 
 const router = useRouter()
+const route = useRoute()
+const userStore = useUserStore()
 
-const activeTab = ref('expenses')
+const activeTab = ref(route.path === '/finance/invoices' ? 'invoices' : 'expenses')
 const expenseType = ref('')
 const paymentDateRange = ref([])
 const loading = ref(false)
@@ -466,16 +571,47 @@ const paymentForm = ref({
 
 // ==================== 开票对话框 ====================
 const invoiceDialogVisible = ref(false)
+const editingInvoiceId = ref(null)
 const invoiceForm = ref({
-  invoiceDate: '',
-  invoiceNumber: '',
-  type: 'VAT_SPECIAL',
+  contractNo: '',
+  invoiceType: 'ELECTRONIC_NORMAL',
   caseId: null,
-  clientName: '',
+  title: '',
   amount: null,
+  executionDepartment: '',
+  sourceUserName: '',
+  invoiceContent: '法律服务费',
+  taxNumber: '',
+  addressPhone: '',
+  bankAccount: '',
   status: 'PENDING',
   remark: ''
 })
+
+const issueDialogVisible = ref(false)
+const issueFile = ref(null)
+const issueForm = ref({
+  id: null,
+  title: '',
+  invoiceNumber: '',
+  billingDate: '',
+  invoiceType: '',
+  amount: null,
+  remark: ''
+})
+
+const invoiceDetailVisible = ref(false)
+const selectedInvoice = ref({})
+
+const FINANCE_USER_NAMES = ['admin', '黄智明', '邝凤兰']
+const currentUserId = computed(() => Number(userStore.userInfo?.id || userStore.userId || 0))
+const currentUserName = computed(() => userStore.userInfo?.username || userStore.userInfo?.realName || '')
+const currentUserPosition = computed(() => userStore.userInfo?.position || '')
+const isFinanceUser = computed(() => FINANCE_USER_NAMES.includes(currentUserName.value) || currentUserPosition.value === '财务管理')
+
+const isInvoiceApplicant = (row) => {
+  return Number(row.applicantId) === currentUserId.value
+}
 
 // 统计数据
 const totalFees = ref(0)
@@ -654,46 +790,250 @@ const handleAddInvoice = async () => {
     console.error('加载案件列表失败:', error)
   }
 
+  editingInvoiceId.value = null
   invoiceForm.value = {
-    invoiceDate: new Date().toISOString().split('T')[0],
-    invoiceNumber: '',
-    type: 'VAT_SPECIAL',
+    contractNo: '',
+    invoiceType: 'ELECTRONIC_NORMAL',
     caseId: null,
-    clientName: '',
+    title: '',
     amount: null,
+    executionDepartment: '',
+    sourceUserName: '',
+    invoiceContent: '法律服务费',
+    taxNumber: '',
+    addressPhone: '',
+    bankAccount: '',
     status: 'PENDING',
     remark: ''
   }
   invoiceDialogVisible.value = true
 }
 
-const handleSubmitInvoice = async () => {
-  if (!invoiceForm.value.invoiceDate) {
-    ElMessage.warning('请选择开票日期')
+const handleEditInvoice = async (row) => {
+  if (row.status !== 'PENDING') {
+    ElMessage.warning('财务已反馈或完成开票，申请内容不可修改')
     return
   }
-  if (!invoiceForm.value.invoiceNumber) {
-    ElMessage.warning('请输入发票号码')
+
+  try {
+    const { data } = await getCaseList({ page: 1, size: 100 })
+    caseList.value = data.records || []
+  } catch (error) {
+    console.error('加载案件列表失败:', error)
+  }
+
+  editingInvoiceId.value = row.id
+  invoiceForm.value = {
+    contractNo: row.contractNo || '',
+    invoiceType: row.invoiceType || 'ELECTRONIC_NORMAL',
+    caseId: row.caseId || null,
+    title: row.title || '',
+    amount: row.amount || null,
+    executionDepartment: row.executionDepartment || '',
+    sourceUserName: row.sourceUserName || '',
+    invoiceContent: row.invoiceContent || '法律服务费',
+    taxNumber: row.taxNumber || '',
+    addressPhone: row.addressPhone || '',
+    bankAccount: row.bankAccount || '',
+    status: row.status || 'PENDING',
+    remark: row.remark || ''
+  }
+  invoiceDialogVisible.value = true
+}
+
+const handleSubmitInvoice = async () => {
+  if (!invoiceForm.value.invoiceType) {
+    ElMessage.warning('请选择发票种类')
     return
   }
   if (!invoiceForm.value.amount) {
     ElMessage.warning('请输入金额')
     return
   }
-  if (!invoiceForm.value.clientName) {
-    ElMessage.warning('请输入购买方')
+  if (!invoiceForm.value.title) {
+    ElMessage.warning('请输入顾客名称')
     return
   }
 
   try {
-    await createInvoice(invoiceForm.value)
-    ElMessage.success('开票记录添加成功')
+    if (editingInvoiceId.value) {
+      await updateInvoice(editingInvoiceId.value, invoiceForm.value)
+      ElMessage.success('发票申请已修改')
+    } else {
+      await createInvoice(invoiceForm.value)
+      ElMessage.success('发票申请已提交')
+    }
     invoiceDialogVisible.value = false
+    editingInvoiceId.value = null
     fetchInvoices()
   } catch (error) {
-    console.error('添加开票记录失败:', error)
-    ElMessage.error('添加失败')
+    console.error('提交发票申请失败:', error)
+    ElMessage.error(error?.response?.data?.message || '提交失败')
   }
+}
+
+const handleIssueInvoice = (row) => {
+  issueForm.value = {
+    id: row.id,
+    title: row.title,
+    invoiceNumber: row.invoiceNumber || '',
+    billingDate: row.billingDate || new Date().toISOString().split('T')[0],
+    invoiceType: row.invoiceType,
+    amount: row.amount,
+    remark: row.remark || ''
+  }
+  issueFile.value = null
+  issueDialogVisible.value = true
+}
+
+const handleInvoiceFileChange = (file) => {
+  issueFile.value = file?.raw || null
+}
+
+const handleInvoiceFileRemove = () => {
+  issueFile.value = null
+}
+
+const handleSubmitIssue = async () => {
+  if (!issueForm.value.invoiceNumber) {
+    ElMessage.warning('请输入发票号码')
+    return
+  }
+  if (!issueForm.value.billingDate) {
+    ElMessage.warning('请选择开票日期')
+    return
+  }
+
+  if (!issueFile.value) {
+    ElMessage.warning('请上传电子发票反馈文件')
+    return
+  }
+
+  const formData = new FormData()
+  formData.append('invoiceNumber', issueForm.value.invoiceNumber)
+  formData.append('billingDate', issueForm.value.billingDate)
+  formData.append('invoiceType', issueForm.value.invoiceType)
+  formData.append('amount', issueForm.value.amount)
+  formData.append('title', issueForm.value.title)
+  formData.append('remark', issueForm.value.remark || '')
+  if (issueFile.value) {
+    formData.append('file', issueFile.value)
+  }
+
+  try {
+    await issueInvoice(issueForm.value.id, formData)
+    ElMessage.success('开票反馈已提交')
+    issueDialogVisible.value = false
+    fetchInvoices()
+  } catch (error) {
+    console.error('开票反馈失败:', error)
+    ElMessage.error(error?.response?.data?.message || '反馈失败')
+  }
+}
+
+const handleCompleteInvoice = async (row) => {
+  if (!row.invoiceFilePath) {
+    ElMessage.warning('请先上传电子发票反馈文件')
+    return
+  }
+  try {
+    await ElMessageBox.confirm('完成开票后记录将锁定，不能再修改或删除。确认完成？', '完成开票', {
+      type: 'warning',
+      confirmButtonText: '确认完成',
+      cancelButtonText: '取消'
+    })
+    await completeInvoice(row.id)
+    ElMessage.success('开票记录已完成并锁定')
+    fetchInvoices()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('完成开票失败:', error)
+      ElMessage.error(error?.response?.data?.message || '完成开票失败')
+    }
+  }
+}
+
+const handleDeleteInvoice = async (row) => {
+  if (row.status !== 'PENDING') {
+    ElMessage.warning('仅待审查阶段的开票申请可删除')
+    return
+  }
+  try {
+    await ElMessageBox.confirm('确认删除该待审查开票申请？删除后不可恢复。', '删除开票申请', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消'
+    })
+    await deleteInvoice(row.id)
+    ElMessage.success('开票申请已删除')
+    fetchInvoices()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除开票申请失败:', error)
+      ElMessage.error(error?.response?.data?.message || '删除失败')
+    }
+  }
+}
+
+const handleViewInvoice = (row) => {
+  selectedInvoice.value = row
+  invoiceDetailVisible.value = true
+}
+
+const handleDownloadInvoiceFile = async (row) => {
+  if (!row.invoiceFilePath) {
+    ElMessage.warning('暂无反馈文件')
+    return
+  }
+
+  try {
+    const response = await downloadInvoiceFile(row.id)
+    const blob = response.data
+    const disposition = response.headers?.['content-disposition'] || ''
+    const filenameMatch = disposition.match(/filename\*=UTF-8''([^;]+)/)
+    const filename = filenameMatch ? decodeURIComponent(filenameMatch[1]) : `电子发票_${row.id}.pdf`
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('下载反馈文件失败:', error)
+    ElMessage.error(error?.response?.data?.message || '下载反馈文件失败')
+  }
+}
+
+const formatInvoiceType = (type) => {
+  const map = {
+    PAPER_NORMAL: '纸质普通发票',
+    PAPER_SPECIAL: '纸质专用发票',
+    ELECTRONIC_NORMAL: '电子普通发票',
+    ELECTRONIC_SPECIAL: '电子专用发票'
+  }
+  return map[type] || type || '-'
+}
+
+const formatInvoiceStatus = (status) => {
+  const map = {
+    PENDING: '待审查',
+    ISSUED: '已反馈待完成',
+    FEEDBACK_UPLOADED: '已反馈待完成',
+    COMPLETED: '已完成'
+  }
+  return map[status] || status || '-'
+}
+
+const getInvoiceStatusTagType = (status) => {
+  const map = {
+    PENDING: 'warning',
+    ISSUED: 'primary',
+    FEEDBACK_UPLOADED: 'primary',
+    COMPLETED: 'success'
+  }
+  return map[status] || 'info'
 }
 
 // 切换Tab时加载数据
@@ -721,7 +1061,11 @@ const goToCase = (caseId) => {
 
 onMounted(() => {
   fetchFinanceDashboard()
-  fetchExpenses()
+  if (activeTab.value === 'invoices') {
+    fetchInvoices()
+  } else {
+    fetchExpenses()
+  }
 })
 
 // 监听Tab切换，自动加载对应数据

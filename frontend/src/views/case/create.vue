@@ -146,13 +146,15 @@
             </el-col>
 
             <el-col v-if="showCourtFields" :span="12">
-              <el-form-item label="受理法院" prop="court">
+              <el-form-item :label="trialOrganizationLabel" prop="court">
                 <el-select
                   v-model="formData.court"
                   filterable
                   remote
+                  allow-create
+                  default-first-option
                   :remote-method="searchCourt"
-                  placeholder="请搜索法院"
+                  :placeholder="trialOrganizationPlaceholder"
                 >
                   <el-option
                     v-for="court in courtList"
@@ -165,8 +167,8 @@
             </el-col>
 
             <el-col v-if="showCourtFields" :span="12">
-              <el-form-item label="法院案号" prop="courtCaseNumber">
-                <el-input v-model="formData.courtCaseNumber" placeholder="请输入法院案号" />
+              <el-form-item :label="caseNumberLabel" prop="courtCaseNumber">
+                <el-input v-model="formData.courtCaseNumber" :placeholder="caseNumberPlaceholder" />
               </el-form-item>
             </el-col>
 
@@ -249,12 +251,13 @@
                 <el-select
                   v-model="formData.ownerId"
                   filterable
-                  placeholder="选择主办律师"
+                  placeholder="搜索并选择案件主办"
+                  style="width: 100%"
                 >
                   <el-option
                     v-for="lawyer in lawyerList"
                     :key="lawyer.id"
-                    :label="lawyer.name"
+                    :label="lawyer.label"
                     :value="lawyer.id"
                   />
                 </el-select>
@@ -267,12 +270,13 @@
                   v-model="formData.coOwners"
                   multiple
                   filterable
-                  placeholder="选择协办律师"
+                  placeholder="搜索并选择协办人员"
+                  style="width: 100%"
                 >
                   <el-option
                     v-for="lawyer in lawyerList"
                     :key="lawyer.id"
-                    :label="lawyer.name"
+                    :label="lawyer.label"
                     :value="lawyer.id"
                   />
                 </el-select>
@@ -285,12 +289,13 @@
                   v-model="formData.assistants"
                   multiple
                   filterable
-                  placeholder="选择律师助理"
+                  placeholder="搜索并选择实习律师或助理"
+                  style="width: 100%"
                 >
                   <el-option
                     v-for="assistant in assistantList"
                     :key="assistant.id"
-                    :label="assistant.name"
+                    :label="assistant.label"
                     :value="assistant.id"
                   />
                 </el-select>
@@ -887,6 +892,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import AIDocumentFill from '@/components/AIDocumentFill.vue'
 import { createCase, updateCase, checkDuplicate, getCaseDetail } from '@/api/case'
 import { searchClients } from '@/api/client'
+import { getUserList } from '@/api/user'
 import { useSubmitForm } from '@/composables/useSubmitForm'
 
 const router = useRouter()
@@ -1159,11 +1165,11 @@ const trialStageOptions = {
 }
 
 const feeMethodOptions = {
-  CIVIL: ['固定收费', '风险收费', '基础+风险', '其他', '免费代理', '未确定'],
+  CIVIL: ['固定收费', '风险收费', '固定+风险', '其他', '免费代理', '未确定'],
   CRIMINAL: ['固定收费', '其他', '免费代理', '未确定'],
   ADMINISTRATIVE: ['固定收费', '其他', '免费代理', '未确定'],
-  NON_LITIGATION: ['固定收费', '风险收费', '基础+风险', '其他', '免费代理', '未确定'],
-  CONSULTANT: ['固定收费', '风险收费', '基础+风险', '其他', '免费代理', '未确定']
+  NON_LITIGATION: ['固定收费', '风险收费', '固定+风险', '其他', '免费代理', '未确定'],
+  CONSULTANT: ['固定收费', '风险收费', '固定+风险', '其他', '免费代理', '未确定']
 }
 
 const caseReasonIndex = {
@@ -1181,6 +1187,11 @@ const currentFeeMethods = computed(() => feeMethodOptions[formData.caseType] || 
 const showTrialStages = computed(() => ['CIVIL', 'CRIMINAL', 'ADMINISTRATIVE'].includes(formData.caseType))
 const showCourtFields = computed(() => ['CIVIL', 'CRIMINAL', 'ADMINISTRATIVE'].includes(formData.caseType))
 const showAgencyType = computed(() => formData.caseType === 'CRIMINAL' && formData.businessType === '刑事附带民事诉讼')
+const isArbitrationCase = computed(() => formData.trialStages?.includes('仲裁'))
+const trialOrganizationLabel = computed(() => isArbitrationCase.value ? '审理机构' : '受理法院')
+const trialOrganizationPlaceholder = computed(() => isArbitrationCase.value ? '请输入或选择仲裁委员会/审理机构' : '请输入或搜索法院')
+const caseNumberLabel = computed(() => isArbitrationCase.value ? '仲裁案号' : '法院案号')
+const caseNumberPlaceholder = computed(() => isArbitrationCase.value ? '请输入仲裁案号' : '请输入法院案号')
 const isRiskFee = computed(() => ['风险收费', '固定+风险', '基础+风险'].includes(formData.feeMethod))
 
 watch(() => formData.caseType, () => {
@@ -1221,7 +1232,7 @@ const validateFilingBusinessRules = () => {
   }
   if (['固定收费', '固定', '基础+风险', '固定+风险'].includes(formData.feeMethod)) {
     if (!formData.lawyerFee || formData.lawyerFee <= 0) {
-      ElMessage.warning('固定收费或基础+风险案件请填写代理金额')
+      ElMessage.warning('固定收费或固定+风险案件请填写代理金额')
       return false
     }
   }
@@ -1254,20 +1265,51 @@ const validateFilingBusinessRules = () => {
 
 const commonTags = ref(['紧急', 'VIP客户', '法援', '涉黑恶', '无罪辩护', '重大疑难案件', '群体性案件', '媒体关注'])
 
-const lawyerList = ref([
-  { id: 1, name: '张律师' },
-  { id: 2, name: '李律师' },
-  { id: 3, name: '王律师' }
-])
+const userOptions = ref([])
+const caseHandlerPositions = ['主任', '部门主管', '合伙人', '律师', '实习律师', '助理', '律师助理']
+const assistantPositions = ['实习律师', '助理', '律师助理']
 
-const assistantList = ref([
-  { id: 4, name: '小张' },
-  { id: 5, name: '小李' }
-])
+const normalizeUserOption = (user) => ({
+  id: user.id,
+  name: user.realName || user.username,
+  label: `${user.realName || user.username}${user.position ? `（${user.position}）` : ''}${user.departmentName ? ` - ${user.departmentName}` : ''}`,
+  position: user.position || '',
+  departmentName: user.departmentName || ''
+})
+
+const isCaseHandler = (user) => {
+  const position = user.position || ''
+  return caseHandlerPositions.some(item => position.includes(item))
+}
+
+const isAssistant = (user) => {
+  const position = user.position || ''
+  return assistantPositions.some(item => position.includes(item))
+}
+
+const lawyerList = computed(() => userOptions.value.filter(isCaseHandler))
+const assistantList = computed(() => userOptions.value.filter(isAssistant))
 
 const courtList = ref([])
 const clientList = ref([])
 const caseOptions = ref([])
+
+const loadUserOptions = async () => {
+  try {
+    const response = await getUserList({ page: 0, size: 300, status: 1 })
+    const pageData = response.data || {}
+    const users = pageData.content || pageData.records || pageData || []
+    userOptions.value = users
+      .filter(user => user.status === undefined || user.status === 1)
+      .map(normalizeUserOption)
+  } catch (error) {
+    console.error('加载承办人员失败:', error)
+    userOptions.value = []
+    ElMessage.error('加载承办人员失败，请检查员工账号数据')
+  }
+}
+
+const isSuccessResponse = (response) => response?.success || response?.code === 200
 
 // 搜索法院
 const searchCourt = async (query) => {
@@ -1295,7 +1337,8 @@ const searchCourt = async (query) => {
     '哈尔滨市南岗区人民法院', '哈尔滨市道里区人民法院', '哈尔滨市道外区人民法院', '哈尔滨市香坊区人民法院',
     '郑州市金水区人民法院', '郑州市中原区人民法院', '郑州市二七区人民法院', '郑州市管城回族区人民法院'
   ]
-  courtList.value = majorCourts.filter(court => court.includes(query))
+  const matched = majorCourts.filter(court => court.includes(query))
+  courtList.value = matched.includes(query) ? matched : [query, ...matched]
 }
 
 // 搜索客户
@@ -1303,7 +1346,7 @@ const searchClient = async (query) => {
   if (!query) return
   try {
     const response = await searchClients(query)
-    if (response.success) {
+    if (isSuccessResponse(response)) {
       clientList.value = response.data.map(client => client.name || client.clientName)
     }
   } catch (error) {
@@ -1562,6 +1605,8 @@ const handleSubmitApproval = async () => {
 }
 
 onMounted(async () => {
+  await loadUserOptions()
+
   // 如果是编辑模式，加载案件数据
   if (isEditMode.value) {
     try {
@@ -1590,8 +1635,8 @@ onMounted(async () => {
       const feeMethodReverseMap = {
         FIXED: '固定收费',
         CONTINGENT: '风险收费',
-        BASE_PLUS_CONTINGENT: '基础+风险',
-        FIXED_PLUS_CONTINGENT: '基础+风险',
+        BASE_PLUS_CONTINGENT: '固定+风险',
+        FIXED_PLUS_CONTINGENT: '固定+风险',
         FREE: '免费代理',
         UNDETERMINED: '未确定',
         OTHER: '其他'

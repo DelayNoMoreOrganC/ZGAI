@@ -1,6 +1,8 @@
 package com.lawfirm.repository;
 
 import com.lawfirm.entity.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
@@ -18,6 +20,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * 根据用户名查找用户
      */
     Optional<User> findByUsername(String username);
+
+    /**
+     * 根据用户名查找未删除用户
+     */
+    Optional<User> findByUsernameAndDeletedFalse(String username);
+
+    /**
+     * 查询未删除用户分页
+     */
+    Page<User> findByDeletedFalse(Pageable pageable);
 
     /**
      * 根据邮箱查找用户

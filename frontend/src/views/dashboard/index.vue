@@ -1,5 +1,104 @@
 <template>
   <div class="dashboard">
+    <template v-if="isAdministrativeUser">
+      <div class="admin-workbench">
+        <div class="admin-top-grid">
+          <section class="admin-panel">
+            <div class="admin-panel-header">
+              <h3>待办事项({{ adminPendingApprovals.length }})</h3>
+              <el-button text type="primary" @click="router.push('/approval')">全部</el-button>
+            </div>
+            <div class="admin-list">
+              <div
+                v-for="item in adminPendingApprovals"
+                :key="item.id"
+                class="admin-list-item"
+                @click="openApprovalDrawer(item.id)"
+              >
+                <div class="avatar approval-avatar">{{ getInitial(item.applicantName) }}</div>
+                <div class="item-main">
+                  <strong>{{ item.title }}</strong>
+                  <p>{{ item.caseName || item.content || '请及时处理审批事项' }}</p>
+                </div>
+                <span class="item-time">{{ formatShortTime(item.applyTime) }}</span>
+              </div>
+              <el-empty v-if="adminPendingApprovals.length === 0" description="暂无待审批事项" />
+            </div>
+          </section>
+
+          <section class="admin-panel">
+            <div class="admin-panel-header">
+              <h3>消息中心({{ adminNotifications.length }})</h3>
+              <el-button text type="primary" @click="fetchAdminNotifications">刷新</el-button>
+            </div>
+            <div class="admin-list">
+              <div
+                v-for="item in adminNotifications"
+                :key="item.id"
+                class="admin-list-item"
+                @click="handleNotificationClick(item)"
+              >
+                <div class="avatar message-avatar">
+                  <el-icon><Bell /></el-icon>
+                </div>
+                <div class="item-main">
+                  <strong>{{ item.title }}</strong>
+                  <p>{{ item.content }}</p>
+                </div>
+                <span class="item-time">{{ formatShortTime(item.createdAt) }}</span>
+              </div>
+              <el-empty v-if="adminNotifications.length === 0" description="暂无消息通知" />
+            </div>
+          </section>
+        </div>
+
+        <section class="admin-panel wide-panel">
+          <div class="admin-panel-header">
+            <h3>我的业务</h3>
+            <el-button text type="primary" @click="router.push('/case/list')">进入案件管理</el-button>
+          </div>
+          <div class="business-list">
+            <div
+              v-for="item in adminCaseApplications"
+              :key="item.id"
+              class="business-item"
+              @click="router.push(`/case/${item.id}`)"
+            >
+              <div class="business-icon">
+                <el-icon><FolderAdd /></el-icon>
+              </div>
+              <div class="item-main">
+                <strong>案件台账</strong>
+                <p>{{ item.caseName || '未命名案件' }} {{ item.caseReason ? `｜${item.caseReason}` : '' }}</p>
+              </div>
+              <div class="business-status">
+                <span>{{ formatShortDate(item.createdAt || item.acceptanceDate) }}</span>
+                <el-tag size="small" type="warning">{{ item.statusDesc || '待审批' }}</el-tag>
+              </div>
+            </div>
+            <el-empty v-if="adminCaseApplications.length === 0" description="暂无待处理业务" />
+          </div>
+        </section>
+
+        <section class="admin-panel wide-panel">
+          <div class="admin-panel-header">
+            <h3>客户查询列表</h3>
+            <el-button text type="primary" @click="router.push('/client/list')">进入客户管理</el-button>
+          </div>
+          <el-table :data="adminClients" border size="small">
+            <el-table-column prop="clientNo" label="客户编号" width="150">
+              <template #default="{ row }">{{ row.clientNo || row.clientNumber || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="clientName" label="客户名称" min-width="180" />
+            <el-table-column prop="clientType" label="客户类型" width="120" />
+            <el-table-column prop="clientRole" label="客户角色" width="120" />
+            <el-table-column prop="sourceUserNames" label="案源人" width="140" />
+          </el-table>
+        </section>
+      </div>
+    </template>
+
+    <template v-else>
     <!-- 统计卡片区 -->
     <div class="stats-cards">
       <div v-for="stat in stats" :key="stat.key" class="stat-card" :class="`stat-${stat.type}`">
@@ -276,8 +375,14 @@
         </el-button>
       </template>
     </el-dialog>
+    </template>
 
     <!-- AI助手 -->
+    <ApprovalDetailDrawer
+      v-model="approvalDrawerVisible"
+      :approval-id="selectedApprovalId"
+      @handled="handleApprovalHandled"
+    />
     <AIAssistant v-model:visible="showAIAssistant" />
   </div>
 </template>
@@ -286,19 +391,33 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, FolderAdd, UserFilled, MagicStick, UploadFilled, Loading, Timer, DataAnalysis } from '@element-plus/icons-vue'
+import { Plus, FolderAdd, UserFilled, MagicStick, UploadFilled, Loading, Timer, DataAnalysis, Bell } from '@element-plus/icons-vue'
 import PriorityDot from '@/components/PriorityDot.vue'
 import { getDashboardStats } from '@/api/dashboard'
 import { getTodoList, deleteTodo } from '@/api/todo'
 import { uploadDocForAIRecognition } from '@/api/ai'
 import { getCalendarList } from '@/api/calendar'
+import { getApprovalList } from '@/api/approval'
+import { getNotificationList, markAsRead } from '@/api/notification'
+import { getCaseList } from '@/api/case'
+import { getClientList } from '@/api/client'
 import { useUserStore } from '@/stores'
 import AIAssistant from '@/views/ai/assistant.vue'
+import ApprovalDetailDrawer from '@/components/ApprovalDetailDrawer.vue'
 const userStore = useUserStore()
 const router = useRouter()
 
+const isSuccessResponse = (response) => response?.success || response?.code === 200
+const isAdministrativeUser = computed(() => {
+  const position = userStore.userInfo?.position || ''
+  const roles = userStore.userInfo?.roles || []
+  return position.startsWith('行政管理') || roles.some(role => String(role).includes('ADMINISTRATIVE'))
+})
+
 // AI助手控制
 const showAIAssistant = ref(false)
+const approvalDrawerVisible = ref(false)
+const selectedApprovalId = ref(null)
 
 // Emoji到Element Plus图标组件名称的映射
 const emojiToIconName = {
@@ -329,6 +448,10 @@ const calendarEvents = ref([])
 
 // 待办事项
 const todos = ref([])
+const adminPendingApprovals = ref([])
+const adminNotifications = ref([])
+const adminCaseApplications = ref([])
+const adminClients = ref([])
 
 // AI智能上传相关
 const uploadRef = ref(null)
@@ -410,7 +533,7 @@ const handleCustomUpload = async (options) => {
 const fetchStats = async () => {
   try {
     const response = await getDashboardStats(userStore.userId)
-    if (response.success) {
+    if (isSuccessResponse(response)) {
       const data = response.data
       stats.value[0].value = data.monthlyCases || 0
       stats.value[1].value = data.activeCases || 0
@@ -432,7 +555,7 @@ const fetchCalendarEvents = async () => {
       endDate: formatDateToString(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0))
     })
 
-    if (response.success) {
+    if (isSuccessResponse(response)) {
       const events = response.data.list || []
       calendarEvents.value = events.map(event => ({
         id: event.id,
@@ -505,7 +628,7 @@ const fetchTodos = async () => {
       sortBy: 'dueDate',
       sortOrder: 'ASC'
     })
-    if (response.success) {
+    if (isSuccessResponse(response)) {
       todos.value = response.data.list || []
     }
   } catch (error) {
@@ -584,7 +707,7 @@ const handleDeleteTodo = async (todo) => {
 
     // 调用删除API
     const response = await deleteTodo(todo.id)
-    if (response.success) {
+    if (isSuccessResponse(response)) {
       ElMessage.success('删除成功')
       // 重新加载待办列表
       await fetchTodos()
@@ -594,6 +717,98 @@ const handleDeleteTodo = async (todo) => {
   } catch {
     // 用户取消
   }
+}
+
+const fetchAdminWorkbench = async () => {
+  await Promise.all([
+    fetchAdminApprovals(),
+    fetchAdminNotifications(),
+    fetchAdminCases(),
+    fetchAdminClients()
+  ])
+}
+
+const fetchAdminApprovals = async () => {
+  try {
+    const response = await getApprovalList({ status: 'PENDING', page: 1, size: 20 })
+    adminPendingApprovals.value = response.data?.records || []
+  } catch (error) {
+    console.error('获取行政审批待办失败:', error)
+  }
+}
+
+const fetchAdminNotifications = async () => {
+  try {
+    const response = await getNotificationList({ page: 1, size: 20 })
+    const pageData = response.data || {}
+    adminNotifications.value = pageData.content || pageData.records || []
+  } catch (error) {
+    console.error('获取消息中心失败:', error)
+  }
+}
+
+const fetchAdminCases = async () => {
+  try {
+    const response = await getCaseList({ page: 1, size: 10, status: 'PENDING_APPROVAL' })
+    adminCaseApplications.value = response.data?.records || []
+  } catch (error) {
+    console.error('获取行政业务列表失败:', error)
+  }
+}
+
+const openApprovalDrawer = (approvalId) => {
+  selectedApprovalId.value = approvalId
+  approvalDrawerVisible.value = true
+}
+
+const handleApprovalHandled = async () => {
+  await Promise.all([
+    fetchAdminApprovals(),
+    fetchAdminNotifications(),
+    fetchAdminCases()
+  ])
+}
+
+const fetchAdminClients = async () => {
+  try {
+    const response = await getClientList({ page: 1, size: 8 })
+    adminClients.value = response.data?.records || response.data?.content || []
+  } catch (error) {
+    console.error('获取客户查询列表失败:', error)
+  }
+}
+
+const handleNotificationClick = async (item) => {
+  try {
+    if (!item.isRead) {
+      await markAsRead(item.id)
+    }
+  } catch (error) {
+    console.warn('标记消息已读失败:', error)
+  }
+  if (item.relatedType?.includes('APPROVAL') || item.category === '审批') {
+    openApprovalDrawer(item.relatedId)
+  } else if (item.relatedType === 'CASE' && item.relatedId) {
+    router.push(`/case/${item.relatedId}`)
+  }
+}
+
+const getInitial = (name = '') => {
+  return name ? name.slice(-2) : '审批'
+}
+
+const formatShortTime = (value) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+const formatShortDate = (value) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
 }
 
 // 快捷操作
@@ -628,14 +843,136 @@ const openAcApp = () => {
 }
 
 onMounted(() => {
-  fetchStats()
-  fetchCalendarEvents()
-  fetchTodos()
+  if (isAdministrativeUser.value) {
+    fetchAdminWorkbench()
+  } else {
+    fetchStats()
+    fetchCalendarEvents()
+    fetchTodos()
+  }
 })
 </script>
 
 <style scoped lang="scss">
 .dashboard {
+  .admin-workbench {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .admin-top-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .admin-panel {
+    background: #fff;
+    border: 1px solid #e8edf3;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .wide-panel {
+    width: 100%;
+  }
+
+  .admin-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 42px;
+    padding: 0 16px;
+    border-bottom: 1px solid #edf1f5;
+
+    h3 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+  }
+
+  .admin-list {
+    max-height: 270px;
+    overflow-y: auto;
+  }
+
+  .admin-list-item,
+  .business-item {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    min-height: 78px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #edf1f5;
+    cursor: pointer;
+
+    &:hover {
+      background: #f8fafc;
+    }
+  }
+
+  .avatar,
+  .business-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .approval-avatar {
+    background: #69a8ec;
+  }
+
+  .message-avatar,
+  .business-icon {
+    background: #38a8e8;
+  }
+
+  .item-main {
+    min-width: 0;
+
+    strong {
+      display: block;
+      font-size: 14px;
+      font-weight: 600;
+      color: #1f2937;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    p {
+      margin: 5px 0 0;
+      color: #475569;
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .item-time,
+  .business-status {
+    color: #9ca3af;
+    font-size: 12px;
+  }
+
+  .business-status {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-end;
+  }
+
   .stats-cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

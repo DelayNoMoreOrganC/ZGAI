@@ -3,6 +3,7 @@ package com.lawfirm.controller;
 import com.lawfirm.dto.*;
 import com.lawfirm.service.CaseExecutionService;
 import com.lawfirm.service.CasePersonnelService;
+import com.lawfirm.service.CaseService;
 import com.lawfirm.service.HearingRecordService;
 import com.lawfirm.service.PropertyPreservationService;
 import com.lawfirm.security.SecurityUtils;
@@ -28,6 +29,7 @@ public class CaseUnitController {
     private final CaseExecutionService caseExecutionService;
     private final HearingRecordService hearingRecordService;
     private final CasePersonnelService casePersonnelService;
+    private final CaseService caseService;
     private final SecurityUtils securityUtils;
 
     // ==================== 财产保全 ====================
@@ -35,6 +37,7 @@ public class CaseUnitController {
     @GetMapping("/preservations")
     @PreAuthorize("hasAuthority('CASE_VIEW')")
     public Result<List<PropertyPreservationDTO>> getPreservations(@PathVariable Long caseId) {
+        assertCaseVisible(caseId);
         List<PropertyPreservationDTO> result = propertyPreservationService.getByCaseId(caseId);
         return Result.success(result);
     }
@@ -45,6 +48,7 @@ public class CaseUnitController {
             @PathVariable Long caseId,
             @Valid @RequestBody PropertyPreservationDTO dto) {
         Long userId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(caseId, userId);
         dto.setCaseId(caseId);
         PropertyPreservationDTO result = propertyPreservationService.create(dto, userId);
         return Result.success("财产保全创建成功", result);
@@ -56,6 +60,7 @@ public class CaseUnitController {
             @PathVariable Long caseId,
             @PathVariable Long id,
             @Valid @RequestBody PropertyPreservationDTO dto) {
+        assertCaseVisible(caseId);
         PropertyPreservationDTO result = propertyPreservationService.update(id, dto);
         return Result.success("财产保全更新成功", result);
     }
@@ -63,6 +68,7 @@ public class CaseUnitController {
     @DeleteMapping("/preservations/{id}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
     public Result<Void> deletePreservation(@PathVariable Long caseId, @PathVariable Long id) {
+        assertCaseVisible(caseId);
         propertyPreservationService.delete(id);
         return Result.success();
     }
@@ -72,6 +78,7 @@ public class CaseUnitController {
     @GetMapping("/executions")
     @PreAuthorize("hasAuthority('CASE_VIEW')")
     public Result<List<CaseExecutionDTO>> getExecutions(@PathVariable Long caseId) {
+        assertCaseVisible(caseId);
         List<CaseExecutionDTO> result = caseExecutionService.getByCaseId(caseId);
         return Result.success(result);
     }
@@ -82,6 +89,7 @@ public class CaseUnitController {
             @PathVariable Long caseId,
             @Valid @RequestBody CaseExecutionDTO dto) {
         Long userId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(caseId, userId);
         dto.setCaseId(caseId);
         CaseExecutionDTO result = caseExecutionService.create(dto, userId);
         return Result.success("案件执行创建成功", result);
@@ -93,6 +101,7 @@ public class CaseUnitController {
             @PathVariable Long caseId,
             @PathVariable Long id,
             @Valid @RequestBody CaseExecutionDTO dto) {
+        assertCaseVisible(caseId);
         CaseExecutionDTO result = caseExecutionService.update(id, dto);
         return Result.success("案件执行更新成功", result);
     }
@@ -100,6 +109,7 @@ public class CaseUnitController {
     @DeleteMapping("/executions/{id}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
     public Result<Void> deleteExecution(@PathVariable Long caseId, @PathVariable Long id) {
+        assertCaseVisible(caseId);
         caseExecutionService.delete(id);
         return Result.success();
     }
@@ -109,6 +119,7 @@ public class CaseUnitController {
     @GetMapping("/hearings")
     @PreAuthorize("hasAuthority('CASE_VIEW')")
     public Result<List<HearingRecordDTO>> getHearings(@PathVariable Long caseId) {
+        assertCaseVisible(caseId);
         List<HearingRecordDTO> result = hearingRecordService.getByCaseId(caseId);
         return Result.success(result);
     }
@@ -119,6 +130,7 @@ public class CaseUnitController {
             @PathVariable Long caseId,
             @Valid @RequestBody HearingRecordDTO dto) {
         Long userId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(caseId, userId);
         dto.setCaseId(caseId);
         HearingRecordDTO result = hearingRecordService.create(dto, userId);
         return Result.success("庭审记录创建成功", result);
@@ -130,6 +142,7 @@ public class CaseUnitController {
             @PathVariable Long caseId,
             @PathVariable Long id,
             @Valid @RequestBody HearingRecordDTO dto) {
+        assertCaseVisible(caseId);
         HearingRecordDTO result = hearingRecordService.update(id, dto);
         return Result.success("庭审记录更新成功", result);
     }
@@ -137,6 +150,7 @@ public class CaseUnitController {
     @DeleteMapping("/hearings/{id}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
     public Result<Void> deleteHearing(@PathVariable Long caseId, @PathVariable Long id) {
+        assertCaseVisible(caseId);
         hearingRecordService.delete(id);
         return Result.success();
     }
@@ -146,6 +160,7 @@ public class CaseUnitController {
     @GetMapping("/personnel")
     @PreAuthorize("hasAuthority('CASE_VIEW')")
     public Result<List<CasePersonnelDTO>> getPersonnel(@PathVariable Long caseId) {
+        assertCaseVisible(caseId);
         List<CasePersonnelDTO> result = casePersonnelService.getByCaseId(caseId);
         return Result.success(result);
     }
@@ -155,6 +170,7 @@ public class CaseUnitController {
     public Result<CasePersonnelDTO> createPersonnel(
             @PathVariable Long caseId,
             @Valid @RequestBody CasePersonnelDTO dto) {
+        assertCaseVisible(caseId);
         CasePersonnelDTO result = casePersonnelService.create(caseId, dto);
         return Result.success("承办人员创建成功", result);
     }
@@ -165,6 +181,7 @@ public class CaseUnitController {
             @PathVariable Long caseId,
             @PathVariable Long id,
             @Valid @RequestBody CasePersonnelDTO dto) {
+        assertCaseVisible(caseId);
         CasePersonnelDTO result = casePersonnelService.update(caseId, id, dto);
         return Result.success("承办人员更新成功", result);
     }
@@ -172,7 +189,13 @@ public class CaseUnitController {
     @DeleteMapping("/personnel/{id}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
     public Result<Void> deletePersonnel(@PathVariable Long caseId, @PathVariable Long id) {
+        assertCaseVisible(caseId);
         casePersonnelService.delete(caseId, id);
         return Result.success();
+    }
+
+    private void assertCaseVisible(Long caseId) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(caseId, currentUserId);
     }
 }

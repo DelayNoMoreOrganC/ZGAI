@@ -176,6 +176,10 @@ service.interceptors.request.use(
 // 响应拦截器
 service.interceptors.response.use(
   response => {
+    if (response.config.responseType === 'blob') {
+      return response
+    }
+
     const res = response.data
 
     // 如果返回的状态码不是200,则判断为错误

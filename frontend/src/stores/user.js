@@ -28,7 +28,9 @@ export const useUserStore = defineStore('user', {
           realName: res.data.realName,
           email: res.data.email,
           phone: res.data.phone,
-          avatar: res.data.avatar
+          avatar: res.data.avatar,
+          departmentId: res.data.departmentId,
+          position: res.data.position
         }
         this.permissions = res.data.permissions || []
 

@@ -45,6 +45,12 @@ public class KnowledgeArticle extends LogicalDeleteEntity {
     private String articleType;
 
     /**
+     * 知识来源：FIRM_KNOWLEDGE(全所知识), PUBLIC_TEMPLATE(公共模板), CASE_DEPOSIT(案件沉淀)
+     */
+    @Column(name = "knowledge_source", length = 30)
+    private String knowledgeSource = "FIRM_KNOWLEDGE";
+
+    /**
      * 分类：合同、劳动、侵权等
      */
     @Column(name = "category", length = 50)
@@ -74,6 +80,12 @@ public class KnowledgeArticle extends LogicalDeleteEntity {
      */
     @Column(name = "attachment_path")
     private String attachmentPath;
+
+    @Column(name = "knowledge_eligible")
+    private Boolean knowledgeEligible = true;
+
+    @Column(name = "index_status", length = 30)
+    private String indexStatus = "PENDING";
 
     /**
      * 浏览次数

@@ -112,6 +112,15 @@ export function previewConflictCheck(data) {
   })
 }
 
+// 查询利冲检查历史
+export function getConflictCheckRecords(subjectName) {
+  return request({
+    url: '/clients/conflict-check/records',
+    method: 'get',
+    params: { subjectName }
+  })
+}
+
 // 别名函数，保持向后兼容
 export function checkConflict(id) {
   return conflictCheck(id)

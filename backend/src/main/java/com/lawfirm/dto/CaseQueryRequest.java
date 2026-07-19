@@ -29,6 +29,16 @@ public class CaseQueryRequest {
     private String status;
 
     /**
+     * 案由（模糊搜索）
+     */
+    private String caseReason;
+
+    /**
+     * 部门ID（按主办律师/案件成员所属部门筛选）
+     */
+    private Long departmentId;
+
+    /**
      * 案件等级
      */
     private String level;

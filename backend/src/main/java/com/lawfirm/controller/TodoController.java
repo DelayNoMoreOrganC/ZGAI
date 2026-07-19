@@ -1,6 +1,7 @@
 package com.lawfirm.controller;
 
 import com.lawfirm.dto.TodoDTO;
+import com.lawfirm.service.CaseService;
 import com.lawfirm.service.TodoService;
 import com.lawfirm.security.SecurityUtils;
 import com.lawfirm.util.Result;
@@ -22,6 +23,7 @@ import java.util.List;
 public class TodoController {
 
     private final TodoService todoService;
+    private final CaseService caseService;
     private final SecurityUtils securityUtils;
 
     /**
@@ -179,12 +181,18 @@ public class TodoController {
     @GetMapping("/case/{caseId}")
     public Result<List<TodoDTO>> getTodosByCase(@PathVariable Long caseId) {
         try {
+            assertCaseVisible(caseId);
             List<TodoDTO> result = todoService.getTodosByCase(caseId);
             return Result.success(result);
         } catch (Exception e) {
             log.error("查询案件待办异常", e);
             return Result.error("查询案件待办失败");
         }
+    }
+
+    private void assertCaseVisible(Long caseId) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseVisible(caseId, currentUserId);
     }
 
     /**

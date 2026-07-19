@@ -12,14 +12,20 @@ public class CaseDocumentDTO {
 
     private Long id;
     private Long caseId;
+    private Long folderId;
     private String documentName;
+    private String originalFileName;
     private String documentType;
     private String filePath;
     private Long fileSize;
+    private String mimeType;
     private String folderPath;
+    private Integer versionNo;
     private Long uploadBy;
     private String uploadByName;
     private String tags;
+    private Boolean knowledgeEligible;
+    private String indexStatus;
     private String ocrResult;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

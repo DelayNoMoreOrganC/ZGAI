@@ -212,6 +212,14 @@ export function getCaseDocuments(caseId) {
   })
 }
 
+// 获取案件文档目录
+export function getCaseDocumentFolders(caseId) {
+  return request({
+    url: `/cases/${caseId}/documents/folders`,
+    method: 'get'
+  })
+}
+
 // 上传案件文档
 export function uploadCaseDocument(caseId, data) {
   return request({

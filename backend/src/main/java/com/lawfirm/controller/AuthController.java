@@ -95,7 +95,7 @@ public class AuthController {
             );
 
             // 获取用户信息
-            User user = userRepository.findByUsername(username)
+            User user = userRepository.findByUsernameAndDeletedFalse(username)
                     .orElseThrow(() -> new ResourceNotFoundException("用户", "username", username));
 
             // 检查用户状态
@@ -124,6 +124,8 @@ public class AuthController {
             data.put("email", user.getEmail());
             data.put("phone", user.getPhone());
             data.put("avatar", user.getAvatar());
+            data.put("departmentId", user.getDepartmentId());
+            data.put("position", user.getPosition());
 
             log.info("用户登录成功: {}", username);
             return Result.success(data);
