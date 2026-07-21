@@ -19,11 +19,13 @@ public interface KnowledgeArticleMapper {
      * 插入文章
      */
     @Insert("INSERT INTO \"knowledge_article\" " +
-            "(\"title\", \"article_type\", \"category\", \"tags\", \"summary\", \"content\", \"attachment_path\", " +
+            "(\"title\", \"article_type\", \"knowledge_source\", \"category\", \"tags\", \"summary\", \"content\", \"attachment_path\", " +
+            "\"knowledge_eligible\", \"index_status\", " +
             "\"view_count\", \"like_count\", \"is_top\", \"is_public\", \"author_id\", \"author_name\", \"updater_id\", " +
             "\"created_at\", \"updated_at\", \"deleted\") " +
             "VALUES " +
-            "(#{title}, #{articleType}, #{category}, #{tags}, #{summary}, #{content}, #{attachmentPath}, " +
+            "(#{title}, #{articleType}, #{knowledgeSource}, #{category}, #{tags}, #{summary}, #{content}, #{attachmentPath}, " +
+            "#{knowledgeEligible}, #{indexStatus}, " +
             "#{viewCount}, #{likeCount}, #{isTop}, #{isPublic}, #{authorId}, #{authorName}, #{updaterId}, " +
             "#{createdAt}, #{updatedAt}, #{deleted})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
@@ -35,11 +37,14 @@ public interface KnowledgeArticleMapper {
     @Update("UPDATE \"knowledge_article\" SET " +
             "\"title\" = #{title}, " +
             "\"article_type\" = #{articleType}, " +
+            "\"knowledge_source\" = #{knowledgeSource}, " +
             "\"category\" = #{category}, " +
             "\"tags\" = #{tags}, " +
             "\"summary\" = #{summary}, " +
             "\"content\" = #{content}, " +
             "\"attachment_path\" = #{attachmentPath}, " +
+            "\"knowledge_eligible\" = #{knowledgeEligible}, " +
+            "\"index_status\" = #{indexStatus}, " +
             "\"is_top\" = #{isTop}, " +
             "\"is_public\" = #{isPublic}, " +
             "\"updater_id\" = #{updaterId}, " +

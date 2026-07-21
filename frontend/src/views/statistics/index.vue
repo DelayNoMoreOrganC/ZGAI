@@ -114,7 +114,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Download, CaretTop, CaretBottom, Document, CircleCheck, Coin } from '@element-plus/icons-vue'
+import { Download, CaretTop, CaretBottom, Document, CircleCheck, Coin, ScaleToOriginal } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import * as echarts from 'echarts'
 import { getStatsCards, getCaseTrend, getCaseTypeDistribution } from '@/api/statistics'
@@ -124,14 +124,14 @@ const caseTrendPeriod = ref('month')
 
 // Emoji到Element Plus图标的映射
 const emojiToIcon = {
-  '⚖️': Scale,
+  '⚖️': ScaleToOriginal,
   '📋': Document,
   '✅': CircleCheck,
   '💰': Coin
 }
 
 const getIcon = (emoji) => {
-  return emojiToIcon[emoji] || Scale
+  return emojiToIcon[emoji] || ScaleToOriginal
 }
 const caseTypePie = ref(true)
 const feeType = ref('income')
@@ -162,7 +162,7 @@ const fetchStatsCards = async () => {
           key: 'totalCases',
           label: '案件总数',
           value: data.totalCases?.toString() || '0',
-          icon: Scale,
+          icon: ScaleToOriginal,
           color: '#1890ff',
           trend: 'up',
           trendValue: data.totalCasesTrend || '0%',

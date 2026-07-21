@@ -152,7 +152,8 @@ public class ApprovalController {
     @GetMapping("/{id}")
     public Result<ApprovalDTO> getApprovalDetail(@PathVariable Long id) {
         try {
-            ApprovalDTO result = approvalService.getApprovalDetail(id);
+            Long userId = securityUtils.getCurrentUserId();
+            ApprovalDTO result = approvalService.getApprovalDetail(id, userId);
             return Result.success(result);
         } catch (Exception e) {
             log.error("获取审批详情失败", e);
@@ -167,7 +168,8 @@ public class ApprovalController {
     @GetMapping("/{id}/flow")
     public Result<List<ApprovalFlow>> getApprovalFlow(@PathVariable Long id) {
         try {
-            List<ApprovalFlow> result = approvalService.getApprovalFlow(id);
+            Long userId = securityUtils.getCurrentUserId();
+            List<ApprovalFlow> result = approvalService.getApprovalFlow(id, userId);
             return Result.success(result);
         } catch (Exception e) {
             log.error("获取审批流程失败", e);

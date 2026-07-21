@@ -408,7 +408,7 @@
 import { ref, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Plus, ArrowLeft, ArrowRight, Bell, Location, Briefcase, Clock, Document, Files
+  Plus, ArrowLeft, ArrowRight, Bell, Location, Briefcase, Clock, Document, Files, ScaleToOriginal
 } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import PriorityDot from '@/components/PriorityDot.vue'
@@ -585,7 +585,7 @@ const getEventTagType = (type) => {
 // 获取事件图标
 const getEventIcon = (type) => {
   const iconMap = {
-    'hearing': Scale,
+    'hearing': ScaleToOriginal,
     'deadline': Clock,
     'filing': Document,
     'mediation': Bell,

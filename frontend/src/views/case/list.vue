@@ -623,7 +623,7 @@ const handleBatchAction = async (command) => {
 
         // 使用批量操作API
         const caseIds = selectedCases.value.map(c => c.id)
-        await batchCloseCases({ caseIds })
+        await batchCloseCases(caseIds)
 
         ElMessage.success(`成功结案 ${selectedCases.value.length} 个案件`)
         selectedCases.value = []
@@ -651,7 +651,7 @@ const handleBatchAction = async (command) => {
 
         // 使用批量操作API
         const caseIds = selectedCases.value.map(c => c.id)
-        await batchArchiveCases({ caseIds, reason: value })
+        await batchArchiveCases(caseIds)
 
         ElMessage.success(`成功归档 ${selectedCases.value.length} 个案件`)
         selectedCases.value = []
@@ -679,7 +679,7 @@ const handleBatchAction = async (command) => {
 
         // 使用批量操作API
         const caseIds = selectedCases.value.map(c => c.id)
-        await batchChangeOwner({ caseIds, ownerId: parseInt(value) })
+        await batchChangeOwner(caseIds, parseInt(value))
 
         ElMessage.success(`成功修改 ${selectedCases.value.length} 个案件的主办律师`)
         selectedCases.value = []
@@ -700,7 +700,7 @@ const handleBatchAction = async (command) => {
 
         // 使用批量操作API
         const caseIds = selectedCases.value.map(c => c.id)
-        await batchDeleteCases({ caseIds })
+        await batchDeleteCases(caseIds)
 
         ElMessage.success(`成功删除 ${selectedCases.value.length} 个案件`)
         selectedCases.value = []

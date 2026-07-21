@@ -60,6 +60,14 @@
         title="案件尚未审批通过，暂不能上传案件文件。"
       />
 
+      <div v-else class="library-info">
+        <div>
+          <span>案卷目录</span>
+          <strong>{{ caseFolderPath || '审批通过后自动生成' }}</strong>
+        </div>
+        <el-tag type="info" effect="plain">案件文件默认不进入 AI 知识库</el-tag>
+      </div>
+
       <el-table
         v-loading="loading"
         :data="filteredDocuments"
@@ -102,6 +110,12 @@
           </template>
         </el-table-column>
 
+        <el-table-column label="上传人" width="120">
+          <template #default="{ row }">
+            {{ row.uploadByName || row.uploadBy || '-' }}
+          </template>
+        </el-table-column>
+
         <el-table-column label="上传时间" width="170">
           <template #default="{ row }">
             {{ formatDateTime(row.createdAt) }}
@@ -112,6 +126,15 @@
           <template #default="{ row }">
             <el-tag size="small" :type="getIndexStatusType(row.indexStatus)">
               {{ formatIndexStatus(row.indexStatus) }}
+            </el-tag>
+            <el-tag
+              v-if="row.knowledgeEligible"
+              class="knowledge-tag"
+              size="small"
+              type="warning"
+              effect="plain"
+            >
+              可入库
             </el-tag>
           </template>
         </el-table-column>
@@ -232,6 +255,7 @@ const uploadForm = reactive({
 })
 
 const currentCaseId = computed(() => props.caseData?.id)
+const caseFolderPath = computed(() => props.caseData?.caseFolderPath || '')
 const isPendingApproval = computed(() => props.caseData?.status === 'PENDING_APPROVAL')
 
 const currentFolderLabel = computed(() => {
@@ -248,7 +272,8 @@ const filteredDocuments = computed(() => {
       doc.originalFileName,
       doc.documentType,
       doc.folderPath,
-      doc.tags
+      doc.tags,
+      doc.uploadByName
     ].filter(Boolean).join(' ').toLowerCase()
     return matchFolder && (!query || haystack.includes(query))
   })
@@ -540,6 +565,41 @@ watch(currentCaseId, () => {
   margin-top: 12px;
 }
 
+.library-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+
+  div {
+    min-width: 0;
+  }
+
+  span {
+    display: block;
+    margin-bottom: 3px;
+    color: #6b7280;
+    font-size: 12px;
+  }
+
+  strong {
+    display: block;
+    color: #111827;
+    font-size: 13px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+}
+
+.knowledge-tag {
+  margin-left: 4px;
+}
+
 .file-cell {
   display: flex;
   align-items: center;
@@ -594,7 +654,8 @@ watch(currentCaseId, () => {
   }
 
   .toolbar-actions,
-  .document-toolbar {
+  .document-toolbar,
+  .library-info {
     display: flex;
     flex-direction: column;
     align-items: stretch;

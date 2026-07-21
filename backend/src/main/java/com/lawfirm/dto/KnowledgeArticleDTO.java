@@ -20,6 +20,8 @@ public class KnowledgeArticleDTO {
     @NotBlank(message = "文章类型不能为空")
     private String articleType;
 
+    private String knowledgeSource;
+
     private String category;
 
     private String tags;
@@ -33,4 +35,8 @@ public class KnowledgeArticleDTO {
     private Boolean isPublic;
 
     private Boolean isTop;
+
+    private Boolean knowledgeEligible;
+
+    private String indexStatus;
 }

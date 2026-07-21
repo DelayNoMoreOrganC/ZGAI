@@ -107,9 +107,11 @@ const selectedApproval = ref(null)
 
 const currentUserId = computed(() => Number(userStore.userInfo?.id || userStore.userId || 0))
 const isSuperAdmin = computed(() => userStore.userInfo?.username === 'admin')
+const isDirector = computed(() => userStore.userInfo?.position === '主任')
 const canHandleSelectedApproval = computed(() => {
   const approval = selectedApproval.value
-  return approval?.status === 'PENDING' && (isSuperAdmin.value || Number(approval.currentApproverId) === currentUserId.value)
+  return approval?.status === 'PENDING'
+    && (isSuperAdmin.value || isDirector.value || Number(approval.currentApproverId) === currentUserId.value)
 })
 
 const isSuccessResponse = (response) => response?.success || response?.code === 200

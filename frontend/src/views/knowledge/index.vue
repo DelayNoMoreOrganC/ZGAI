@@ -78,9 +78,14 @@
               @click="handleView(article)"
             >
               <div class="card-header">
-                <el-tag :type="getTypeTagType(article.articleType)" size="small">
-                  {{ formatType(article.articleType) }}
-                </el-tag>
+                <div class="tag-row">
+                  <el-tag :type="getTypeTagType(article.articleType)" size="small">
+                    {{ formatType(article.articleType) }}
+                  </el-tag>
+                  <el-tag size="small" effect="plain">
+                    {{ formatKnowledgeSource(article.knowledgeSource) }}
+                  </el-tag>
+                </div>
                 <span class="view-count">
                   <el-icon><View /></el-icon>
                   {{ article.viewCount }}
@@ -117,9 +122,17 @@
             >
               <div class="item-header">
                 <h4 class="title">{{ article.title }}</h4>
-                <el-tag :type="getTypeTagType(article.articleType)" size="small">
-                  {{ formatType(article.articleType) }}
-                </el-tag>
+                <div class="tag-row">
+                  <el-tag :type="getTypeTagType(article.articleType)" size="small">
+                    {{ formatType(article.articleType) }}
+                  </el-tag>
+                  <el-tag size="small" effect="plain">
+                    {{ formatKnowledgeSource(article.knowledgeSource) }}
+                  </el-tag>
+                  <el-tag size="small" :type="getIndexStatusType(article.indexStatus)">
+                    {{ formatIndexStatus(article.indexStatus) }}
+                  </el-tag>
+                </div>
               </div>
               <p class="summary">{{ article.summary || article.content?.replace(/<[^>]+>/g, '').substring(0, 150) }}</p>
               <div class="item-meta">
@@ -243,10 +256,20 @@ const loadTopArticles = async () => {
 // 加载文章列表
 const loadArticles = async () => {
   try {
+    const params = { page: currentPage.value, size: pageSize.value }
+    let url = '/knowledge'
+
+    if (searchKeyword.value.trim()) {
+      url = '/knowledge/search'
+      params.keyword = searchKeyword.value.trim()
+    } else if (activeType.value) {
+      url = `/knowledge/type/${activeType.value}`
+    }
+
     const { data } = await request({
-      url: '/knowledge',
+      url,
       method: 'get',
-      params: { page: currentPage.value - 1, size: pageSize.value }
+      params
     })
     articles.value = data.content || []
     total.value = data.totalElements || 0
@@ -265,7 +288,7 @@ const loadMyArticles = async () => {
       url: '/knowledge/my',
       method: 'get',
       params: {
-        page: 0,
+        page: 1,
         size: 100
       }
     })
@@ -326,6 +349,39 @@ const getTypeTagType = (type) => {
     'EXPERIENCE': 'info'
   }
   return map[type] || ''
+}
+
+const formatKnowledgeSource = (source) => {
+  const map = {
+    LAW_REGULATION: '法规',
+    FIRM_POLICY: '制度',
+    PUBLIC_TEMPLATE: '模板',
+    REFERENCE_MATERIAL: '参考',
+    FIRM_KNOWLEDGE: '全所',
+    CASE_DEPOSIT: '案件沉淀'
+  }
+  return map[source] || '全所'
+}
+
+const formatIndexStatus = (status) => {
+  const map = {
+    PENDING: '待索引',
+    INDEXED: '已索引',
+    FAILED: '失败',
+    FORBIDDEN: '禁止',
+    NOT_INDEXED: '未索引'
+  }
+  return map[status] || '未索引'
+}
+
+const getIndexStatusType = (status) => {
+  const map = {
+    INDEXED: 'success',
+    PENDING: 'warning',
+    FAILED: 'danger',
+    FORBIDDEN: 'info'
+  }
+  return map[status] || 'info'
 }
 
 // 格式化日期
@@ -420,6 +476,13 @@ onMounted(() => {
             align-items: center;
             margin-bottom: 10px;
 
+            .tag-row {
+              display: flex;
+              gap: 6px;
+              align-items: center;
+              flex-wrap: wrap;
+            }
+
             .view-count {
               display: flex;
               align-items: center;
@@ -488,6 +551,7 @@ onMounted(() => {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
+            gap: 12px;
             margin-bottom: 10px;
 
             .title {
@@ -496,6 +560,14 @@ onMounted(() => {
               color: #303133;
               flex: 1;
             }
+          }
+
+          .tag-row {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            flex-wrap: wrap;
+            flex-shrink: 0;
           }
 
           .summary {

@@ -17,6 +17,7 @@ public class KnowledgeArticleVO {
     private Long id;
     private String title;
     private String articleType;
+    private String knowledgeSource;
     private String category;
     private String tags;
     private String summary;
@@ -26,6 +27,8 @@ public class KnowledgeArticleVO {
     private Integer likeCount;
     private Boolean isTop;
     private Boolean isPublic;
+    private Boolean knowledgeEligible;
+    private String indexStatus;
     private Long authorId;
     private String authorName;
     private LocalDateTime createdAt;

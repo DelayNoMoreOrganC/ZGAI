@@ -308,17 +308,21 @@
         <el-icon :size="32" color="#722ed1"><MagicStick /></el-icon>
         <span>AI助手</span>
       </div>
+      <div class="action-item" @click="handleQuickAction('knowledgeRag')">
+        <el-icon :size="32" color="#2f54eb"><MagicStick /></el-icon>
+        <span>AI知识库</span>
+      </div>
       <div class="action-item" @click="handleQuickAction('uploadDoc')">
         <el-icon :size="32" color="#faad14"><UploadFilled /></el-icon>
         <span>上传文书</span>
       </div>
       <!-- 外部工具 -->
-<div class="action-item tool-card-ssb" @click="handleQuickAction('tools')">
+      <div class="action-item tool-card-ssb" @click="handleQuickAction('ssb')">
         <el-icon :size="36" color="#eb2f96"><Timer /></el-icon>
         <span class="tool-badge">⏱ 省时宝</span>
         <small class="tool-desc">法律文书生成</small>
       </div>
-      <div class="action-item tool-card-ac" @click="handleQuickAction('tools')">
+      <div class="action-item tool-card-ac" @click="handleQuickAction('acCalc')">
         <el-icon :size="36" color="#fa541c"><DataAnalysis /></el-icon>
         <span class="tool-badge">📊 AC精算</span>
         <small class="tool-desc">债权利息计算</small>
@@ -821,25 +825,37 @@ const handleQuickAction = (action) => {
   const actionMap = {
     createCase: '/case/create',
     createClient: '/client/create',
-    uploadDoc: '/case/list'
+    uploadDoc: '/case/list',
+    knowledgeRag: '/knowledge/rag'
   }
 
   if (action === 'uploadDoc') {
     ElMessage.info('请选择案件以管理案件文书')
   }
 
-  router.push(actionMap[action])
+  if (action === 'ssb') {
+    openSsbApp()
+    return
+  }
+
+  if (action === 'acCalc') {
+    openAcApp()
+    return
+  }
+
+  router.push(actionMap[action] || '/dashboard')
 }
 
 // 打开省时宝独立应用（新标签页）
 const openSsbApp = () => {
-  window.open('http://localhost:3000', '_blank')
+  const ssbUrl = import.meta.env.VITE_SSB_APP_URL || 'http://localhost:3000'
+  window.open(ssbUrl, '_blank')
 }
 
 // 打开AC精算独立应用（新标签页）
 const openAcApp = () => {
-  // Streamlit 应用（需先安装并启动: pip install streamlit && cd ac-calc && streamlit run app.py）
-  window.open('http://localhost:8501', '_blank')
+  const acUrl = import.meta.env.VITE_AC_APP_URL || 'http://localhost:8501'
+  window.open(acUrl, '_blank')
 }
 
 onMounted(() => {

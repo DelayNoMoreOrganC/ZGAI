@@ -29,6 +29,7 @@
           <el-tab-pane label="全部" name=""></el-tab-pane>
           <el-tab-pane label="待办提醒" name="TODO"></el-tab-pane>
           <el-tab-pane label="案件更新" name="CASE"></el-tab-pane>
+          <el-tab-pane label="审批消息" name="审批"></el-tab-pane>
           <el-tab-pane label="系统消息" name="SYSTEM"></el-tab-pane>
         </el-tabs>
       </div>
@@ -45,6 +46,7 @@
           <div class="notification-icon">
             <span v-if="notification.category === 'TODO'">⏰</span>
             <span v-else-if="notification.category === 'CASE'">⚖️</span>
+            <span v-else-if="isApprovalNotification(notification)">✓</span>
             <span v-else-if="notification.category === 'SYSTEM'">🔔</span>
             <span v-else>📢</span>
           </div>
@@ -98,12 +100,19 @@
       </div>
     </div>
   </el-drawer>
+
+  <ApprovalDetailDrawer
+    v-model="approvalDrawerVisible"
+    :approval-id="selectedApprovalId"
+    @handled="handleApprovalHandled"
+  />
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
+import ApprovalDetailDrawer from '@/components/ApprovalDetailDrawer.vue'
 
 const props = defineProps({
   modelValue: {
@@ -129,6 +138,8 @@ const activeCategory = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
+const approvalDrawerVisible = ref(false)
+const selectedApprovalId = ref(null)
 const hasMore = computed(() => notifications.value.length < total.value)
 
 // 获取通知列表
@@ -182,12 +193,24 @@ const handleNotificationClick = (notification) => {
   }
 
   // 如果有关联数据，跳转到相关页面
-  if (notification.relatedType === 'CASE' && notification.relatedId) {
+  if (isApprovalNotification(notification) && notification.relatedId) {
+    selectedApprovalId.value = notification.relatedId
+    approvalDrawerVisible.value = true
+  } else if (notification.relatedType === 'CASE' && notification.relatedId) {
     window.location.href = `/#/case/${notification.relatedId}`
   } else if (notification.relatedType === 'TODO' && notification.relatedId) {
     // 跳转到待办详情页（如果有的话）
     window.location.href = `/#/todos`
   }
+}
+
+const isApprovalNotification = (notification) => {
+  return notification?.category === '审批' || notification?.relatedType?.includes('APPROVAL')
+}
+
+const handleApprovalHandled = () => {
+  fetchNotifications(1)
+  fetchUnreadCount()
 }
 
 // 标记为已读

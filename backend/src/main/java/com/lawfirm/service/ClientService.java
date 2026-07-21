@@ -276,17 +276,9 @@ public class ClientService {
         if (relatedUserIds.isEmpty()) {
             return false;
         }
-        if (currentUser.getDepartmentId() == null) {
-            return relatedUserIds.contains(currentUserId);
-        }
         return relatedUserIds.stream()
                 .distinct()
-                .map(userRepository::findById)
-                .filter(java.util.Optional::isPresent)
-                .map(java.util.Optional::get)
-                .filter(user -> !Boolean.TRUE.equals(user.getDeleted()))
-                .filter(user -> user.getStatus() == null || user.getStatus() == 1)
-                .anyMatch(user -> currentUser.getDepartmentId().equals(user.getDepartmentId()));
+                .anyMatch(userId -> userId.equals(currentUserId));
     }
 
     private boolean isDevelopmentAdmin(User user) {
@@ -300,9 +292,7 @@ public class ClientService {
         String position = user.getPosition();
         return ALL_CLIENT_VIEW_USER_NAMES.contains(user.getUsername())
                 || ALL_CLIENT_VIEW_USER_NAMES.contains(user.getRealName())
-                || "主任".equals(position)
-                || "财务管理".equals(position)
-                || (position != null && position.startsWith("行政管理"));
+                || "主任".equals(position);
     }
 
     /**

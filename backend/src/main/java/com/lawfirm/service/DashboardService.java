@@ -42,18 +42,11 @@ public class DashboardService {
                     .collect(java.util.stream.Collectors.toList());
             stats.put("monthlyCases", (long) monthlyCases.size());
 
-            // 2. 进行中案件数（status='active'或'审理中'）
+            // 2. 进行中案件数
             List<com.lawfirm.entity.Case> activeCases = caseRepository.findByDeletedFalse().stream()
-                    .filter(caseEntity -> "active".equals(caseEntity.getStatus()))
+                    .filter(caseEntity -> isStatus(caseEntity, "ACTIVE") || "审理中".equals(caseEntity.getStatus()))
                     .collect(java.util.stream.Collectors.toList());
             long activeCasesCount = countVisibleCases(activeCases, userId);
-            // 如果active状态没有数据，尝试其他可能的状态值
-            if (activeCasesCount == 0) {
-                List<com.lawfirm.entity.Case> processingCases = caseRepository.findByDeletedFalse().stream()
-                        .filter(caseEntity -> "审理中".equals(caseEntity.getStatus()))
-                        .collect(java.util.stream.Collectors.toList());
-                activeCasesCount = countVisibleCases(processingCases, userId);
-            }
             stats.put("activeCases", activeCasesCount);
 
             // 3. 本月开庭数（calendarType='HEARING'且在本月）
@@ -99,6 +92,12 @@ public class DashboardService {
         return cases.stream()
                 .filter(caseEntity -> caseService.canAccessCase(caseEntity.getId(), userId))
                 .count();
+    }
+
+    private boolean isStatus(com.lawfirm.entity.Case caseEntity, String expectedStatus) {
+        return caseEntity != null
+                && caseEntity.getStatus() != null
+                && expectedStatus.equalsIgnoreCase(caseEntity.getStatus());
     }
 
     /**

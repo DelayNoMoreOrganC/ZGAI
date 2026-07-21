@@ -28,6 +28,20 @@
           </el-select>
         </el-form-item>
 
+        <el-form-item label="知识来源" prop="knowledgeSource">
+          <el-select v-model="form.knowledgeSource" placeholder="请选择知识来源">
+            <el-option label="法律法规" value="LAW_REGULATION" />
+            <el-option label="律所制度" value="FIRM_POLICY" />
+            <el-option label="公共模板" value="PUBLIC_TEMPLATE" />
+            <el-option label="参考资料" value="REFERENCE_MATERIAL" />
+            <el-option label="全所知识" value="FIRM_KNOWLEDGE" />
+            <el-option label="案件沉淀（暂不索引）" value="CASE_DEPOSIT" />
+          </el-select>
+          <div class="form-tip">
+            第一阶段 AI 知识库只索引法律法规、律所制度、公共模板和参考资料；案件沉淀需人工审核后再开放。
+          </div>
+        </el-form-item>
+
         <el-form-item label="分类">
           <el-input v-model="form.category" placeholder="例如：合同、劳动、侵权" />
         </el-form-item>
@@ -65,6 +79,9 @@
         <el-form-item label="选项">
           <el-checkbox v-model="form.isTop">置顶显示</el-checkbox>
           <el-checkbox v-model="form.isPublic">公开（全所可见）</el-checkbox>
+          <el-checkbox v-model="form.knowledgeEligible" :disabled="form.knowledgeSource === 'CASE_DEPOSIT'">
+            允许进入 AI 知识库
+          </el-checkbox>
         </el-form-item>
 
         <el-form-item>
@@ -80,7 +97,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
@@ -97,12 +114,14 @@ const isEdit = computed(() => !!route.params.id)
 const form = ref({
   title: '',
   articleType: '',
+  knowledgeSource: 'FIRM_KNOWLEDGE',
   category: '',
   tags: '',
   summary: '',
   content: '',
   isTop: false,
-  isPublic: true
+  isPublic: true,
+  knowledgeEligible: true
 })
 
 const rules = {
@@ -111,6 +130,9 @@ const rules = {
   ],
   articleType: [
     { required: true, message: '请选择文章类型', trigger: 'change' }
+  ],
+  knowledgeSource: [
+    { required: true, message: '请选择知识来源', trigger: 'change' }
   ],
   content: [
     { required: true, message: '请输入文章内容', trigger: 'blur' }
@@ -127,12 +149,14 @@ const loadArticle = async () => {
     form.value = {
       title: data.title,
       articleType: data.articleType,
+      knowledgeSource: data.knowledgeSource || inferKnowledgeSource(data.articleType),
       category: data.category,
       tags: data.tags,
       summary: data.summary,
       content: data.content,
       isTop: data.isTop,
-      isPublic: data.isPublic
+      isPublic: data.isPublic,
+      knowledgeEligible: data.knowledgeEligible !== false
     }
   } catch (error) {
     console.error('加载文章失败:', error)
@@ -159,7 +183,10 @@ const handleSubmit = async () => {
     await request({
       url,
       method,
-      data: form.value
+      data: {
+        ...form.value,
+        knowledgeEligible: form.value.knowledgeSource === 'CASE_DEPOSIT' ? false : form.value.knowledgeEligible
+      }
     })
 
     ElMessage.success(isEdit ? '保存成功' : '发布成功')
@@ -188,11 +215,39 @@ const handlePreview = () => {
   window.open('/knowledge/preview', '_blank')
 }
 
+const inferKnowledgeSource = (articleType) => {
+  if (articleType === 'TEMPLATE') return 'PUBLIC_TEMPLATE'
+  if (articleType === 'CASE') return 'CASE_DEPOSIT'
+  return 'FIRM_KNOWLEDGE'
+}
+
 onMounted(() => {
   if (isEdit.value) {
     loadArticle()
   }
 })
+
+watch(
+  () => form.value.articleType,
+  (articleType) => {
+    if (!isEdit.value && articleType === 'TEMPLATE') {
+      form.value.knowledgeSource = 'PUBLIC_TEMPLATE'
+      form.value.knowledgeEligible = true
+    } else if (articleType === 'CASE') {
+      form.value.knowledgeSource = 'CASE_DEPOSIT'
+      form.value.knowledgeEligible = false
+    }
+  }
+)
+
+watch(
+  () => form.value.knowledgeSource,
+  (source) => {
+    if (source === 'CASE_DEPOSIT') {
+      form.value.knowledgeEligible = false
+    }
+  }
+)
 </script>
 
 <style scoped lang="scss">

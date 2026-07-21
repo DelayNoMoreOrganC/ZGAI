@@ -7,10 +7,18 @@ import com.lawfirm.security.SecurityUtils;
 import com.lawfirm.util.Result;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Collections;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -77,6 +85,46 @@ public class DocumentControllerCompat {
         } catch (Exception e) {
             log.error("获取文档详情失败", e);
             return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 下载文档（兼容接口）
+     * GET /api/documents/{id}/download
+     */
+    @GetMapping("/{id}/download")
+    @PreAuthorize("isAuthenticated()")
+    public void downloadDocument(@PathVariable Long id, HttpServletResponse response) throws IOException {
+        try {
+            CaseDocumentDTO document = caseDocumentService.getDocumentById(id);
+            assertCaseVisible(document.getCaseId());
+
+            if (document.getFilePath() == null || document.getFilePath().trim().isEmpty()) {
+                response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+                response.getWriter().write("文件路径不存在");
+                return;
+            }
+
+            Path filePath = Paths.get(document.getFilePath());
+            if (!java.nio.file.Files.exists(filePath)) {
+                response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+                response.getWriter().write("文件不存在");
+                return;
+            }
+
+            Resource resource = new UrlResource(filePath.toUri());
+            String contentType = java.nio.file.Files.probeContentType(filePath);
+            response.setContentType(contentType != null ? contentType : "application/octet-stream");
+            String encodedFilename = URLEncoder.encode(document.getDocumentName(), StandardCharsets.UTF_8.name())
+                    .replace("+", "%20");
+            response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
+                    "attachment; filename*=UTF-8''" + encodedFilename);
+            org.springframework.util.StreamUtils.copy(resource.getInputStream(), response.getOutputStream());
+            response.flushBuffer();
+        } catch (Exception e) {
+            log.error("下载文档失败", e);
+            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            response.getWriter().write("下载失败: " + e.getMessage());
         }
     }
 

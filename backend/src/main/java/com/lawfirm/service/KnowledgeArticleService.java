@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 public class KnowledgeArticleService {
 
     private final KnowledgeArticleMapper articleMapper;
+    private final VectorMigrationService vectorMigrationService;
 
     /**
      * 创建文章
@@ -37,6 +38,7 @@ public class KnowledgeArticleService {
         KnowledgeArticle article = new KnowledgeArticle();
         article.setTitle(dto.getTitle());
         article.setArticleType(dto.getArticleType());
+        applyKnowledgeScope(article, dto);
         article.setCategory(dto.getCategory());
         article.setTags(dto.getTags());
         article.setSummary(dto.getSummary());
@@ -60,6 +62,7 @@ public class KnowledgeArticleService {
         article.setUpdatedAt(now);
 
         articleMapper.insert(article);
+        vectorMigrationService.indexNewArticle(article);
         log.info("创建知识库文章成功: id={}, title={}", article.getId(), article.getTitle());
         return toVO(article);
     }
@@ -76,6 +79,7 @@ public class KnowledgeArticleService {
 
         article.setTitle(dto.getTitle());
         article.setArticleType(dto.getArticleType());
+        applyKnowledgeScope(article, dto);
         article.setCategory(dto.getCategory());
         article.setTags(dto.getTags());
         article.setSummary(dto.getSummary());
@@ -89,6 +93,7 @@ public class KnowledgeArticleService {
         article.setUpdatedAt(LocalDateTime.now());
 
         articleMapper.update(article);
+        vectorMigrationService.indexNewArticle(article);
         log.info("更新知识库文章成功: id={}, title={}", article.getId(), article.getTitle());
         return toVO(article);
     }
@@ -268,6 +273,7 @@ public class KnowledgeArticleService {
         vo.setId(entity.getId());
         vo.setTitle(entity.getTitle());
         vo.setArticleType(entity.getArticleType());
+        vo.setKnowledgeSource(entity.getKnowledgeSource());
         vo.setCategory(entity.getCategory());
         vo.setTags(entity.getTags());
         vo.setSummary(entity.getSummary());
@@ -277,11 +283,49 @@ public class KnowledgeArticleService {
         vo.setLikeCount(entity.getLikeCount());
         vo.setIsTop(entity.getIsTop());
         vo.setIsPublic(entity.getIsPublic());
+        vo.setKnowledgeEligible(entity.getKnowledgeEligible());
+        vo.setIndexStatus(entity.getIndexStatus());
         vo.setAuthorId(entity.getAuthorId());
         vo.setAuthorName(entity.getAuthorName());
         vo.setCreatedAt(entity.getCreatedAt());
         vo.setUpdatedAt(entity.getUpdatedAt());
         return vo;
+    }
+
+    private void applyKnowledgeScope(KnowledgeArticle article, KnowledgeArticleDTO dto) {
+        String source = normalizeKnowledgeSource(dto.getKnowledgeSource(), dto.getArticleType());
+        article.setKnowledgeSource(source);
+        boolean indexable = isFirstStageIndexableSource(source);
+        article.setKnowledgeEligible(dto.getKnowledgeEligible() != null ? dto.getKnowledgeEligible() && indexable : indexable);
+        if (!article.getKnowledgeEligible()) {
+            article.setIndexStatus("FORBIDDEN");
+        } else if (dto.getIndexStatus() != null && !dto.getIndexStatus().trim().isEmpty()) {
+            article.setIndexStatus(dto.getIndexStatus());
+        } else {
+            article.setIndexStatus("PENDING");
+        }
+    }
+
+    private String normalizeKnowledgeSource(String source, String articleType) {
+        if (source != null && !source.trim().isEmpty()) {
+            return source.trim();
+        }
+        if ("TEMPLATE".equals(articleType)) {
+            return "PUBLIC_TEMPLATE";
+        }
+        if ("CASE".equals(articleType)) {
+            return "CASE_DEPOSIT";
+        }
+        return "FIRM_KNOWLEDGE";
+    }
+
+    private boolean isFirstStageIndexableSource(String source) {
+        return source == null
+                || "FIRM_KNOWLEDGE".equals(source)
+                || "LAW_REGULATION".equals(source)
+                || "FIRM_POLICY".equals(source)
+                || "PUBLIC_TEMPLATE".equals(source)
+                || "REFERENCE_MATERIAL".equals(source);
     }
 
     /**

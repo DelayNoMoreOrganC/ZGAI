@@ -161,6 +161,7 @@ CREATE TABLE IF NOT EXISTS `knowledge_article` (
     `id` BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT 'ID',
     `title` VARCHAR(200) NOT NULL COMMENT '标题',
     `article_type` VARCHAR(20) NOT NULL COMMENT '文章类型',
+    `knowledge_source` VARCHAR(30) DEFAULT 'FIRM_KNOWLEDGE' COMMENT '知识来源',
     `category` VARCHAR(50) COMMENT '分类',
     `tags` VARCHAR(500) COMMENT '标签',
     `summary` VARCHAR(1000) COMMENT '摘要',
@@ -170,6 +171,8 @@ CREATE TABLE IF NOT EXISTS `knowledge_article` (
     `like_count` INT DEFAULT 0 COMMENT '点赞次数',
     `is_top` BOOLEAN DEFAULT FALSE COMMENT '是否置顶',
     `is_public` BOOLEAN DEFAULT TRUE COMMENT '是否公开',
+    `knowledge_eligible` BOOLEAN DEFAULT TRUE COMMENT '是否允许进入AI知识库',
+    `index_status` VARCHAR(30) DEFAULT 'PENDING' COMMENT '索引状态',
     `author_id` BIGINT NOT NULL COMMENT '作者ID',
     `author_name` VARCHAR(50) COMMENT '作者姓名',
     `updater_id` BIGINT COMMENT '更新人ID',
@@ -189,4 +192,3 @@ INSERT INTO knowledge_article (title, article_type, category, tags, summary, con
 ('办案指南：如何高效收集证据', 'GUIDE', '办案技巧', '证据,收集,办案', '证据收集的三大原则和实务技巧分享', '<h2>证据收集三原则</h2><p>1. 及时性原则...</p>', 89, 8, false, true, 3, '李四律师', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 ('经验分享：与当事人沟通的5个技巧', 'EXPERIENCE', '沟通', '当事人,沟通,经验', '多年办案总结的当事人沟通心得', '<h2>沟通技巧</h2><p>1. 倾听为先...</p>', 45, 3, false, true, 3, '李四律师', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 ('交通事故赔偿计算标准', 'TEMPLATE', '侵权', '交通事故,赔偿,计算', '2024年最新交通事故赔偿计算标准及公式', '<h2>赔偿项目</h2><p>1. 医疗费...</p>', 312, 45, true, true, 2, '张三律师', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);
-

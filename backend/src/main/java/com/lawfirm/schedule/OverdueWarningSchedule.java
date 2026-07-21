@@ -100,7 +100,7 @@ public class OverdueWarningSchedule {
             // 2. 检查案件审限逾期预警
             List<Case> cases = caseRepository.findAll().stream()
                     .filter(c -> !c.getDeleted())
-                    .filter(c -> !"closed".equals(c.getStatus()) && !"archived".equals(c.getStatus()))
+                    .filter(c -> !isStatus(c, "CLOSED") && !isStatus(c, "ARCHIVED"))
                     .filter(c -> c.getDeadlineDate() != null)
                     .collect(java.util.stream.Collectors.toList());
 
@@ -177,5 +177,11 @@ public class OverdueWarningSchedule {
         } catch (Exception e) {
             log.error("检查紧急待办失败", e);
         }
+    }
+
+    private boolean isStatus(Case caseEntity, String expectedStatus) {
+        return caseEntity != null
+                && caseEntity.getStatus() != null
+                && expectedStatus.equalsIgnoreCase(caseEntity.getStatus());
     }
 }

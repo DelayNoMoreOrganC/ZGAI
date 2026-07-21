@@ -34,7 +34,12 @@
           </div>
           <div class="filing-card-actions" @click.stop>
             <el-button type="primary" plain @click="openApprovalDetail(item)">查看审批</el-button>
-            <el-button type="success" class="approve-main-btn" @click="handleApprove(item)">
+            <el-button
+              v-if="canHandleApproval(item)"
+              type="success"
+              class="approve-main-btn"
+              @click="handleApprove(item)"
+            >
               {{ getApproveActionText(item) }}
             </el-button>
           </div>
@@ -118,7 +123,7 @@
                 <el-button type="primary" size="small" plain @click="openApprovalDetail(row)">
                   查看审批
                 </el-button>
-                <template v-if="row.status === 'PENDING'">
+                <template v-if="canHandleApproval(row)">
                   <el-button type="success" size="small" class="approve-main-btn" @click="handleApprove(row)">
                     {{ getApproveActionText(row) }}
                   </el-button>
@@ -270,75 +275,12 @@
       </template>
     </el-dialog>
 
-    <el-drawer
+    <ApprovalDetailDrawer
       v-model="detailDrawerVisible"
-      :title="selectedApproval?.title || '审批详情'"
-      size="520px"
-      class="approval-detail-drawer"
-    >
-      <div v-if="selectedApproval" class="approval-detail">
-        <div class="detail-status">
-          <el-tag :type="isCaseFilingApproval(selectedApproval) ? 'warning' : 'primary'" size="large">
-            {{ formatApprovalType(selectedApproval.approvalType) }}
-          </el-tag>
-          <el-tag :type="getStatusTagType(selectedApproval.status)" size="large">
-            {{ selectedApproval.statusDesc || selectedApproval.status }}
-          </el-tag>
-        </div>
-
-        <div v-if="canHandleSelectedApproval" class="detail-action-panel">
-          <div>
-            <h3>{{ isCaseFilingApproval(selectedApproval) ? '立案审批待处理' : '审批待处理' }}</h3>
-            <p>{{ isCaseFilingApproval(selectedApproval) ? '完成利冲审查后，请在这里直接同意或驳回立案。' : '请确认审批内容后处理。' }}</p>
-          </div>
-          <div class="detail-action-buttons">
-            <el-button type="warning" @click="handleReject(selectedApproval)">
-              {{ isCaseFilingApproval(selectedApproval) ? '驳回立案' : '驳回' }}
-            </el-button>
-            <el-button type="success" class="approve-main-btn" @click="handleApprove(selectedApproval)">
-              {{ getApproveActionText(selectedApproval) }}
-            </el-button>
-          </div>
-        </div>
-
-        <el-descriptions :column="1" border>
-          <el-descriptions-item label="申请人">{{ selectedApproval.applicantName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="当前审批人">{{ selectedApproval.currentApproverName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="申请时间">{{ selectedApproval.applyTime || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="关联案件">
-            <el-link v-if="selectedApproval.caseId" type="primary" @click="goToCase(selectedApproval.caseId)">
-              {{ selectedApproval.caseName || selectedApproval.caseId }}
-            </el-link>
-            <span v-else>-</span>
-          </el-descriptions-item>
-        </el-descriptions>
-
-        <div class="approval-content">
-          <h3>审批内容</h3>
-          <pre>{{ selectedApproval.content || '-' }}</pre>
-        </div>
-
-        <div v-if="isCaseFilingApproval(selectedApproval)" class="filing-path">
-          <h3>立案审批路径</h3>
-          <div class="path-step done">发起人提交立案申请</div>
-          <div class="path-step active">行政管理利冲审查并审批</div>
-          <div class="path-step">如为免费代理，进入主任终审</div>
-          <div class="path-step">审批通过后建立案件档案</div>
-        </div>
-      </div>
-
-      <div class="drawer-actions">
-        <el-button @click="detailDrawerVisible = false">关闭</el-button>
-        <template v-if="canHandleSelectedApproval">
-          <el-button type="warning" @click="handleReject(selectedApproval)">
-            {{ isCaseFilingApproval(selectedApproval) ? '驳回立案' : '驳回' }}
-          </el-button>
-          <el-button type="success" class="approve-main-btn" @click="handleApprove(selectedApproval)">
-            {{ getApproveActionText(selectedApproval) }}
-          </el-button>
-        </template>
-      </div>
-    </el-drawer>
+      :approval-id="selectedApprovalId"
+      :initial-approval="selectedApproval"
+      @handled="handleApprovalHandled"
+    />
   </div>
 </template>
 
@@ -349,6 +291,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import PageHeader from '@/components/PageHeader.vue'
+import ApprovalDetailDrawer from '@/components/ApprovalDetailDrawer.vue'
 import ApprovalFilter from './ApprovalFilter.vue'
 import {
   getApprovalList,
@@ -373,19 +316,17 @@ const processedList = ref([])
 const myRequestList = ref([])
 const detailDrawerVisible = ref(false)
 const selectedApproval = ref(null)
+const selectedApprovalId = ref(null)
 const isCaseApprovalMode = computed(() => Boolean(route.query.caseId))
 const pendingCaseFilingCount = computed(() => pendingList.value.filter(isCaseFilingApproval).length)
 const pendingFilingApprovals = computed(() => pendingList.value.filter(isCaseFilingApproval))
 const currentUserId = computed(() => Number(userStore.userInfo?.id || userStore.userId || 0))
 const isSuperAdmin = computed(() => userStore.userInfo?.username === 'admin')
 const currentPosition = computed(() => userStore.userInfo?.position || '')
+const isDirector = computed(() => currentPosition.value === '主任')
 const isAdministrativeUser = computed(() => {
   const position = currentPosition.value
   return isSuperAdmin.value || position.startsWith('行政管理') || position === '主任' || position === '财务管理'
-})
-const canHandleSelectedApproval = computed(() => {
-  const approval = selectedApproval.value
-  return approval?.status === 'PENDING' && (isSuperAdmin.value || Number(approval.currentApproverId) === currentUserId.value)
 })
 
 const approvalTypeMap = {
@@ -408,6 +349,10 @@ const getApproveActionText = (row) => {
   if (row?.approvalType === 'CASE_FILING') return '同意立案'
   return '同意'
 }
+const canHandleApproval = (row) => {
+  return row?.status === 'PENDING'
+    && (isSuperAdmin.value || isDirector.value || Number(row.currentApproverId) === currentUserId.value)
+}
 
 // 审批对话框
 const approvalDialogVisible = ref(false)
@@ -429,6 +374,7 @@ const goToCase = (caseId) => {
 
 const openApprovalDetail = (row) => {
   selectedApproval.value = row
+  selectedApprovalId.value = row?.id || null
   detailDrawerVisible.value = true
 }
 
@@ -465,6 +411,7 @@ const focusFirstCaseApprovalFromRoute = () => {
 
 const openRouteApproval = async () => {
   selectedApproval.value = null
+  selectedApprovalId.value = null
   detailDrawerVisible.value = false
   await fetchApprovalList()
   const openedByApprovalId = await focusApprovalFromRoute()
@@ -562,7 +509,7 @@ const handleSubmitApproval = async () => {
     })
     ElMessage.success('审批提交成功')
     approvalDialogVisible.value = false
-    fetchApprovalList()
+    await fetchApprovalList()
   } catch (error) {
     console.error('提交审批失败:', error)
     ElMessage.error('提交失败')
@@ -586,8 +533,7 @@ const handleApprove = async (row) => {
     if (isSuccessResponse(response)) {
       ElMessage.success(isCaseFilingApproval(row) ? '立案审批已通过' : '审批已同意')
       detailDrawerVisible.value = false
-      // 刷新列表
-      fetchApprovalList()
+      await fetchApprovalList()
     } else {
       ElMessage.error(response.message || '操作失败')
     }
@@ -618,8 +564,7 @@ const handleReject = async (row) => {
     if (isSuccessResponse(response)) {
       ElMessage.success(isCaseFilingApproval(row) ? '立案申请已驳回' : '审批已驳回')
       detailDrawerVisible.value = false
-      // 刷新列表
-      fetchApprovalList()
+      await fetchApprovalList()
     } else {
       ElMessage.error(response.message || '操作失败')
     }
@@ -649,8 +594,7 @@ const handleTransfer = async (row) => {
     const response = await transferApproval(row.id, { comments: value })
     if (isSuccessResponse(response)) {
       ElMessage.success('审批已转审')
-      // 刷新列表
-      fetchApprovalList()
+      await fetchApprovalList()
     } else {
       ElMessage.error(response.message || '操作失败')
     }
@@ -677,8 +621,7 @@ const handleWithdraw = async (row) => {
     const response = await withdrawApproval(row.id)
     if (isSuccessResponse(response)) {
       ElMessage.success('审批已撤回')
-      // 刷新列表
-      fetchApprovalList()
+      await fetchApprovalList()
     } else {
       ElMessage.error(response.message || '操作失败')
     }
@@ -694,23 +637,32 @@ const handleWithdraw = async (row) => {
 const fetchApprovalList = async () => {
   try {
     loading.value = true
-    const res = await getApprovalList({
-      status: isCaseApprovalMode.value ? null :
-             activeTab.value === 'pending' ? 'PENDING' :
-             activeTab.value === 'processed' ? 'APPROVED' : null,
-      applicantId: activeTab.value === 'my-requests' ? undefined : null,
+    const params = {
       caseId: route.query.caseId || null,
       page: 1,
       size: 100
+    }
+
+    if (activeTab.value === 'pending') {
+      params.status = 'PENDING'
+    } else if (activeTab.value === 'my-requests') {
+      params.applicantId = currentUserId.value
+    } else if (!isAdministrativeUser.value) {
+      params.currentApproverId = currentUserId.value
+    }
+
+    const res = await getApprovalList({
+      ...params
     })
 
+    const records = res.data?.records || []
     // 根据当前Tab分配数据
     if (activeTab.value === 'pending') {
-      pendingList.value = res.data?.records || []
+      pendingList.value = records
     } else if (activeTab.value === 'processed') {
-      processedList.value = res.data?.records || []
+      processedList.value = records.filter(item => ['APPROVED', 'REJECTED', 'WITHDRAWN', 'TRANSFERRED'].includes(item.status))
     } else {
-      myRequestList.value = res.data?.records || []
+      myRequestList.value = records
     }
   } catch (error) {
     ElMessage.error('获取审批列表失败')
@@ -718,6 +670,11 @@ const fetchApprovalList = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const handleApprovalHandled = async () => {
+  detailDrawerVisible.value = false
+  await fetchApprovalList()
 }
 
 const handleSearch = (filters) => {
@@ -976,108 +933,6 @@ const tableRowClassName = ({ rowIndex }) => {
 
   .approve-main-btn {
     font-weight: 700;
-  }
-
-  .approval-detail {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-  }
-
-  .detail-status {
-    display: flex;
-    gap: 10px;
-  }
-
-  .detail-action-panel {
-    display: flex;
-    justify-content: space-between;
-    gap: 16px;
-    align-items: center;
-    padding: 16px;
-    border: 1px solid #bbf7d0;
-    border-radius: 10px;
-    background: #f0fdf4;
-
-    h3 {
-      margin: 0;
-      color: #166534;
-      font-size: 16px;
-    }
-
-    p {
-      margin: 6px 0 0;
-      color: #15803d;
-      font-size: 13px;
-    }
-  }
-
-  .detail-action-buttons {
-    display: flex;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
-  .approval-content,
-  .filing-path {
-    h3 {
-      margin: 0 0 10px;
-      font-size: 15px;
-      color: #303133;
-    }
-  }
-
-  .approval-content pre {
-    margin: 0;
-    padding: 14px;
-    min-height: 120px;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    background: #f8fafc;
-    color: #303133;
-    white-space: pre-wrap;
-    word-break: break-word;
-    font-family: inherit;
-    line-height: 1.7;
-  }
-
-  .path-step {
-    position: relative;
-    padding: 10px 12px 10px 32px;
-    border-left: 2px solid #dcdfe6;
-    color: #606266;
-
-    &::before {
-      content: '';
-      position: absolute;
-      left: -6px;
-      top: 15px;
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #dcdfe6;
-    }
-
-    &.done,
-    &.active {
-      border-left-color: #409eff;
-
-      &::before {
-        background: #409eff;
-      }
-    }
-
-    &.active {
-      color: #1f2937;
-      font-weight: 700;
-      background: #f0f7ff;
-    }
-  }
-
-  .drawer-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
   }
 }
 </style>

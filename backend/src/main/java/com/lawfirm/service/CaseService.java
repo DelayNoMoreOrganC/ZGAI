@@ -491,8 +491,12 @@ public class CaseService {
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
         boolean hasAllCaseViewAccess = hasAllCaseViewAccess(currentUser);
-        List<Long> departmentUserIds = hasAllCaseViewAccess ? Collections.emptyList() : getDepartmentScopedUserIds(currentUser);
-        List<Long> departmentCaseIds = hasAllCaseViewAccess ? Collections.emptyList() : getDepartmentScopedCaseIds(departmentUserIds);
+        boolean hasDepartmentCaseViewAccess = !hasAllCaseViewAccess && isDepartmentManager(currentUser);
+        boolean hasPendingApprovalViewAccess = !hasAllCaseViewAccess && isAdministrativeUser(currentUser);
+        List<Long> visibleUserIds = hasAllCaseViewAccess
+                ? Collections.emptyList()
+                : (hasDepartmentCaseViewAccess ? getDepartmentScopedUserIds(currentUser) : Collections.singletonList(currentUserId));
+        List<Long> visibleCaseIds = hasAllCaseViewAccess ? Collections.emptyList() : getDepartmentScopedCaseIds(visibleUserIds);
         List<Long> filterDepartmentUserIds = request.getDepartmentId() == null
                 ? Collections.emptyList()
                 : getActiveUserIdsByDepartment(request.getDepartmentId());
@@ -513,11 +517,14 @@ public class CaseService {
 
             if (!hasAllCaseViewAccess) {
                 List<javax.persistence.criteria.Predicate> accessPredicates = new ArrayList<>();
-                if (!departmentUserIds.isEmpty()) {
-                    accessPredicates.add(root.get("ownerId").in(departmentUserIds));
+                if (!visibleUserIds.isEmpty()) {
+                    accessPredicates.add(root.get("ownerId").in(visibleUserIds));
                 }
-                if (!departmentCaseIds.isEmpty()) {
-                    accessPredicates.add(root.get("id").in(departmentCaseIds));
+                if (!visibleCaseIds.isEmpty()) {
+                    accessPredicates.add(root.get("id").in(visibleCaseIds));
+                }
+                if (hasPendingApprovalViewAccess) {
+                    accessPredicates.add(cb.equal(root.get("status"), CaseStatus.PENDING_APPROVAL.getCode()));
                 }
                 if (accessPredicates.isEmpty()) {
                     predicates.add(cb.disjunction());
@@ -620,9 +627,19 @@ public class CaseService {
             return true;
         }
         String position = user == null ? null : user.getPosition();
-        return "主任".equals(position)
-                || "财务管理".equals(position)
-                || (position != null && position.startsWith("行政管理"));
+        return "主任".equals(position);
+    }
+
+    private boolean isAdministrativeUser(User user) {
+        String position = user == null ? null : user.getPosition();
+        return position != null && position.startsWith("行政管理");
+    }
+
+    private boolean isDepartmentManager(User user) {
+        String position = user == null ? null : user.getPosition();
+        return "部门主管".equals(position)
+                || "主管".equals(position)
+                || "合伙人".equals(position);
     }
 
     private boolean isCaseFilingAdministrator(User user) {
@@ -753,10 +770,20 @@ public class CaseService {
         if (hasAllCaseViewAccess(currentUser)) {
             return true;
         }
+        if (isAdministrativeUser(currentUser)
+                && CaseStatus.PENDING_APPROVAL.getCode().equals(caseEntity.getStatus())) {
+            return true;
+        }
         if (Objects.equals(caseEntity.getOwnerId(), currentUserId)) {
             return true;
         }
-        if (currentUser.getDepartmentId() == null) {
+        boolean currentUserIsMember = caseMemberRepository.findByCaseIdAndDeletedFalse(caseId).stream()
+                .map(CaseMember::getUserId)
+                .anyMatch(userId -> Objects.equals(userId, currentUserId));
+        if (currentUserIsMember) {
+            return true;
+        }
+        if (!isDepartmentManager(currentUser) || currentUser.getDepartmentId() == null) {
             return false;
         }
         User owner = userRepository.findById(caseEntity.getOwnerId()).orElse(null);
@@ -1412,7 +1439,7 @@ public class CaseService {
 
         List<Case> cases = caseRepository.findAllById(caseIds);
         for (Case caseEntity : cases) {
-            caseEntity.setStatus("closed");
+            caseEntity.setStatus(CaseStatus.CLOSED.getCode());
             caseEntity.setUpdatedAt(LocalDateTime.now());
         }
 
@@ -1432,7 +1459,7 @@ public class CaseService {
         List<Case> cases = caseRepository.findAllById(caseIds);
         for (Case caseEntity : cases) {
             caseEntity.setArchiveDate(LocalDate.now());
-            caseEntity.setStatus("ARCHIVED");
+            caseEntity.setStatus(CaseStatus.ARCHIVED.getCode());
         }
 
         caseRepository.saveAll(cases);

@@ -175,8 +175,11 @@ public class ApprovalService {
         Approval approval = approvalRepository.findById(approvalId)
                 .orElseThrow(() -> new RuntimeException("审批单不存在"));
 
+        User currentApprover = userRepository.findById(currentApproverId)
+                .orElseThrow(() -> new RuntimeException("审批人不存在"));
+
         // 验证当前审批人
-        if (!approval.getCurrentApproverId().equals(currentApproverId)) {
+        if (!canOperateApprovalAsApprover(approval, currentApprover)) {
             throw new RuntimeException("您不是当前审批人");
         }
 
@@ -283,6 +286,14 @@ public class ApprovalService {
                 Sort.by(Sort.Direction.fromString(request.getSortDirection()), request.getSortField())
         );
 
+        boolean hasAllAccess = hasAllApprovalAccess(currentUserId);
+        if (!hasAllAccess && request.getApplicantId() != null && !Objects.equals(request.getApplicantId(), currentUserId)) {
+            throw new RuntimeException("无权查看他人发起的审批");
+        }
+        if (!hasAllAccess && request.getCurrentApproverId() != null && !Objects.equals(request.getCurrentApproverId(), currentUserId)) {
+            throw new RuntimeException("无权查看他人的审批待办");
+        }
+
         Specification<Approval> spec = (root, query, cb) -> {
             List<javax.persistence.criteria.Predicate> predicates = new ArrayList<>();
 
@@ -295,14 +306,11 @@ public class ApprovalService {
                 predicates.add(cb.equal(root.get("status"), request.getStatus()));
             }
 
-            // 权限控制：只能看到自己申请的或自己需要审批的
-            if (hasAllApprovalAccess(currentUserId)) {
-                // admin/主任/行政管理可查看审批中心全部审批记录
-            } else if (request.getApplicantId() != null) {
+            if (request.getApplicantId() != null) {
                 predicates.add(cb.equal(root.get("applicantId"), request.getApplicantId()));
             } else if (request.getCurrentApproverId() != null) {
                 predicates.add(cb.equal(root.get("currentApproverId"), request.getCurrentApproverId()));
-            } else {
+            } else if (!hasAllAccess) {
                 // 默认：查看自己相关的
                 javax.persistence.criteria.Predicate applicantCondition =
                         cb.equal(root.get("applicantId"), currentUserId);
@@ -347,16 +355,20 @@ public class ApprovalService {
     /**
      * 获取审批详情
      */
-    public ApprovalDTO getApprovalDetail(Long approvalId) {
+    public ApprovalDTO getApprovalDetail(Long approvalId, Long currentUserId) {
         Approval approval = approvalRepository.findById(approvalId)
                 .orElseThrow(() -> new RuntimeException("审批单不存在"));
+        assertApprovalVisible(approval, currentUserId);
         return toDTO(approval);
     }
 
     /**
      * 获取审批流程记录
      */
-    public List<ApprovalFlow> getApprovalFlow(Long approvalId) {
+    public List<ApprovalFlow> getApprovalFlow(Long approvalId, Long currentUserId) {
+        Approval approval = approvalRepository.findById(approvalId)
+                .orElseThrow(() -> new RuntimeException("审批单不存在"));
+        assertApprovalVisible(approval, currentUserId);
         return approvalFlowRepository.findByApprovalIdOrderByActionTimeAsc(approvalId);
     }
 
@@ -656,7 +668,21 @@ public class ApprovalService {
         if (approval == null || user == null) {
             return false;
         }
-        return Objects.equals(approval.getCurrentApproverId(), user.getId()) || isDevelopmentAdmin(user);
+        return Objects.equals(approval.getCurrentApproverId(), user.getId())
+                || isDevelopmentAdmin(user)
+                || isDirector(user);
+    }
+
+    private void assertApprovalVisible(Approval approval, Long currentUserId) {
+        if (approval == null) {
+            throw new RuntimeException("审批单不存在");
+        }
+        if (hasAllApprovalAccess(currentUserId)
+                || Objects.equals(approval.getApplicantId(), currentUserId)
+                || Objects.equals(approval.getCurrentApproverId(), currentUserId)) {
+            return;
+        }
+        throw new RuntimeException("无权查看该审批");
     }
 
     private boolean hasAllApprovalAccess(Long userId) {
@@ -668,11 +694,15 @@ public class ApprovalService {
             return true;
         }
         String position = user.getPosition();
-        return "主任".equals(position) || (position != null && position.startsWith("行政管理"));
+        return isDirector(user) || (position != null && position.startsWith("行政管理"));
     }
 
     private boolean isDevelopmentAdmin(User user) {
         return user != null && "admin".equals(user.getUsername());
+    }
+
+    private boolean isDirector(User user) {
+        return user != null && "主任".equals(user.getPosition());
     }
 
     private String getStatusDesc(String status) {

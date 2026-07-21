@@ -6,6 +6,7 @@ import com.lawfirm.entity.CaseDocument;
 import com.lawfirm.entity.DocumentFolder;
 import com.lawfirm.repository.CaseDocumentRepository;
 import com.lawfirm.repository.CaseRepository;
+import com.lawfirm.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -21,6 +22,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -34,6 +36,7 @@ public class CaseDocumentService {
     private final CaseDocumentRepository caseDocumentRepository;
     private final CaseRepository caseRepository;
     private final CaseFileLibraryService caseFileLibraryService;
+    private final UserRepository userRepository;
 
     /**
      * 上传案件文档
@@ -45,22 +48,20 @@ public class CaseDocumentService {
         Case caseEntity = caseRepository.findById(caseId)
                 .orElseThrow(() -> new IllegalArgumentException("案件不存在"));
 
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("上传文件不能为空");
+        }
+
         if ("PENDING_APPROVAL".equals(caseEntity.getStatus())) {
             throw new IllegalArgumentException("案件尚未审批通过，不能上传案件文件");
         }
 
         // 创建目录
         Path caseFolder = caseFileLibraryService.ensureCaseFolder(caseEntity);
-        Path uploadPath = caseFolder;
-        Long folderId = null;
-        if (folderPath != null && !folderPath.trim().isEmpty()) {
-            String sanitizedFolderPath = caseFileLibraryService.sanitizeFolderPath(folderPath);
-            uploadPath = caseFolder.resolve(sanitizedFolderPath);
-            folderPath = sanitizedFolderPath;
-            folderId = caseFileLibraryService.findCaseFolder(caseId, folderPath)
-                    .map(DocumentFolder::getId)
-                    .orElse(null);
-        }
+        TargetFolder targetFolder = resolveTargetFolder(caseId, caseFolder, folderPath);
+        Path uploadPath = targetFolder.path;
+        folderPath = targetFolder.folderPath;
+        Long folderId = targetFolder.folderId;
         Files.createDirectories(uploadPath);
 
         // 保存文件
@@ -68,7 +69,8 @@ public class CaseDocumentService {
         String safeOriginalFilename = sanitizeFileName(originalFilename);
         int versionNo = resolveNextVersion(caseId, folderPath, safeOriginalFilename);
         String newFilename = System.currentTimeMillis() + "_v" + versionNo + "_" + safeOriginalFilename;
-        Path filePath = uploadPath.resolve(newFilename);
+        Path filePath = uploadPath.resolve(newFilename).normalize();
+        assertInsideCaseFolder(caseFolder, filePath);
         Files.copy(file.getInputStream(), filePath);
 
         // 创建文档记录
@@ -171,9 +173,17 @@ public class CaseDocumentService {
         CaseDocument document = caseDocumentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("文档不存在"));
 
-        document.setDocumentName(dto.getDocumentName());
-        document.setDocumentType(dto.getDocumentType());
-        document.setFolderPath(dto.getFolderPath());
+        String requestedFolderPath = normalizeFolderPath(dto.getFolderPath());
+        if (!Objects.equals(normalizeFolderPath(document.getFolderPath()), requestedFolderPath)) {
+            document = moveDocumentEntity(document, requestedFolderPath);
+        }
+
+        if (dto.getDocumentName() != null && !dto.getDocumentName().trim().isEmpty()) {
+            document.setDocumentName(sanitizeFileName(dto.getDocumentName()));
+        }
+        if (dto.getDocumentType() != null && !dto.getDocumentType().trim().isEmpty()) {
+            document.setDocumentType(dto.getDocumentType());
+        }
         document.setTags(dto.getTags());
         if (dto.getKnowledgeEligible() != null) document.setKnowledgeEligible(dto.getKnowledgeEligible());
         if (dto.getIndexStatus() != null) document.setIndexStatus(dto.getIndexStatus());
@@ -225,11 +235,81 @@ public class CaseDocumentService {
         CaseDocument document = caseDocumentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("文档不存在"));
 
-        document.setFolderPath(newFolderPath);
+        document = moveDocumentEntity(document, normalizeFolderPath(newFolderPath));
         CaseDocument updated = caseDocumentRepository.save(document);
 
         log.info("移动案件文档成功: id={}, newFolder={}", id, newFolderPath);
         return convertToDTO(updated);
+    }
+
+    private CaseDocument moveDocumentEntity(CaseDocument document, String newFolderPath) {
+        if (Boolean.TRUE.equals(document.getDeleted())) {
+            throw new IllegalArgumentException("文档已删除，不能移动");
+        }
+
+        Case caseEntity = caseRepository.findById(document.getCaseId())
+                .orElseThrow(() -> new IllegalArgumentException("案件不存在"));
+        Path caseFolder = caseFileLibraryService.ensureCaseFolder(caseEntity);
+        TargetFolder targetFolder = resolveTargetFolder(document.getCaseId(), caseFolder, newFolderPath);
+
+        String oldFolderPath = normalizeFolderPath(document.getFolderPath());
+        if (Objects.equals(oldFolderPath, targetFolder.folderPath)) {
+            document.setFolderId(targetFolder.folderId);
+            document.setFolderPath(targetFolder.folderPath);
+            return document;
+        }
+
+        if (document.getFilePath() != null && !document.getFilePath().trim().isEmpty()) {
+            try {
+                Path sourcePath = Paths.get(document.getFilePath()).normalize();
+                assertInsideCaseFolder(caseFolder, sourcePath);
+                if (Files.exists(sourcePath)) {
+                    Files.createDirectories(targetFolder.path);
+                    Path targetPath = targetFolder.path.resolve(sourcePath.getFileName()).normalize();
+                    assertInsideCaseFolder(caseFolder, targetPath);
+                    if (Files.exists(targetPath)) {
+                        targetPath = targetFolder.path.resolve(System.currentTimeMillis() + "_" + sourcePath.getFileName()).normalize();
+                        assertInsideCaseFolder(caseFolder, targetPath);
+                    }
+                    Files.move(sourcePath, targetPath);
+                    document.setFilePath(targetPath.toString());
+                }
+            } catch (IOException e) {
+                throw new IllegalArgumentException("移动文档文件失败: " + e.getMessage(), e);
+            }
+        }
+
+        document.setFolderId(targetFolder.folderId);
+        document.setFolderPath(targetFolder.folderPath);
+        return document;
+    }
+
+    private TargetFolder resolveTargetFolder(Long caseId, Path caseFolder, String folderPath) {
+        String normalizedFolderPath = normalizeFolderPath(folderPath);
+        if (normalizedFolderPath == null) {
+            return new TargetFolder(null, null, caseFolder.normalize());
+        }
+
+        DocumentFolder folder = caseFileLibraryService.findCaseFolder(caseId, normalizedFolderPath)
+                .orElseThrow(() -> new IllegalArgumentException("案件目录不存在，请从标准目录中选择"));
+        Path targetPath = caseFolder.resolve(folder.getFolderPath()).normalize();
+        assertInsideCaseFolder(caseFolder, targetPath);
+        return new TargetFolder(folder.getId(), folder.getFolderPath(), targetPath);
+    }
+
+    private String normalizeFolderPath(String folderPath) {
+        if (folderPath == null || folderPath.trim().isEmpty()) {
+            return null;
+        }
+        return caseFileLibraryService.sanitizeFolderPath(folderPath);
+    }
+
+    private void assertInsideCaseFolder(Path caseFolder, Path targetPath) {
+        Path normalizedRoot = caseFolder.toAbsolutePath().normalize();
+        Path normalizedTarget = targetPath.toAbsolutePath().normalize();
+        if (!normalizedTarget.startsWith(normalizedRoot)) {
+            throw new IllegalArgumentException("文件路径超出案件目录范围");
+        }
     }
 
     /**
@@ -249,6 +329,7 @@ public class CaseDocumentService {
         dto.setFolderPath(document.getFolderPath());
         dto.setVersionNo(document.getVersionNo());
         dto.setUploadBy(document.getUploadBy());
+        dto.setUploadByName(resolveUploadByName(document.getUploadBy()));
         dto.setTags(document.getTags());
         dto.setKnowledgeEligible(document.getKnowledgeEligible());
         dto.setIndexStatus(document.getIndexStatus());
@@ -256,5 +337,28 @@ public class CaseDocumentService {
         dto.setCreatedAt(document.getCreatedAt());
         dto.setUpdatedAt(document.getUpdatedAt());
         return dto;
+    }
+
+    private String resolveUploadByName(Long uploadBy) {
+        if (uploadBy == null) {
+            return "未知";
+        }
+        return userRepository.findById(uploadBy)
+                .map(user -> user.getRealName() != null && !user.getRealName().trim().isEmpty()
+                        ? user.getRealName()
+                        : user.getUsername())
+                .orElse("未知");
+    }
+
+    private static class TargetFolder {
+        private final Long folderId;
+        private final String folderPath;
+        private final Path path;
+
+        private TargetFolder(Long folderId, String folderPath, Path path) {
+            this.folderId = folderId;
+            this.folderPath = folderPath;
+            this.path = path;
+        }
     }
 }

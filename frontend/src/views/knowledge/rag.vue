@@ -1,11 +1,26 @@
 <template>
   <div class="rag-search-page">
-    <PageHeader title="AI知识问答" />
+    <PageHeader title="AI知识库" />
+
+    <el-alert
+      class="scope-alert"
+      title="当前阶段仅用于公开法规、律所内部制度、公共模板和办案指引检索，请勿输入真实案件材料、客户隐私或未脱敏信息。"
+      type="warning"
+      show-icon
+      :closable="false"
+    />
+
+    <div class="scope-grid">
+      <section v-for="item in knowledgeScopes" :key="item.title" class="scope-item">
+        <strong>{{ item.title }}</strong>
+        <span>{{ item.description }}</span>
+      </section>
+    </div>
 
     <el-card class="search-card">
       <el-input
         v-model="question"
-        placeholder="请输入法律问题，例如：劳动仲裁申请流程、合同违约责任..."
+        placeholder="请输入法规、制度、模板或办案指引问题，例如：立案审批流程、利冲规则、合同违约责任..."
         size="large"
         @keyup.enter="handleSearch"
       >
@@ -17,6 +32,7 @@
       </el-input>
 
       <div class="example-questions">
+        <span class="example-label">常用问题</span>
         <el-tag
           v-for="q in exampleQuestions"
           :key="q"
@@ -33,7 +49,7 @@
         <span>AI回答</span>
       </template>
 
-      <div class="answer-content" v-html="formattedAnswer"></div>
+      <div class="answer-content" v-text="formattedAnswer"></div>
 
       <el-divider v-if="sources && sources.length > 0" />
 
@@ -48,6 +64,8 @@
           >
             <div class="source-detail">
               <p><strong>分类：</strong>{{ source.category }}</p>
+              <p><strong>来源：</strong>{{ formatKnowledgeSource(source.knowledgeSource) }}</p>
+              <p><strong>索引：</strong>{{ formatIndexStatus(source.indexStatus) }}</p>
               <p><strong>摘要：</strong>{{ source.summary }}</p>
               <el-button
                 size="small"
@@ -88,26 +106,42 @@ const documentCount = ref(0)
 const loading = ref(false)
 const activeSources = ref(['0', '1', '2'])
 
+const knowledgeScopes = [
+  {
+    title: '法律法规',
+    description: '用于检索公开法律、法规、司法解释和常用规则。'
+  },
+  {
+    title: '律所制度',
+    description: '用于沉淀立案、利冲、归档、财务和审批规则。'
+  },
+  {
+    title: '公共模板',
+    description: '用于查询可复用合同、函件、报告和申请材料模板。'
+  },
+  {
+    title: '参考检索',
+    description: '参考 Alpha 类法律检索思路，先做制度和知识定位。'
+  }
+]
+
 const exampleQuestions = [
+  '立案审批流程',
+  '利益冲突审查规则',
+  '案件归档目录要求',
+  '发票申请需要哪些材料',
   '劳动仲裁申请流程',
   '合同违约责任认定',
-  '刑事案件辩护要点',
-  '如何收集证据',
-  '诉讼时效计算',
-  '离婚案件财产分割',
-  '交通事故赔偿标准',
-  '借款合同利息计算'
+  '诉讼时效计算'
 ]
 
 const formattedAnswer = computed(() => {
   if (!answer.value) return ''
 
-  // 简单的Markdown格式化
+  // 保持纯文本渲染，避免知识库内容被作为HTML执行。
   return answer.value
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br>')
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/- (.*?)(<br>|$)/g, '• $1$2')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/^- /gm, '• ')
 })
 
 const handleSearch = async () => {
@@ -123,67 +157,50 @@ const handleSearch = async () => {
   documentCount.value = 0
 
   try {
-    // 步骤1: 搜索相关文档
-    const searchResponse = await searchKnowledge(question.value, { size: 5 })
-    const relevantDocs = searchResponse.data?.records || searchResponse.data || []
+    const aiResponse = await askAI(question.value, { topK: 5 })
+    const result = aiResponse.data || {}
+    answer.value = result.answer || '暂未生成回答。'
+    hasAnswer.value = Boolean(result.hasAnswer)
+    documentCount.value = result.documentCount || result.sources?.length || 0
+    sources.value = result.sources || []
 
-    if (relevantDocs.length === 0) {
-      answer.value = `抱歉，知识库中没有找到与"${question.value}"相关的内容。
+  } catch (error) {
+    console.warn('RAG接口不可用，降级为普通知识库检索', error)
+    await fallbackKeywordSearch()
+  } finally {
+    loading.value = false
+  }
+}
+
+const fallbackKeywordSearch = async () => {
+  const searchResponse = await searchKnowledge(question.value, { size: 5 })
+  const relevantDocs = searchResponse.data?.content || searchResponse.data?.records || searchResponse.data || []
+
+  if (relevantDocs.length === 0) {
+    answer.value = `抱歉，知识库中没有找到与"${question.value}"相关的内容。
 
 建议：
 1. 尝试使用不同的关键词
 2. 检查输入是否有误
 3. 联系专业律师咨询`
-      hasAnswer.value = false
-      loading.value = false
-      return
-    }
-
-    // 步骤2: 尝试调用AI生成答案
-    try {
-      const aiResponse = await askAI(question.value, {
-        context: relevantDocs.map(doc => ({
-          id: doc.id,
-          title: doc.title,
-          content: doc.content || doc.summary
-        }))
-      })
-
-      answer.value = aiResponse.data?.answer || generateMockAnswer(relevantDocs)
-      hasAnswer.value = true
-      documentCount.value = relevantDocs.length
-
-      sources.value = relevantDocs.slice(0, 3).map(doc => ({
-        id: doc.id,
-        title: doc.title,
-        category: doc.category,
-        summary: doc.summary || (doc.content?.substring(0, 100) + '...')
-      }))
-
-    } catch (aiError) {
-      // AI接口不可用，使用增强的模拟答案
-      console.warn('AI接口不可用，使用增强答案', aiError)
-      answer.value = generateMockAnswer(relevantDocs)
-      hasAnswer.value = true
-      documentCount.value = relevantDocs.length
-
-      sources.value = relevantDocs.slice(0, 3).map(doc => ({
-        id: doc.id,
-        title: doc.title,
-        category: doc.category,
-        summary: doc.summary || (doc.content?.substring(0, 100) + '...')
-      }))
-    }
-
-  } catch (error) {
-    console.error('搜索失败', error)
-    ElMessage.error('搜索失败，请稍后再试')
-    answer.value = '系统暂时无法回答您的问题，请稍后再试。'
     hasAnswer.value = false
-  } finally {
-    loading.value = false
+    return
   }
+
+  answer.value = generateMockAnswer(relevantDocs)
+  hasAnswer.value = true
+  documentCount.value = relevantDocs.length
+  sources.value = relevantDocs.slice(0, 3).map(normalizeSource)
 }
+
+const normalizeSource = (doc) => ({
+  id: doc.id,
+  title: doc.title,
+  category: doc.category,
+  knowledgeSource: doc.knowledgeSource,
+  indexStatus: doc.indexStatus,
+  summary: doc.summary || (doc.content ? `${doc.content.substring(0, 100)}...` : '')
+})
 
 // 生成增强的模拟答案（当AI不可用时）
 const generateMockAnswer = (docs) => {
@@ -210,7 +227,7 @@ const generateMockAnswer = (docs) => {
     })
   }
 
-  answer += `\n💡 **提示**：`
+  answer += `\n提示：`
   answer += `\n- 以上结果来自知识库文档检索`
   answer += `\n- 建议查看完整文档获取详细信息`
   answer += `\n- 如需更准确的解答，请咨询专业律师`
@@ -222,6 +239,29 @@ const generateMockAnswer = (docs) => {
 const viewDocument = (id) => {
   window.open(`#/knowledge/${id}`, '_blank')
 }
+
+const formatKnowledgeSource = (source) => {
+  const map = {
+    LAW_REGULATION: '法律法规',
+    FIRM_POLICY: '律所制度',
+    PUBLIC_TEMPLATE: '公共模板',
+    REFERENCE_MATERIAL: '参考资料',
+    FIRM_KNOWLEDGE: '全所知识',
+    CASE_DEPOSIT: '案件沉淀'
+  }
+  return map[source] || '全所知识'
+}
+
+const formatIndexStatus = (status) => {
+  const map = {
+    PENDING: '待索引',
+    INDEXED: '已索引',
+    FAILED: '索引失败',
+    FORBIDDEN: '禁止索引',
+    NOT_INDEXED: '未索引'
+  }
+  return map[status] || '未索引'
+}
 </script>
 
 <style scoped lang="scss">
@@ -229,11 +269,52 @@ const viewDocument = (id) => {
   max-width: 900px;
   margin: 0 auto;
 
+  .scope-alert {
+    margin-bottom: 14px;
+  }
+
+  .scope-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .scope-item {
+    min-height: 78px;
+    padding: 12px;
+    border: 1px solid #e8edf3;
+    border-radius: 6px;
+    background: #fff;
+
+    strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+      color: #1f2937;
+    }
+
+    span {
+      font-size: 12px;
+      line-height: 1.5;
+      color: #6b7280;
+    }
+  }
+
   .search-card {
     margin-bottom: 20px;
 
     .example-questions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
       margin-top: 15px;
+
+      .example-label {
+        font-size: 13px;
+        color: #6b7280;
+      }
     }
   }
 
@@ -265,6 +346,18 @@ const viewDocument = (id) => {
       margin-top: 20px;
       display: flex;
       gap: 10px;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .scope-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 560px) {
+    .scope-grid {
+      grid-template-columns: 1fr;
     }
   }
 }

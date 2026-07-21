@@ -10,6 +10,15 @@
           <el-tag :type="getTypeTagType(article.articleType)">
             {{ formatType(article.articleType) }}
           </el-tag>
+          <el-tag effect="plain">
+            {{ formatKnowledgeSource(article.knowledgeSource) }}
+          </el-tag>
+          <el-tag :type="getIndexStatusType(article.indexStatus)">
+            {{ formatIndexStatus(article.indexStatus) }}
+          </el-tag>
+          <el-tag v-if="article.knowledgeEligible === false" type="info">
+            不进入AI知识库
+          </el-tag>
           <span class="category" v-if="article.category">
             <el-icon><FolderOpened /></el-icon>
             {{ article.category }}
@@ -88,6 +97,7 @@ import {
 } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import request from '@/utils/request'
+import { useUserStore } from '@/stores'
 
 const router = useRouter()
 const route = useRoute()
@@ -97,7 +107,7 @@ const article = ref(null)
 
 // 权限检查：只有创建者或管理员可以编辑
 const canEdit = computed(() => {
-  const userStore = useUserStore ? useUserStore() : null
+  const userStore = useUserStore()
   if (!userStore || !userStore.user) return false
   if (userStore.user.role === 'ADMIN') return true
   if (!article.value) return false
@@ -167,6 +177,39 @@ const getTypeTagType = (type) => {
     'EXPERIENCE': 'info'
   }
   return map[type] || ''
+}
+
+const formatKnowledgeSource = (source) => {
+  const map = {
+    LAW_REGULATION: '法律法规',
+    FIRM_POLICY: '律所制度',
+    PUBLIC_TEMPLATE: '公共模板',
+    REFERENCE_MATERIAL: '参考资料',
+    FIRM_KNOWLEDGE: '全所知识',
+    CASE_DEPOSIT: '案件沉淀'
+  }
+  return map[source] || '全所知识'
+}
+
+const formatIndexStatus = (status) => {
+  const map = {
+    PENDING: '待索引',
+    INDEXED: '已索引',
+    FAILED: '索引失败',
+    FORBIDDEN: '禁止索引',
+    NOT_INDEXED: '未索引'
+  }
+  return map[status] || '未索引'
+}
+
+const getIndexStatusType = (status) => {
+  const map = {
+    INDEXED: 'success',
+    PENDING: 'warning',
+    FAILED: 'danger',
+    FORBIDDEN: 'info'
+  }
+  return map[status] || 'info'
 }
 
 // 格式化日期

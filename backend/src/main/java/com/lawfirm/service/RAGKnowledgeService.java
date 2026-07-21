@@ -82,6 +82,8 @@ public class RAGKnowledgeService {
                     sourceInfo.put("id", doc.getId());
                     sourceInfo.put("title", doc.getTitle());
                     sourceInfo.put("category", doc.getCategory());
+                    sourceInfo.put("knowledgeSource", doc.getKnowledgeSource());
+                    sourceInfo.put("indexStatus", doc.getIndexStatus());
                     sourceInfo.put("relevanceScore", String.format("%.2f", scoredDoc.score));
 
                     String summary = doc.getSummary();
@@ -148,7 +150,7 @@ public class RAGKnowledgeService {
 
                     // 获取完整文档
                     KnowledgeArticle doc = knowledgeArticleRepository.findById(articleId).orElse(null);
-                    if (doc != null) {
+                    if (isRagIndexable(doc)) {
                         scoredDocs.add(new ScoredDocument(doc, result.score));
                     }
                 } catch (Exception e) {
@@ -174,7 +176,9 @@ public class RAGKnowledgeService {
      */
     private List<ScoredDocument> fallbackToKeywordSearch(String question) {
         try {
-            List<KnowledgeArticle> allDocs = knowledgeArticleRepository.findAll();
+            List<KnowledgeArticle> allDocs = knowledgeArticleRepository.findAll().stream()
+                    .filter(this::isRagIndexable)
+                    .collect(Collectors.toList());
             List<ScoredDocument> scoredDocs = new ArrayList<>();
 
             String lowerQuestion = question.toLowerCase();
@@ -278,7 +282,7 @@ public class RAGKnowledgeService {
      */
     private String buildPrompt(String question, String context) {
         return String.format(
-            "你是一个专业的法律助手。请根据以下知识库文档回答用户的问题。\n\n" +
+            "你是至高律所内部的AI知识库助手。当前阶段只允许使用公开法律法规、律所内部制度、公共模板和经确认的参考资料回答。\n\n" +
             "【知识库文档】\n%s\n\n" +
             "【用户问题】\n%s\n\n" +
             "【回答要求】\n" +
@@ -286,12 +290,28 @@ public class RAGKnowledgeService {
             "2. 如果文档中没有答案，明确告知用户\n" +
             "3. 回答要准确、专业、通俗易懂\n" +
             "4. 必要时引用文档中的具体内容\n" +
-            "5. 使用清晰的格式，分段和列表\n" +
-            "6. 如果涉及法律条文，请引用完整\n" +
-            "7. 如果涉及案例，请说明相关法律依据\n\n" +
+            "5. 不处理、推断或要求用户输入真实案件材料、客户隐私、证据原件或未脱敏信息\n" +
+            "6. 使用清晰的格式，分段和列表\n" +
+            "7. 如果涉及法律条文，请引用完整；如无法从知识库确认，请提示人工核对\n\n" +
             "请用中文回答：",
             context, question
         );
+    }
+
+    private boolean isRagIndexable(KnowledgeArticle article) {
+        if (article == null || Boolean.TRUE.equals(article.getDeleted())) {
+            return false;
+        }
+        if (!Boolean.TRUE.equals(article.getKnowledgeEligible())) {
+            return false;
+        }
+        String source = article.getKnowledgeSource();
+        return source == null
+                || "FIRM_KNOWLEDGE".equals(source)
+                || "LAW_REGULATION".equals(source)
+                || "FIRM_POLICY".equals(source)
+                || "PUBLIC_TEMPLATE".equals(source)
+                || "REFERENCE_MATERIAL".equals(source);
     }
 
     /**

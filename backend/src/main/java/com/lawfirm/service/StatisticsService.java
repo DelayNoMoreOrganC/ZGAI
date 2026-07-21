@@ -81,13 +81,13 @@ public class StatisticsService {
 
         // 进行中案件
         long activeCases = allCases.stream()
-                .filter(c -> "active".equals(c.getStatus()))
+                .filter(c -> isStatus(c, "ACTIVE"))
                 .count();
         result.put("activeCases", activeCases);
 
         // 已结案
         long closedCases = allCases.stream()
-                .filter(c -> "closed".equals(c.getStatus()))
+                .filter(c -> isStatus(c, "CLOSED"))
                 .count();
         result.put("closedCases", closedCases);
 
@@ -161,7 +161,7 @@ public class StatisticsService {
 
                 // 查询该月结案数
                 long closedCount = monthCases.stream()
-                        .filter(c -> "closed".equals(c.getStatus()))
+                        .filter(c -> isStatus(c, "CLOSED"))
                         .count();
                 closedCasesData.add((int) closedCount);
             }
@@ -185,7 +185,7 @@ public class StatisticsService {
                 newCases.add(quarterCases.size());
 
                 long closedCount = quarterCases.stream()
-                        .filter(c -> "closed".equals(c.getStatus()))
+                        .filter(c -> isStatus(c, "CLOSED"))
                         .count();
                 closedCasesData.add((int) closedCount);
             }
@@ -207,7 +207,7 @@ public class StatisticsService {
                 newCases.add(yearCases.size());
 
                 long closedCount = yearCases.stream()
-                        .filter(c -> "closed".equals(c.getStatus()))
+                        .filter(c -> isStatus(c, "CLOSED"))
                         .count();
                 closedCasesData.add((int) closedCount);
             }
@@ -342,7 +342,7 @@ public class StatisticsService {
                                 .collect(Collectors.toList());
                         long total = lawyerCases.size();
                         long closed = lawyerCases.stream()
-                                .filter(c -> "closed".equals(c.getStatus()))
+                                .filter(c -> isStatus(c, "CLOSED"))
                                 .count();
                         double rate = total > 0 ? (double) closed / total * 100 : 0;
                         item.put("value", String.format("%.1f%%", rate));
@@ -378,7 +378,7 @@ public class StatisticsService {
 
         // 统计结案案件的胜诉情况（需要从案件结果的字段统计）
         long closedCount = cases.stream()
-                .filter(c -> "closed".equals(c.getStatus()))
+                .filter(c -> isStatus(c, "CLOSED"))
                 .count();
 
         // 由于缺少案件结果字段，这里使用模拟数据
@@ -767,5 +767,11 @@ public class StatisticsService {
             log.error("PDF导出失败", e);
             throw new RuntimeException("PDF导出失败: " + e.getMessage());
         }
+    }
+
+    private boolean isStatus(Case caseEntity, String expectedStatus) {
+        return caseEntity != null
+                && caseEntity.getStatus() != null
+                && expectedStatus.equalsIgnoreCase(caseEntity.getStatus());
     }
 }

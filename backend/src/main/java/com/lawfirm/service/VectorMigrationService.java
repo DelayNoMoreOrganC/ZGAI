@@ -134,6 +134,7 @@ public class VectorMigrationService {
                 payload.addProperty("articleId", article.getId());
                 payload.addProperty("title", article.getTitle());
                 payload.addProperty("category", article.getCategory());
+                payload.addProperty("knowledgeSource", article.getKnowledgeSource());
                 payload.addProperty("createdAt", article.getCreatedAt().toString());
 
                 points.add(new QdrantVectorService.VectorPoint(
@@ -187,6 +188,7 @@ public class VectorMigrationService {
             payload.addProperty("articleId", article.getId());
             payload.addProperty("title", article.getTitle());
             payload.addProperty("category", article.getCategory());
+            payload.addProperty("knowledgeSource", article.getKnowledgeSource());
             payload.addProperty("createdAt", article.getCreatedAt().toString());
 
             // 插入Qdrant
@@ -197,7 +199,7 @@ public class VectorMigrationService {
             log.info("成功为新文章生成向量: id={}, title={}", article.getId(), article.getTitle());
 
         } catch (Exception e) {
-            article.setIndexStatus("INDEX_FAILED");
+            article.setIndexStatus("FAILED");
             knowledgeArticleRepository.save(article);
             log.error("为新文章生成向量失败: id={}", article.getId(), e);
             // 不抛出异常，避免影响文章创建流程
@@ -260,6 +262,9 @@ public class VectorMigrationService {
         String source = article.getKnowledgeSource();
         return source == null
                 || "FIRM_KNOWLEDGE".equals(source)
-                || "PUBLIC_TEMPLATE".equals(source);
+                || "LAW_REGULATION".equals(source)
+                || "FIRM_POLICY".equals(source)
+                || "PUBLIC_TEMPLATE".equals(source)
+                || "REFERENCE_MATERIAL".equals(source);
     }
 }

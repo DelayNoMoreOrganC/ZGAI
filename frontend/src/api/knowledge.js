@@ -15,7 +15,7 @@ export function searchKnowledge(keyword, params = {}) {
     url: '/knowledge/search',
     method: 'get',
     params: {
-      q: encodeURIComponent(keyword),
+      keyword,
       ...params
     }
   })
@@ -66,7 +66,7 @@ export function getKnowledgeCategories() {
 // AI知识问答 (RAG)
 export function askAI(question, options = {}) {
   return request({
-    url: '/ai/rag',
+    url: '/knowledge/rag/search',
     method: 'post',
     data: {
       question,

@@ -124,9 +124,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Files, FolderOpened, Coin, Document, Paperclip } from '@element-plus/icons-vue'
+import { Files, FolderOpened, Coin, Document, Paperclip, ScaleToOriginal } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
-import { getAllDocuments } from '@/api/document'
+import { downloadDocument, getAllDocuments } from '@/api/document'
 import { getCaseList } from '@/api/case'
 import request from '@/utils/request'
 
@@ -135,7 +135,7 @@ const emojiToIcon = {
   '起诉状': Document,
   '证据': Paperclip,
   '答辩状': Document,
-  '判决书': Scale,
+  '判决书': ScaleToOriginal,
   '调解书': Document
 }
 
@@ -209,8 +209,23 @@ const goToCase = (caseId) => {
 }
 
 // 下载文档
-const handleDownload = (row) => {
-  ElMessage.info('下载功能需要后端提供文件下载接口')
+const handleDownload = async (row) => {
+  try {
+    const response = await downloadDocument(row.id)
+    const blob = response.data
+    const filename = parseDownloadFilename(response.headers?.['content-disposition']) || row.documentName || row.originalFileName || '案件文件'
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('下载文档失败:', error)
+    ElMessage.error('下载文档失败')
+  }
 }
 
 // 预览文档
@@ -256,6 +271,13 @@ const formatDate = (dateStr) => {
   if (!dateStr) return ''
   const date = new Date(dateStr)
   return date.toLocaleString('zh-CN')
+}
+
+const parseDownloadFilename = (disposition = '') => {
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/)
+  if (utf8Match) return decodeURIComponent(utf8Match[1])
+  const normalMatch = disposition.match(/filename="?([^"]+)"?/)
+  return normalMatch ? normalMatch[1] : ''
 }
 
 // 分页
