@@ -244,6 +244,22 @@ const menuRoutes = computed(() => {
     {
       path: '/approval',
       meta: { title: '审批管理', icon: '✅' }
+    },
+    {
+      path: '/knowledge',
+      meta: { title: 'AI知识库', icon: '📚' },
+      children: [
+        { path: '/knowledge/rag', meta: { title: 'AI知识问答' } },
+        { path: '/knowledge/list', meta: { title: '法规/制度库' } }
+      ]
+    },
+    {
+      path: '/tools',
+      meta: { title: '智能工具', icon: '🔧' },
+      children: [
+        { path: '/legacy-materials', meta: { title: '旧资料检索' } },
+        { path: '/tools', meta: { title: '省时宝/AC精算' } }
+      ]
     }
   ]
   return routes

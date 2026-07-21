@@ -268,6 +268,12 @@ const routes = [
         component: () => import('@/views/case-search/index.vue'),
         meta: { title: '类案检索', icon: '🔍' }
       },
+      {
+        path: 'legacy-materials',
+        name: 'LegacyMaterials',
+        component: () => import('@/views/legacy-materials/index.vue'),
+        meta: { title: '旧系统资料检索' }
+      },
       // 工具集
       {
         path: 'tools',

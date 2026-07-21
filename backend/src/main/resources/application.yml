@@ -143,6 +143,11 @@ qdrant:
 ac-calc:
   url: http://localhost:5100
 
+legacy:
+  case-archive:
+    root-path: ${LEGACY_CASE_ARCHIVE_ROOT_PATH:}
+    max-scan-results: ${LEGACY_CASE_ARCHIVE_MAX_SCAN_RESULTS:30}
+
 logging:
   level:
     root: INFO

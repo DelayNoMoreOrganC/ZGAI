@@ -56,6 +56,9 @@
               {{ ssbOnline ? '✅ 省时宝服务正常' : '❌ 省时宝服务未连接' }}
             </el-tag>
             <el-tag type="info" size="small">{{ ssbTemplateCount }} 个模板项目</el-tag>
+            <el-button size="small" type="primary" plain @click="openSsbApp">
+              打开独立省时宝
+            </el-button>
           </div>
 
           <!-- 模板选择区 -->
@@ -309,6 +312,11 @@ const templateFields = ref([])
 const fieldsLoading = ref(false)
 const ssbGenerating = ref(false)
 const ssbForm = reactive({})
+const ssbAppUrl = import.meta.env.VITE_SSB_APP_URL || 'http://localhost:3000'
+
+const openSsbApp = () => {
+  window.open(ssbAppUrl, '_blank')
+}
 
 // 检查 SSB 服务状态
 const checkSsbHealth = async () => {

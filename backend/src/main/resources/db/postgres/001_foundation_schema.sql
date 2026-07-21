@@ -55,3 +55,18 @@ ALTER TABLE case_document ADD COLUMN IF NOT EXISTS index_status VARCHAR(30) DEFA
 ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS knowledge_source VARCHAR(30) DEFAULT 'FIRM_KNOWLEDGE';
 ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS knowledge_eligible BOOLEAN DEFAULT TRUE;
 ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS index_status VARCHAR(30) DEFAULT 'PENDING';
+
+CREATE TABLE IF NOT EXISTS legacy_material_search_record (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    keyword VARCHAR(200),
+    query_params VARCHAR(2000),
+    searched_by BIGINT,
+    result_count INTEGER DEFAULT 0,
+    archive_path_configured BOOLEAN DEFAULT FALSE
+);
+
+CREATE INDEX IF NOT EXISTS idx_legacy_search_user ON legacy_material_search_record(searched_by);
+CREATE INDEX IF NOT EXISTS idx_legacy_search_keyword ON legacy_material_search_record(keyword);
+CREATE INDEX IF NOT EXISTS idx_legacy_search_created ON legacy_material_search_record(created_at);
