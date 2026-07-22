@@ -5,6 +5,7 @@ import com.lawfirm.entity.User;
 import com.lawfirm.repository.AuditLogRepository;
 import com.lawfirm.repository.UserRepository;
 import com.lawfirm.util.JwtUtil;
+import com.lawfirm.util.Result;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -80,6 +81,11 @@ public class AuditLogAspect {
         try {
             // 执行方法
             result = joinPoint.proceed();
+
+            if (result instanceof Result && !((Result<?>) result).isSuccess()) {
+                success = false;
+                errorMsg = "业务操作失败";
+            }
 
             // 记录结果
             if (auditAnnotation.logResult() && result != null) {

@@ -9,6 +9,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import javax.validation.Valid;
 
@@ -22,6 +24,7 @@ import java.util.List;
 @RestController
 @RequestMapping("calendar")
 @RequiredArgsConstructor
+@PreAuthorize("isAuthenticated()")
 public class CalendarController {
 
     private final CalendarService calendarService;
@@ -34,6 +37,7 @@ public class CalendarController {
      */
     @PostMapping
     public Result<CalendarDTO> createCalendar(@Valid @RequestBody CalendarDTO dto) {
+        assertCaseVisibleIfPresent(dto.getCaseId());
         try {
             Long userId = securityUtils.getCurrentUserId();
             CalendarDTO result = calendarService.createCalendar(dto, userId);
@@ -53,6 +57,8 @@ public class CalendarController {
      */
     @PutMapping("/{id}")
     public Result<CalendarDTO> updateCalendar(@PathVariable Long id, @Valid @RequestBody CalendarDTO dto) {
+        assertCalendarEditable(id);
+        assertCaseVisibleIfPresent(dto.getCaseId());
         try {
             CalendarDTO result = calendarService.updateCalendar(id, dto);
             return Result.success(result);
@@ -71,6 +77,7 @@ public class CalendarController {
      */
     @DeleteMapping("/{id}")
     public Result<Void> deleteCalendar(@PathVariable Long id) {
+        assertCalendarEditable(id);
         try {
             calendarService.deleteCalendar(id);
             return Result.success();
@@ -111,6 +118,7 @@ public class CalendarController {
      */
     @GetMapping("/{id}")
     public Result<CalendarDTO> getCalendar(@PathVariable Long id) {
+        assertCalendarReadable(id);
         try {
             CalendarDTO result = calendarService.getCalendarById(id);
             return Result.success(result);
@@ -129,6 +137,7 @@ public class CalendarController {
      */
     @GetMapping("/user/{userId}")
     public Result<List<CalendarDTO>> getCalendarsByUser(@PathVariable Long userId) {
+        assertUserVisible(userId);
         try {
             List<CalendarDTO> result = calendarService.getCalendarsByUser(userId);
             return Result.success(result);
@@ -187,12 +196,52 @@ public class CalendarController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam Long userId) {
+        assertUserVisible(userId);
         try {
             com.lawfirm.util.PageResult<CalendarDTO> result = calendarService.getCalendars(page, size, userId);
             return Result.success(result);
         } catch (Exception e) {
             log.error("分页查询日程异常", e);
             return Result.error("分页查询日程失败");
+        }
+    }
+
+    private void assertUserVisible(Long requestedUserId) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        if (requestedUserId == null || currentUserId.equals(requestedUserId) || securityUtils.isAdmin()) {
+            return;
+        }
+        throw new AccessDeniedException("无权访问其他用户的日程");
+    }
+
+    private void assertCalendarReadable(Long calendarId) {
+        CalendarDTO calendar = calendarService.getCalendarById(calendarId);
+        Long currentUserId = securityUtils.getCurrentUserId();
+        if (currentUserId.equals(calendar.getCreatedBy()) || securityUtils.isAdmin()) {
+            return;
+        }
+        if (calendar.getParticipantIds() != null
+                && calendar.getParticipantIds().contains(String.valueOf(currentUserId))) {
+            return;
+        }
+        if (calendar.getCaseId() != null && caseService.canAccessCase(calendar.getCaseId(), currentUserId)) {
+            return;
+        }
+        throw new AccessDeniedException("无权查看该日程");
+    }
+
+    private void assertCalendarEditable(Long calendarId) {
+        CalendarDTO calendar = calendarService.getCalendarById(calendarId);
+        Long currentUserId = securityUtils.getCurrentUserId();
+        if (currentUserId.equals(calendar.getCreatedBy()) || securityUtils.isAdmin()) {
+            return;
+        }
+        throw new AccessDeniedException("无权修改该日程");
+    }
+
+    private void assertCaseVisibleIfPresent(Long caseId) {
+        if (caseId != null) {
+            assertCaseVisible(caseId);
         }
     }
 }

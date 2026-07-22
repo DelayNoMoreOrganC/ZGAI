@@ -42,7 +42,7 @@
             placeholder="搜索文件名、类型、标签"
             :prefix-icon="Search"
           />
-          <el-button type="primary" @click="openUploadDialog">
+          <el-button type="primary" :disabled="documentLocked" @click="openUploadDialog">
             <el-icon><Upload /></el-icon>
             上传文件
           </el-button>
@@ -52,15 +52,15 @@
         </div>
       </div>
 
-      <el-alert
-        v-if="isPendingApproval"
-        type="warning"
-        show-icon
-        :closable="false"
-        title="案件尚未审批通过，暂不能上传案件文件。"
-      />
+    <el-alert
+      v-if="documentLocked"
+      :type="lockedStatus === 'PENDING_APPROVAL' ? 'warning' : 'error'"
+      show-icon
+      :closable="false"
+      :title="lockAlertTitle"
+    />
 
-      <div v-else class="library-info">
+    <div v-else class="library-info">
         <div>
           <span>案卷目录</span>
           <strong>{{ caseFolderPath || '审批通过后自动生成' }}</strong>
@@ -139,10 +139,18 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="downloadFile(row)">下载</el-button>
-            <el-button link type="danger" @click="deleteFile(row)">删除</el-button>
+            <el-button link type="primary" @click="showVersions(row)">版本</el-button>
+            <el-button
+              link
+              type="danger"
+              :disabled="documentLocked"
+              @click="deleteFile(row)"
+            >
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -152,7 +160,6 @@
       <el-form label-width="90px">
         <el-form-item label="存放目录">
           <el-select v-model="uploadForm.folderPath" placeholder="请选择目录" style="width: 100%">
-            <el-option label="案件根目录" value="" />
             <el-option
               v-for="folder in folders"
               :key="folder.id || folder.folderPath"
@@ -201,6 +208,41 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-drawer
+      v-model="versionDrawerVisible"
+      title="文件版本"
+      size="520px"
+      append-to-body
+    >
+      <div class="version-summary">
+        <span class="file-badge">{{ getFileBadge(selectedVersionDocument?.documentName) }}</span>
+        <div>
+          <strong>{{ selectedVersionDocument?.documentName || '-' }}</strong>
+          <small>同名文件按上传时间保留，不覆盖历史版本</small>
+        </div>
+      </div>
+      <el-table
+        v-loading="versionLoading"
+        :data="versionDocuments"
+        empty-text="暂无版本记录"
+      >
+        <el-table-column label="版本" width="80">
+          <template #default="{ row }">v{{ row.versionNo || 1 }}</template>
+        </el-table-column>
+        <el-table-column label="上传人" min-width="100">
+          <template #default="{ row }">{{ row.uploadByName || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="上传时间" min-width="155">
+          <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="70" align="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="downloadFile(row)">下载</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-drawer>
   </div>
 </template>
 
@@ -218,6 +260,7 @@ import {
   deleteCaseDocument,
   downloadCaseDocument,
   getCaseDocumentFolders,
+  getCaseDocumentVersions,
   getCaseDocuments,
   uploadCaseDocument
 } from '@/api/case'
@@ -232,12 +275,16 @@ const props = defineProps({
 const loading = ref(false)
 const uploading = ref(false)
 const uploadDialogVisible = ref(false)
+const versionDrawerVisible = ref(false)
+const versionLoading = ref(false)
 const keyword = ref('')
 const selectedFolderPath = ref('')
 const folders = ref([])
 const documents = ref([])
 const selectedFile = ref(null)
 const selectedFileList = ref([])
+const selectedVersionDocument = ref(null)
+const versionDocuments = ref([])
 
 const documentTypes = [
   '立案材料',
@@ -256,7 +303,17 @@ const uploadForm = reactive({
 
 const currentCaseId = computed(() => props.caseData?.id)
 const caseFolderPath = computed(() => props.caseData?.caseFolderPath || '')
-const isPendingApproval = computed(() => props.caseData?.status === 'PENDING_APPROVAL')
+const lockedStatus = computed(() => String(props.caseData?.status || '').toUpperCase())
+const documentLocked = computed(() => lockedStatus.value !== 'ACTIVE')
+const lockAlertTitle = computed(() => {
+  const messages = {
+    PENDING_APPROVAL: '案件尚未审批通过，案卷当前只读。',
+    FILING_REJECTED: '立案申请已驳回，重新提交并审批通过后方可上传文件。',
+    CLOSED: '案件已结案，案卷已锁定，仅可查看和下载。',
+    ARCHIVED: '案件已归档，案卷已锁定，仅可查看和下载。'
+  }
+  return messages[lockedStatus.value] || '案件尚未进入审理中状态，案卷当前只读。'
+})
 
 const currentFolderLabel = computed(() => {
   if (!selectedFolderPath.value) return '全部案件文件'
@@ -298,12 +355,16 @@ const refreshAll = async () => {
 }
 
 const openUploadDialog = () => {
-  if (isPendingApproval.value) {
-    ElMessage.warning('案件尚未审批通过，不能上传案件文件')
+  if (documentLocked.value) {
+    ElMessage.warning(lockAlertTitle.value)
     return
   }
-  uploadForm.folderPath = selectedFolderPath.value
-  uploadForm.documentType = inferDocumentType(selectedFolderPath.value)
+  if (!folders.value.length) {
+    ElMessage.warning('案件标准目录尚未建立，请刷新后重试')
+    return
+  }
+  uploadForm.folderPath = selectedFolderPath.value || folders.value[0].folderPath
+  uploadForm.documentType = inferDocumentType(uploadForm.folderPath)
   selectedFile.value = null
   selectedFileList.value = []
   uploadDialogVisible.value = true
@@ -328,6 +389,10 @@ const submitUpload = async () => {
     ElMessage.warning('请选择文件类型')
     return
   }
+  if (!uploadForm.folderPath) {
+    ElMessage.warning('请选择标准案件目录')
+    return
+  }
 
   uploading.value = true
   try {
@@ -346,6 +411,22 @@ const submitUpload = async () => {
     ElMessage.error(error?.message || '上传案件文件失败')
   } finally {
     uploading.value = false
+  }
+}
+
+const showVersions = async (row) => {
+  selectedVersionDocument.value = row
+  versionDocuments.value = []
+  versionDrawerVisible.value = true
+  versionLoading.value = true
+  try {
+    const response = await getCaseDocumentVersions(currentCaseId.value, row.id)
+    versionDocuments.value = response.data || []
+  } catch (error) {
+    console.error('加载文件版本失败:', error)
+    ElMessage.error(error?.message || '加载文件版本失败')
+  } finally {
+    versionLoading.value = false
   }
 }
 
@@ -598,6 +679,31 @@ watch(currentCaseId, () => {
 
 .knowledge-tag {
   margin-left: 4px;
+}
+
+.version-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+
+  strong,
+  small {
+    display: block;
+  }
+
+  strong {
+    color: #111827;
+  }
+
+  small {
+    margin-top: 4px;
+    color: #6b7280;
+  }
 }
 
 .file-cell {

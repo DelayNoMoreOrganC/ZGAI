@@ -15,7 +15,13 @@ public class LegacyMaterialSearchResponse {
 
     private Boolean archivePathConfigured = false;
 
-    private String archiveRootPath;
+    private Long sourceCaseId;
+
+    private String sourceCaseName;
+
+    private String sourceCaseNumber;
+
+    private List<String> searchElements = new ArrayList<>();
 
     private String message;
 

@@ -1,5 +1,6 @@
 package com.lawfirm.dto;
 
+import java.util.List;
 import javax.validation.constraints.Email;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Size;
@@ -38,4 +39,6 @@ public class UserCreateRequest {
     private String avatar;
 
     private Integer status = 1;
+
+    private List<Long> roleIds;
 }

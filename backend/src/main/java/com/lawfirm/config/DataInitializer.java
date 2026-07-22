@@ -7,7 +7,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -29,16 +31,25 @@ public class DataInitializer implements CommandLineRunner {
     private final AIConfigRepository aiConfigRepository;
     private final DepartmentRepository departmentRepository;
 
+    @Value("${app.seed-demo-data:false}")
+    private boolean seedDemoData;
+
+    @Value("${app.initial-admin-password:}")
+    private String initialAdminPassword;
+
     @Override
     public void run(String... args) {
         try {
             if (userRepository.count() == 0) {
-                log.info("数据库为空，创建默认用户和测试数据...");
+                if (!StringUtils.hasText(initialAdminPassword)) {
+                    throw new IllegalStateException("数据库为空时必须通过 INITIAL_ADMIN_PASSWORD 设置初始管理员密码");
+                }
+                log.info("数据库为空，创建默认管理员和基础配置...");
 
                 // 1. 创建admin用户
                 User admin = new User();
                 admin.setUsername("admin");
-                admin.setPassword(passwordEncoder.encode("admin123"));
+                admin.setPassword(passwordEncoder.encode(initialAdminPassword));
                 admin.setRealName("系统管理员");
                 admin.setEmail("admin@lawfirm.com");
                 admin.setPhone("13800138000");
@@ -70,10 +81,11 @@ public class DataInitializer implements CommandLineRunner {
                 // 5. 创建默认部门
                 createDefaultDepartments();
 
-                // 6. 创建测试数据
-                createTestData(savedAdmin);
+                if (seedDemoData) {
+                    createTestData(savedAdmin);
+                }
 
-                log.info("测试数据创建完成！");
+                log.info("数据库基础配置创建完成");
             } else {
                 log.info("数据库已有用户数据，跳过用户初始化");
 
@@ -88,6 +100,7 @@ public class DataInitializer implements CommandLineRunner {
             }
         } catch (Exception e) {
             log.error("数据初始化失败", e);
+            throw new IllegalStateException("数据库基础配置初始化失败", e);
         }
     }
 

@@ -55,6 +55,12 @@ ALTER TABLE case_document ADD COLUMN IF NOT EXISTS index_status VARCHAR(30) DEFA
 ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS knowledge_source VARCHAR(30) DEFAULT 'FIRM_KNOWLEDGE';
 ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS knowledge_eligible BOOLEAN DEFAULT TRUE;
 ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS index_status VARCHAR(30) DEFAULT 'PENDING';
+ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS source_reference VARCHAR(500);
+ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS issuing_authority VARCHAR(200);
+ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS document_number VARCHAR(100);
+ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS effective_date DATE;
+ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS validity_status VARCHAR(20) DEFAULT 'UNKNOWN';
+ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS authorization_confirmed BOOLEAN DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS legacy_material_search_record (
     id BIGSERIAL PRIMARY KEY,
@@ -63,10 +69,28 @@ CREATE TABLE IF NOT EXISTS legacy_material_search_record (
     keyword VARCHAR(200),
     query_params VARCHAR(2000),
     searched_by BIGINT,
+    source_case_id BIGINT,
     result_count INTEGER DEFAULT 0,
     archive_path_configured BOOLEAN DEFAULT FALSE
 );
 
+ALTER TABLE legacy_material_search_record ADD COLUMN IF NOT EXISTS source_case_id BIGINT;
+
 CREATE INDEX IF NOT EXISTS idx_legacy_search_user ON legacy_material_search_record(searched_by);
 CREATE INDEX IF NOT EXISTS idx_legacy_search_keyword ON legacy_material_search_record(keyword);
 CREATE INDEX IF NOT EXISTS idx_legacy_search_created ON legacy_material_search_record(created_at);
+
+CREATE TABLE IF NOT EXISTS legacy_material_search_result (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    search_record_id BIGINT NOT NULL,
+    source_case_id BIGINT NOT NULL,
+    relative_path VARCHAR(1200) NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_size BIGINT,
+    last_modified_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_legacy_result_record ON legacy_material_search_result(search_record_id);
+CREATE INDEX IF NOT EXISTS idx_legacy_result_case ON legacy_material_search_result(source_case_id);

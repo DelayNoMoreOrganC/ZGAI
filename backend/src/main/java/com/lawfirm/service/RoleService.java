@@ -7,6 +7,8 @@ import com.lawfirm.entity.RolePermission;
 import com.lawfirm.repository.PermissionRepository;
 import com.lawfirm.repository.RolePermissionRepository;
 import com.lawfirm.repository.RoleRepository;
+import com.lawfirm.repository.UserRoleRepository;
+import com.lawfirm.exception.InvalidParameterException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -15,6 +17,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -28,19 +32,30 @@ public class RoleService {
     private final RoleRepository roleRepository;
     private final PermissionRepository permissionRepository;
     private final RolePermissionRepository rolePermissionRepository;
+    private final UserRoleRepository userRoleRepository;
+
+    private static final Set<String> SYSTEM_ROLE_CODES = Set.of(
+            "ADMIN", "MANAGER", "DEPT_HEAD", "LAWYER", "ASSISTANT", "LAWYER_ASSISTANT",
+            "TRAINEE", "FINANCE", "ADMINISTRATIVE", "ADMINISTRATIVE1", "ADMINISTRATIVE2"
+    );
 
     /**
      * 创建角色
      */
     @Transactional
     public RoleDTO createRole(RoleCreateRequest request) {
+        String roleCode = request.getRoleCode().trim().toUpperCase(Locale.ROOT);
+        if (SYSTEM_ROLE_CODES.contains(roleCode)) {
+            throw new InvalidParameterException("roleCode", "系统角色编码不可重复创建");
+        }
         // 检查角色编码是否已存在
-        if (roleRepository.existsByRoleCode(request.getRoleCode())) {
+        if (roleRepository.existsByRoleCode(roleCode)) {
             throw new RuntimeException("角色编码已存在");
         }
 
         Role role = new Role();
         BeanUtils.copyProperties(request, role);
+        role.setRoleCode(roleCode);
 
         role = roleRepository.save(role);
 
@@ -59,6 +74,8 @@ public class RoleService {
     public RoleDTO updateRole(Long roleId, RoleCreateRequest request) {
         Role role = roleRepository.findById(roleId)
                 .orElseThrow(() -> new RuntimeException("角色不存在"));
+
+        requireCustomRole(role);
 
         role.setRoleName(request.getRoleName());
         role.setDescription(request.getDescription());
@@ -81,6 +98,11 @@ public class RoleService {
         Role role = roleRepository.findById(roleId)
                 .orElseThrow(() -> new RuntimeException("角色不存在"));
 
+        requireCustomRole(role);
+        if (!userRoleRepository.findByRoleId(roleId).isEmpty()) {
+            throw new InvalidParameterException("roleId", "仍有用户使用该角色，不能删除");
+        }
+
         // 删除角色权限关联
         rolePermissionRepository.deleteByRoleId(roleId);
 
@@ -93,9 +115,10 @@ public class RoleService {
      * 获取角色列表
      */
     public Page<RoleDTO> getRoleList(int page, int size) {
-        Pageable pageable = PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "id"));
+        Pageable pageable = PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 200)),
+                Sort.by(Sort.Direction.ASC, "roleName"));
 
-        Page<Role> rolePage = roleRepository.findAll(pageable);
+        Page<Role> rolePage = roleRepository.findByDeletedFalse(pageable);
 
         return rolePage.map(this::toDTO);
     }
@@ -118,12 +141,24 @@ public class RoleService {
         Role role = roleRepository.findById(roleId)
                 .orElseThrow(() -> new RuntimeException("角色不存在"));
 
+        requireCustomRole(role);
+
+        List<Long> normalizedPermissionIds = permissionIds == null
+                ? java.util.Collections.emptyList()
+                : permissionIds.stream().filter(java.util.Objects::nonNull).distinct().collect(Collectors.toList());
+        long validPermissionCount = permissionRepository.findAllById(normalizedPermissionIds).stream()
+                .filter(permission -> !Boolean.TRUE.equals(permission.getDeleted()))
+                .count();
+        if (validPermissionCount != normalizedPermissionIds.size()) {
+            throw new InvalidParameterException("permissionIds", "权限列表包含不存在或已停用的权限");
+        }
+
         // 删除现有权限
         rolePermissionRepository.deleteByRoleId(roleId);
 
         // 分配新权限
-        if (permissionIds != null && !permissionIds.isEmpty()) {
-            List<RolePermission> rolePermissions = permissionIds.stream()
+        if (!normalizedPermissionIds.isEmpty()) {
+            List<RolePermission> rolePermissions = normalizedPermissionIds.stream()
                     .map(permissionId -> {
                         RolePermission rolePermission = new RolePermission();
                         rolePermission.setRoleId(roleId);
@@ -140,7 +175,7 @@ public class RoleService {
      * 获取所有角色（下拉选择用）
      */
     public List<RoleDTO> getAllRoles() {
-        List<Role> roles = roleRepository.findAll();
+        List<Role> roles = roleRepository.findByDeletedFalseOrderByRoleNameAsc();
 
         return roles.stream()
                 .map(this::toSimpleDTO)
@@ -155,12 +190,17 @@ public class RoleService {
 
         // 获取权限列表
         List<RolePermission> rolePermissions = rolePermissionRepository.findByRoleId(role.getId());
+        dto.setPermissionIds(rolePermissions.stream()
+                .map(RolePermission::getPermissionId)
+                .collect(Collectors.toList()));
         List<String> permissions = rolePermissions.stream()
                 .map(rp -> permissionRepository.findById(rp.getPermissionId())
                         .map(permission -> permission.getPermissionCode())
                         .orElse("未知权限"))
                 .collect(Collectors.toList());
         dto.setPermissions(permissions);
+        dto.setSystemRole(SYSTEM_ROLE_CODES.contains(role.getRoleCode()));
+        dto.setUserCount(userRoleRepository.findByRoleId(role.getId()).size());
 
         return dto;
     }
@@ -168,6 +208,17 @@ public class RoleService {
     private RoleDTO toSimpleDTO(Role role) {
         RoleDTO dto = new RoleDTO();
         BeanUtils.copyProperties(role, dto);
+        dto.setSystemRole(SYSTEM_ROLE_CODES.contains(role.getRoleCode()));
+        dto.setUserCount(userRoleRepository.findByRoleId(role.getId()).size());
         return dto;
+    }
+
+    private void requireCustomRole(Role role) {
+        if (SYSTEM_ROLE_CODES.contains(role.getRoleCode())) {
+            throw new InvalidParameterException("roleId", "系统角色由身份权限基线维护，不能在页面中修改或删除");
+        }
+        if (Boolean.TRUE.equals(role.getDeleted())) {
+            throw new InvalidParameterException("roleId", "角色已停用");
+        }
     }
 }

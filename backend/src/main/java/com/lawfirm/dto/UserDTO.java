@@ -21,6 +21,8 @@ public class UserDTO {
     private String avatar;
     private Integer status;
     private String statusDesc;
+    private List<Long> roleIds;
     private List<String> roles;
     private LocalDateTime lastLoginTime;
+    private LocalDateTime createdAt;
 }

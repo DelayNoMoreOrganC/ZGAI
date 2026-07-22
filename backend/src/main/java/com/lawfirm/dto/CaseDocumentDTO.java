@@ -1,5 +1,6 @@
 package com.lawfirm.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -16,6 +17,7 @@ public class CaseDocumentDTO {
     private String documentName;
     private String originalFileName;
     private String documentType;
+    @JsonIgnore
     private String filePath;
     private Long fileSize;
     private String mimeType;

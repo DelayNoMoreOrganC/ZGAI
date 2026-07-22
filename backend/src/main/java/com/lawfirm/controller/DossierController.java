@@ -8,6 +8,7 @@ import com.lawfirm.util.Result;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -22,6 +23,7 @@ public class DossierController {
     private final CaseService caseService;
     
     @GetMapping
+    @PreAuthorize("hasAuthority('CASE_VIEW')")
     public Result<List<Dossier>> getDossiers(@PathVariable Long caseId) {
         assertCaseVisible(caseId);
         List<Dossier> dossiers = dossierRepository.findByCaseIdOrderBySortOrder(caseId);
@@ -29,8 +31,9 @@ public class DossierController {
     }
     
     @PostMapping
+    @PreAuthorize("hasAuthority('CASE_EDIT')")
     public Result<Dossier> createDossier(@PathVariable Long caseId, @RequestBody Dossier dossier) {
-        assertCaseVisible(caseId);
+        assertCaseEditable(caseId);
         dossier.setCaseId(caseId);
         dossier.setCreatedAt(LocalDateTime.now());
         dossier.setUpdatedAt(LocalDateTime.now());
@@ -39,8 +42,9 @@ public class DossierController {
     }
     
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('CASE_EDIT')")
     public Result<Void> deleteDossier(@PathVariable Long caseId, @PathVariable Long id) {
-        assertCaseVisible(caseId);
+        assertCaseEditable(caseId);
         dossierRepository.deleteById(id);
         return Result.success();
     }
@@ -48,5 +52,10 @@ public class DossierController {
     private void assertCaseVisible(Long caseId) {
         Long currentUserId = securityUtils.getCurrentUserId();
         caseService.assertCaseVisible(caseId, currentUserId);
+    }
+
+    private void assertCaseEditable(Long caseId) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseEditable(caseId, currentUserId);
     }
 }

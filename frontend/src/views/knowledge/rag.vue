@@ -46,7 +46,7 @@
 
     <el-card v-if="answer" class="answer-card" v-loading="loading">
       <template #header>
-        <span>AI回答</span>
+        <span>{{ answerMode === 'LLM' ? 'AI回答' : '知识检索结果' }}</span>
       </template>
 
       <div class="answer-content" v-text="formattedAnswer"></div>
@@ -65,8 +65,15 @@
             <div class="source-detail">
               <p><strong>分类：</strong>{{ source.category }}</p>
               <p><strong>来源：</strong>{{ formatKnowledgeSource(source.knowledgeSource) }}</p>
+              <p v-if="source.issuingAuthority"><strong>发布机关：</strong>{{ source.issuingAuthority }}</p>
+              <p v-if="source.documentNumber"><strong>文号：</strong>{{ source.documentNumber }}</p>
+              <p v-if="source.validityStatus"><strong>有效状态：</strong>{{ formatValidityStatus(source.validityStatus) }}</p>
               <p><strong>索引：</strong>{{ formatIndexStatus(source.indexStatus) }}</p>
               <p><strong>摘要：</strong>{{ source.summary }}</p>
+              <div v-if="source.excerpt" class="source-excerpt">
+                <strong>命中片段：</strong>
+                <p>{{ source.excerpt }}</p>
+              </div>
               <el-button
                 size="small"
                 @click="viewDocument(source.id)"
@@ -85,6 +92,12 @@
         </el-tag>
         <el-tag v-if="documentCount" type="info">
           引用 {{ documentCount }} 篇文档
+        </el-tag>
+        <el-tag v-if="searchMethod" type="info">
+          {{ searchMethod === 'VECTOR' ? '语义检索' : '关键词检索' }}
+        </el-tag>
+        <el-tag v-if="answerMode === 'RETRIEVAL_ONLY'" type="warning">
+          本地大模型未接入
         </el-tag>
       </div>
     </el-card>
@@ -105,6 +118,8 @@ const hasAnswer = ref(false)
 const documentCount = ref(0)
 const loading = ref(false)
 const activeSources = ref(['0', '1', '2'])
+const searchMethod = ref('')
+const answerMode = ref('')
 
 const knowledgeScopes = [
   {
@@ -155,6 +170,8 @@ const handleSearch = async () => {
   sources.value = []
   hasAnswer.value = false
   documentCount.value = 0
+  searchMethod.value = ''
+  answerMode.value = ''
 
   try {
     const aiResponse = await askAI(question.value, { topK: 5 })
@@ -163,6 +180,8 @@ const handleSearch = async () => {
     hasAnswer.value = Boolean(result.hasAnswer)
     documentCount.value = result.documentCount || result.sources?.length || 0
     sources.value = result.sources || []
+    searchMethod.value = result.searchMethod || ''
+    answerMode.value = result.answerMode || 'RETRIEVAL_ONLY'
 
   } catch (error) {
     console.warn('RAG接口不可用，降级为普通知识库检索', error)
@@ -187,10 +206,12 @@ const fallbackKeywordSearch = async () => {
     return
   }
 
-  answer.value = generateMockAnswer(relevantDocs)
+  answer.value = generateRetrievalAnswer(relevantDocs)
   hasAnswer.value = true
   documentCount.value = relevantDocs.length
   sources.value = relevantDocs.slice(0, 3).map(normalizeSource)
+  searchMethod.value = 'KEYWORD'
+  answerMode.value = 'RETRIEVAL_ONLY'
 }
 
 const normalizeSource = (doc) => ({
@@ -199,11 +220,14 @@ const normalizeSource = (doc) => ({
   category: doc.category,
   knowledgeSource: doc.knowledgeSource,
   indexStatus: doc.indexStatus,
-  summary: doc.summary || (doc.content ? `${doc.content.substring(0, 100)}...` : '')
+  issuingAuthority: doc.issuingAuthority,
+  documentNumber: doc.documentNumber,
+  validityStatus: doc.validityStatus,
+  summary: doc.summary || (doc.content ? `${doc.content.substring(0, 100)}...` : ''),
+  excerpt: doc.excerpt || ''
 })
 
-// 生成增强的模拟答案（当AI不可用时）
-const generateMockAnswer = (docs) => {
+const generateRetrievalAnswer = (docs) => {
   if (!docs || docs.length === 0) {
     return '抱歉，没有找到相关信息。'
   }
@@ -262,6 +286,16 @@ const formatIndexStatus = (status) => {
   }
   return map[status] || '未索引'
 }
+
+const formatValidityStatus = (status) => {
+  const map = {
+    EFFECTIVE: '现行有效',
+    AMENDED: '已修订',
+    REPEALED: '已废止',
+    UNKNOWN: '待核验'
+  }
+  return map[status] || '待核验'
+}
 </script>
 
 <style scoped lang="scss">
@@ -298,6 +332,20 @@ const formatIndexStatus = (status) => {
       font-size: 12px;
       line-height: 1.5;
       color: #6b7280;
+    }
+  }
+
+  .source-excerpt {
+    margin: 10px 0;
+
+    p {
+      margin: 6px 0 0;
+      padding: 10px;
+      white-space: pre-line;
+      line-height: 1.7;
+      color: #303133;
+      background: #f6f8fa;
+      border-left: 3px solid #409eff;
     }
   }
 

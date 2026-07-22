@@ -7,3 +7,11 @@ export function searchLegacyMaterials(data) {
     data
   })
 }
+
+export function downloadLegacyMaterial(resultId) {
+  return request({
+    url: `/legacy-materials/files/${resultId}/download`,
+    method: 'get',
+    responseType: 'blob'
+  })
+}

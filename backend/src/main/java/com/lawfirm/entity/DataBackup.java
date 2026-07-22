@@ -1,5 +1,6 @@
 package com.lawfirm.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.EqualsAndHashCode;
 
 import javax.persistence.*;
@@ -75,12 +76,21 @@ public class DataBackup extends LogicalDeleteEntity {
     private String errorMessage;
 
     // Getters and Setters
+    @JsonIgnore
     public String getFilePath() {
         return filePath;
     }
 
     public void setFilePath(String filePath) {
         this.filePath = filePath;
+    }
+
+    @Transient
+    public String getFileName() {
+        if (filePath == null || filePath.trim().isEmpty()) {
+            return null;
+        }
+        return java.nio.file.Paths.get(filePath).getFileName().toString();
     }
 
     public String getBackupType() {
@@ -139,6 +149,7 @@ public class DataBackup extends LogicalDeleteEntity {
         this.remark = remark;
     }
 
+    @JsonIgnore
     public String getErrorMessage() {
         return errorMessage;
     }

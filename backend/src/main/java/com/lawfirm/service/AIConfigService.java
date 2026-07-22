@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.HashMap;
@@ -49,7 +50,10 @@ public class AIConfigService {
         AIConfig config = aiConfigRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("AI配置不存在"));
 
-        BeanUtils.copyProperties(dto, config, "id");
+        BeanUtils.copyProperties(dto, config, "id", "apiKey");
+        if (StringUtils.hasText(dto.getApiKey())) {
+            config.setApiKey(dto.getApiKey().trim());
+        }
 
         // 如果设置为默认配置，需要取消其他默认配置
         if (Boolean.TRUE.equals(dto.getIsDefault())) {
@@ -93,6 +97,25 @@ public class AIConfigService {
     public AIConfig getDefaultConfig() {
         return aiConfigRepository.findByIsDefaultTrueAndDeletedFalse()
                 .orElseThrow(() -> new RuntimeException("未配置默认AI"));
+    }
+
+    public AIConfig getDefaultConfigOrNull() {
+        return aiConfigRepository.findByIsDefaultTrueAndDeletedFalse().orElse(null);
+    }
+
+    public AIConfig getUsableDefaultConfigOrNull() {
+        AIConfig config = getDefaultConfigOrNull();
+        if (config == null || !Boolean.TRUE.equals(config.getIsEnabled())) {
+            return null;
+        }
+        String provider = config.getProviderType();
+        if ("DEEPSEEK_API".equals(provider) || "OPENAI_API".equals(provider)) {
+            String apiKey = config.getApiKey();
+            if (apiKey == null || apiKey.trim().isEmpty() || apiKey.toLowerCase().contains("your-")) {
+                return null;
+            }
+        }
+        return config;
     }
 
     /**

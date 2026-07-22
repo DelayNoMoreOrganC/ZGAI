@@ -254,17 +254,22 @@ public class InvoiceService {
     /**
      * 根据ID查询开票记录
      */
-    public InvoiceDTO getInvoiceById(Long id) {
-        return invoiceRepository.findById(id)
-                .map(this::convertToDTO)
+    public InvoiceDTO getInvoiceById(Long id, Long currentUserId) {
+        Invoice invoice = invoiceRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("开票记录不存在"));
+        assertInvoiceVisible(invoice, currentUserId);
+        return convertToDTO(invoice);
     }
 
     /**
      * 查询案件的开票记录
      */
-    public List<InvoiceDTO> getInvoicesByCase(Long caseId) {
-        return invoiceRepository.findByCaseId(caseId).stream()
+    public List<InvoiceDTO> getInvoicesByCase(Long caseId, Long currentUserId) {
+        User currentUser = requireCurrentUser(currentUserId);
+        List<Invoice> invoices = isFinanceUser(currentUser)
+                ? invoiceRepository.findByCaseId(caseId)
+                : invoiceRepository.findByCaseIdAndApplicantId(caseId, currentUserId);
+        return invoices.stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
@@ -272,8 +277,12 @@ public class InvoiceService {
     /**
      * 按状态查询
      */
-    public List<InvoiceDTO> getInvoicesByStatus(String status) {
-        return invoiceRepository.findByStatus(status).stream()
+    public List<InvoiceDTO> getInvoicesByStatus(String status, Long currentUserId) {
+        User currentUser = requireCurrentUser(currentUserId);
+        List<Invoice> invoices = isFinanceUser(currentUser)
+                ? invoiceRepository.findByStatus(status)
+                : invoiceRepository.findByStatusAndApplicantId(status, currentUserId);
+        return invoices.stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
@@ -281,8 +290,12 @@ public class InvoiceService {
     /**
      * 按日期范围查询
      */
-    public List<InvoiceDTO> getInvoicesByDateRange(LocalDate startDate, LocalDate endDate) {
-        return invoiceRepository.findByBillingDateBetween(startDate, endDate).stream()
+    public List<InvoiceDTO> getInvoicesByDateRange(LocalDate startDate, LocalDate endDate, Long currentUserId) {
+        User currentUser = requireCurrentUser(currentUserId);
+        List<Invoice> invoices = isFinanceUser(currentUser)
+                ? invoiceRepository.findByBillingDateBetween(startDate, endDate)
+                : invoiceRepository.findByBillingDateBetweenAndApplicantId(startDate, endDate, currentUserId);
+        return invoices.stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
@@ -290,11 +303,13 @@ public class InvoiceService {
     /**
      * 分页查询开票记录
      */
-    public com.lawfirm.util.PageResult<InvoiceDTO> getInvoices(int page, int size) {
+    public com.lawfirm.util.PageResult<InvoiceDTO> getInvoices(int page, int size, Long currentUserId) {
         Pageable pageable = PageRequest.of(Math.max(0, page - 1), size, Sort.by(Sort.Direction.DESC, "billingDate"));
 
-        // 使用 Spring Data 分页查询，避免全表加载
-        org.springframework.data.domain.Page<Invoice> invoicePage = invoiceRepository.findAll(pageable);
+        User currentUser = requireCurrentUser(currentUserId);
+        org.springframework.data.domain.Page<Invoice> invoicePage = isFinanceUser(currentUser)
+                ? invoiceRepository.findAll(pageable)
+                : invoiceRepository.findByApplicantId(currentUserId, pageable);
 
         List<InvoiceDTO> dtoList = invoicePage.stream()
                 .map(this::convertToDTO)
@@ -372,11 +387,25 @@ public class InvoiceService {
     }
 
     private boolean isFinanceUser(User user) {
-        return isAdmin(user) || isCashier(user) || (user != null && "财务管理".equals(user.getPosition()));
+        return isAdmin(user) || isCashier(user)
+                || (user != null && ("财务管理".equals(user.getPosition()) || "主任".equals(user.getPosition())));
     }
 
     private boolean isAdmin(User user) {
         return user != null && "admin".equals(user.getUsername());
+    }
+
+    private User requireCurrentUser(Long currentUserId) {
+        return userRepository.findById(currentUserId)
+                .orElseThrow(() -> new IllegalArgumentException("当前用户不存在"));
+    }
+
+    private void assertInvoiceVisible(Invoice invoice, Long currentUserId) {
+        User currentUser = requireCurrentUser(currentUserId);
+        if (isFinanceUser(currentUser) || currentUserId.equals(invoice.getApplicantId())) {
+            return;
+        }
+        throw new IllegalArgumentException("无权查看其他人员的开票申请");
     }
 
     private void createCashierTodo(Invoice invoice, Long applicantId, Long cashierId) {

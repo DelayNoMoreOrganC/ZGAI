@@ -5,6 +5,7 @@ import com.lawfirm.exception.AuthenticationFailedException;
 import com.lawfirm.exception.InvalidParameterException;
 import com.lawfirm.exception.ResourceNotFoundException;
 import com.lawfirm.repository.UserRepository;
+import com.lawfirm.security.UserAuthorityService;
 import com.lawfirm.util.JwtUtil;
 import com.lawfirm.util.RedisUtil;
 import com.lawfirm.util.Result;
@@ -24,7 +25,9 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -40,6 +43,7 @@ public class AuthController {
     private final UserRepository userRepository;
     private final JwtUtil jwtUtil;
     private final PasswordEncoder passwordEncoder;
+    private final UserAuthorityService userAuthorityService;
 
     @Autowired(required = false)
     private RedisUtil redisUtil;
@@ -126,6 +130,9 @@ public class AuthController {
             data.put("avatar", user.getAvatar());
             data.put("departmentId", user.getDepartmentId());
             data.put("position", user.getPosition());
+            addAuthorityData(data, authentication.getAuthorities().stream()
+                    .map(org.springframework.security.core.GrantedAuthority::getAuthority)
+                    .collect(Collectors.toList()));
 
             log.info("用户登录成功: {}", username);
             return Result.success(data);
@@ -161,8 +168,7 @@ public class AuthController {
         String token = authHeader.substring(7); // 去掉 "Bearer " 前缀
         Long userId = jwtUtil.getUserIdFromToken(token);
 
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("用户", userId));
+        User user = userAuthorityService.requireActiveUser(userId);
 
         Map<String, Object> data = new HashMap<>();
         data.put("userId", user.getId());
@@ -173,8 +179,21 @@ public class AuthController {
         data.put("avatar", user.getAvatar());
         data.put("departmentId", user.getDepartmentId());
         data.put("position", user.getPosition());
+        addAuthorityData(data, userAuthorityService.loadAuthorities(user).stream()
+                .map(org.springframework.security.core.GrantedAuthority::getAuthority)
+                .collect(Collectors.toList()));
 
         return Result.success(data);
+    }
+
+    private void addAuthorityData(Map<String, Object> data, List<String> authorities) {
+        data.put("permissions", authorities.stream()
+                .filter(authority -> !authority.startsWith("ROLE_"))
+                .collect(Collectors.toList()));
+        data.put("roles", authorities.stream()
+                .filter(authority -> authority.startsWith("ROLE_"))
+                .map(authority -> authority.substring("ROLE_".length()))
+                .collect(Collectors.toList()));
     }
 
     /**

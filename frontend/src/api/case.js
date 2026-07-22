@@ -283,6 +283,14 @@ export function downloadCaseDocument(caseId, docId) {
   })
 }
 
+
+// 查询文档版本历史
+export function getCaseDocumentVersions(caseId, docId) {
+  return request({
+    url: `/cases/${caseId}/documents/${docId}/versions`,
+    method: 'get'
+  })
+}
 // ==================== 案件程序管理 ====================
 
 // 获取案件程序列表

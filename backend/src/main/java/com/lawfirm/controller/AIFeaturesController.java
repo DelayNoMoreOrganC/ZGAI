@@ -9,6 +9,7 @@ import com.lawfirm.util.Result;
 import com.lawfirm.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -23,6 +24,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("ai")
 @RequiredArgsConstructor
+@PreAuthorize("isAuthenticated()")
 public class AIFeaturesController {
 
     private final LlmExtractService llmExtractService;
@@ -50,7 +52,7 @@ public class AIFeaturesController {
 
         } catch (Exception e) {
             log.error("AI文书提取失败", e);
-            return Result.error("提取失败: " + e.getMessage());
+            return Result.error("提取失败");
         }
     }
 
@@ -91,7 +93,7 @@ public class AIFeaturesController {
 
         } catch (Exception e) {
             log.error("AI自动填充失败", e);
-            return Result.error("自动填充失败: " + e.getMessage());
+            return Result.error("自动填充失败");
         }
     }
 }

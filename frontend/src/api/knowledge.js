@@ -38,6 +38,28 @@ export function createKnowledge(data) {
   })
 }
 
+// 导入知识文档原件并提取正文
+export function importKnowledgeDocument(data) {
+  return request({
+    url: '/knowledge/import',
+    method: 'post',
+    data,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
+    timeout: 120000
+  })
+}
+
+// 下载知识文档原件
+export function downloadKnowledgeAttachment(id) {
+  return request({
+    url: `/knowledge/${id}/attachment`,
+    method: 'get',
+    responseType: 'blob'
+  })
+}
+
 // 更新知识库文章
 export function updateKnowledge(id, data) {
   return request({

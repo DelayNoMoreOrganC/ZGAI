@@ -1,984 +1,710 @@
 <template>
-  <div class="settings">
+  <div class="settings-page">
     <PageHeader title="系统设置" />
 
-    <el-tabs v-model="activeTab" type="card" class="settings-tabs">
-      <!-- 用户管理 -->
-      <el-tab-pane label="用户管理" name="users">
-        <div class="tab-content">
-          <div class="toolbar">
-            <el-input
-              v-model="userSearch"
-              placeholder="搜索用户"
-              clearable
-              style="width: 250px"
-            >
-              <template #prefix>
-                <el-icon><Search /></el-icon>
-              </template>
-            </el-input>
-            <el-button type="primary" @click="handleCreateUser">
-              <el-icon><Plus /></el-icon>
-              新建用户
-            </el-button>
+    <el-tabs v-model="activeTab" class="settings-tabs">
+      <el-tab-pane label="运行状态" name="health">
+        <section class="tab-panel health-panel" v-loading="healthLoading">
+          <div class="section-heading">
+            <div>
+              <h3>系统运行状态</h3>
+              <p>{{ healthCheckedAt || '正在读取运行状态' }}</p>
+            </div>
+            <div class="heading-actions">
+              <el-tag :type="healthStatusType(systemHealth.status)" effect="plain">
+                {{ healthStatusLabel(systemHealth.status) }}
+              </el-tag>
+              <el-button :icon="Refresh" :loading="healthLoading" circle title="刷新状态" @click="loadSystemHealth" />
+            </div>
           </div>
 
-          <el-table :data="userList" border v-loading="loading">
-            <el-table-column prop="username" label="用户名" width="120" />
-            <el-table-column prop="name" label="姓名" width="120" />
-            <el-table-column prop="email" label="邮箱" width="180" />
-            <el-table-column prop="phone" label="手机号" width="130" />
-            <el-table-column prop="role" label="角色" width="120">
-              <template #default="{ row }">
-                <el-tag>{{ row.role }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="status" label="状态" width="80">
-              <template #default="{ row }">
-                <el-switch v-model="row.active" @change="handleToggleUserStatus(row)" />
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="200">
-              <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="handleEditUser(row)">
-                  编辑
-                </el-button>
-                <el-button link type="warning" size="small" @click="handleResetPassword(row)">
-                  重置密码
-                </el-button>
-                <el-button link type="danger" size="small" @click="handleDeleteUser(row)">
-                  删除
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
+          <div class="status-list">
+            <div class="status-row">
+              <div>
+                <strong>业务数据库</strong>
+                <span>{{ systemHealth.database?.product || '数据库' }}</span>
+              </div>
+              <el-tag :type="healthStatusType(systemHealth.database?.status)" effect="plain">
+                {{ healthStatusLabel(systemHealth.database?.status) }}
+              </el-tag>
+            </div>
+            <div v-for="item in storageHealthItems" :key="item.key" class="status-row">
+              <div>
+                <strong>{{ item.label }}</strong>
+                <span>{{ storageDescription(item) }}</span>
+              </div>
+              <el-tag :type="healthStatusType(item.status)" effect="plain">
+                {{ healthStatusLabel(item.status) }}
+              </el-tag>
+            </div>
+          </div>
+        </section>
       </el-tab-pane>
 
-      <!-- 角色权限 -->
-      <el-tab-pane label="角色权限" name="roles">
-        <div class="tab-content">
+      <el-tab-pane label="用户管理" name="users">
+        <section class="tab-panel">
           <div class="toolbar">
-            <el-button type="primary" @click="handleCreateRole">
-              <el-icon><Plus /></el-icon>
-              新建角色
-            </el-button>
+            <el-input
+              v-model="userFilters.keyword"
+              placeholder="姓名或账号"
+              clearable
+              class="search-input"
+              @keyup.enter="handleSearchUsers"
+              @clear="handleSearchUsers"
+            >
+              <template #prefix><el-icon><Search /></el-icon></template>
+            </el-input>
+            <el-select v-model="userFilters.departmentId" placeholder="所属部门" clearable filterable>
+              <el-option
+                v-for="department in departmentOptions"
+                :key="department.id"
+                :label="department.deptName"
+                :value="department.id"
+              />
+            </el-select>
+            <el-select v-model="userFilters.status" placeholder="账号状态" clearable>
+              <el-option label="启用" :value="1" />
+              <el-option label="停用" :value="0" />
+            </el-select>
+            <el-button type="primary" :icon="Search" @click="handleSearchUsers">查询</el-button>
+            <el-button :icon="Plus" @click="handleCreateUser">新建账号</el-button>
           </div>
 
-          <el-table :data="roleList" border>
-            <el-table-column prop="name" label="角色名称" width="150" />
-            <el-table-column prop="code" label="角色代码" width="150" />
-            <el-table-column prop="description" label="描述" />
-            <el-table-column prop="userCount" label="用户数" width="100" />
-            <el-table-column prop="isSystem" label="系统角色" width="100">
+          <el-table :data="userList" v-loading="userLoading" empty-text="暂无用户" stripe>
+            <el-table-column prop="realName" label="姓名" width="110" />
+            <el-table-column prop="username" label="账号" width="130" />
+            <el-table-column prop="departmentName" label="所属部门" min-width="150" />
+            <el-table-column prop="position" label="身份类别" width="110" />
+            <el-table-column label="角色" min-width="180">
               <template #default="{ row }">
-                <el-tag :type="row.isSystem ? 'warning' : ''">
-                  {{ row.isSystem ? '是' : '否' }}
+                <div class="tag-list">
+                  <el-tag v-for="role in row.roles || []" :key="role" size="small" effect="plain">
+                    {{ role }}
+                  </el-tag>
+                  <span v-if="!row.roles?.length" class="muted">未分配</span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="82">
+              <template #default="{ row }">
+                <el-tag :type="row.status === 1 ? 'success' : 'info'" effect="plain">
+                  {{ row.status === 1 ? '启用' : '停用' }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150">
+            <el-table-column label="操作" width="270" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="handleEditRole(row)">
-                  编辑权限
-                </el-button>
-                <el-button
-                  link
-                  type="danger"
-                  size="small"
-                  :disabled="row.isSystem"
-                  @click="handleDeleteRole(row)"
-                >
-                  删除
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-      </el-tab-pane>
-
-      <!-- 数据权限 -->
-      <el-tab-pane label="数据权限" name="data-permission">
-        <div class="tab-content">
-          <div class="permission-rules">
-            <div v-for="rule in permissionRules" :key="rule.id" class="permission-rule">
-              <div class="rule-header">
-                <h4>{{ rule.name }}</h4>
-                <el-switch v-model="rule.enabled" @change="handleTogglePermission(rule)" />
-              </div>
-              <div class="rule-content">
-                <p>{{ rule.description }}</p>
-                <el-radio-group v-model="rule.scope">
-                  <el-radio label="all">全部数据</el-radio>
-                  <el-radio label="department">部门数据</el-radio>
-                  <el-radio label="self">仅本人数据</el-radio>
-                </el-radio-group>
-              </div>
-            </div>
-          </div>
-        </div>
-      </el-tab-pane>
-
-      <!-- 操作日志 -->
-      <el-tab-pane label="操作日志" name="logs">
-        <div class="tab-content">
-          <div class="toolbar">
-            <el-date-picker
-              v-model="logDateRange"
-              type="daterange"
-              range-separator="至"
-              start-placeholder="开始日期"
-              end-placeholder="结束日期"
-              value-format="YYYY-MM-DD"
-            />
-            <el-select v-model="logModule" placeholder="选择模块" clearable style="width: 150px">
-              <el-option label="案件管理" value="case" />
-              <el-option label="用户管理" value="user" />
-              <el-option label="系统设置" value="system" />
-            </el-select>
-            <el-button type="primary" @click="handleSearchLogs">搜索</el-button>
-            <el-button @click="handleExportLogs">导出</el-button>
-          </div>
-
-          <el-table :data="logList" border>
-            <el-table-column prop="timestamp" label="时间" width="160" sortable />
-            <el-table-column prop="user" label="操作人" width="100" />
-            <el-table-column prop="module" label="模块" width="100">
-              <template #default="{ row }">
-                <el-tag size="small">{{ row.module }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="action" label="操作" width="120" />
-            <el-table-column prop="description" label="描述" show-overflow-tooltip />
-            <el-table-column prop="ip" label="IP地址" width="130" />
-            <el-table-column label="操作" width="80">
-              <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="handleViewLogDetail(row)">
-                  详情
-                </el-button>
+                <template v-if="!isLockedAccount(row)">
+                  <el-button link type="primary" @click="handleEditUser(row)">编辑</el-button>
+                  <el-button link type="warning" @click="handleResetPassword(row)">重置密码</el-button>
+                  <el-button link @click="handleToggleUserStatus(row)">
+                    {{ row.status === 1 ? '停用' : '启用' }}
+                  </el-button>
+                  <el-button link type="danger" @click="handleDeleteUser(row)">删除</el-button>
+                </template>
+                <el-tag v-else size="small" type="info" effect="plain">受保护账号</el-tag>
               </template>
             </el-table-column>
           </el-table>
 
           <div class="pagination">
             <el-pagination
-              v-model:current-page="logPage"
-              :page-size="20"
-              :total="logTotal"
-              layout="total, prev, pager, next"
+              v-model:current-page="userPagination.page"
+              v-model:page-size="userPagination.size"
+              :page-sizes="[20, 50, 100]"
+              :total="userPagination.total"
+              layout="total, sizes, prev, pager, next"
+              @current-change="loadUsers"
+              @size-change="handleUserPageSize"
             />
           </div>
-        </div>
+        </section>
       </el-tab-pane>
 
-      <!-- 系统配置 -->
-      <el-tab-pane label="系统配置" name="config">
-        <div class="tab-content">
-          <el-form :model="systemConfig" label-width="150px">
-            <div class="config-section">
-              <h4>案件配置</h4>
-              <el-form-item label="案件类型">
-                <el-select v-model="systemConfig.caseTypes" multiple style="width: 100%">
-                  <el-option label="民事" value="civil" />
-                  <el-option label="商事" value="commercial" />
-                  <el-option label="刑事" value="criminal" />
-                  <el-option label="行政" value="administrative" />
-                  <el-option label="仲裁" value="arbitration" />
-                  <el-option label="非诉" value="non-litigation" />
-                </el-select>
-              </el-form-item>
-
-              <el-form-item label="案由库">
-                <el-input
-                  v-model="systemConfig.caseReasons"
-                  type="textarea"
-                  :rows="3"
-                  placeholder="请输入案由，用逗号分隔"
-                />
-              </el-form-item>
-
-              <el-form-item label="法院库">
-                <el-input
-                  v-model="systemConfig.courts"
-                  type="textarea"
-                  :rows="3"
-                  placeholder="请输入法院列表，用逗号分隔"
-                />
-              </el-form-item>
+      <el-tab-pane label="角色权限" name="roles">
+        <section class="tab-panel" v-loading="roleLoading">
+          <div class="section-heading compact-heading">
+            <div>
+              <h3>身份权限基线</h3>
+              <p>共 {{ roleList.length }} 个有效角色</p>
             </div>
-
-            <div class="config-section">
-              <h4>提醒配置</h4>
-              <el-form-item label="审限提醒">
-                <el-input-number v-model="systemConfig.deadlineReminder" :min="1" :max="30" />
-                <span style="margin-left: 10px">天前</span>
-              </el-form-item>
-
-              <el-form-item label="开庭提醒">
-                <el-input-number v-model="systemConfig.hearingReminder" :min="1" :max="7" />
-                <span style="margin-left: 10px">天前</span>
-              </el-form-item>
-            </div>
-
-            <el-form-item>
-              <el-button type="primary" @click="handleSaveConfig">保存配置</el-button>
-              <el-button @click="handleResetConfig">重置</el-button>
-            </el-form-item>
-          </el-form>
-        </div>
-      </el-tab-pane>
-
-      <!-- AI配置 -->
-      <el-tab-pane label="AI配置" name="ai">
-        <div class="tab-content">
-          <AIConfigPanel />
-        </div>
-      </el-tab-pane>
-
-      <!-- 数据备份 -->
-      <el-tab-pane label="数据备份" name="backup">
-        <div class="tab-content">
-          <div class="backup-info">
-            <div class="info-card">
-              <div class="info-label">上次备份时间</div>
-              <div class="info-value">{{ lastBackupTime }}</div>
-            </div>
-            <div class="info-card">
-              <div class="info-label">备份文件大小</div>
-              <div class="info-value">{{ backupSize }}</div>
-            </div>
-            <div class="info-card">
-              <div class="info-label">保留天数</div>
-              <div class="info-value">{{ retentionDays }}天</div>
-            </div>
+            <el-button :icon="Refresh" circle title="刷新角色" @click="loadRoles" />
           </div>
-
-          <div class="backup-actions">
-            <div class="action-section">
-              <h4>手动备份</h4>
-              <el-button type="primary" @click="handleBackupNow" :loading="backingUp">
-                <el-icon><Download /></el-icon>
-                立即备份
-              </el-button>
-            </div>
-
-            <div class="action-section">
-              <h4>自动备份</h4>
-              <el-form inline>
-                <el-form-item label="每天">
-                  <el-time-picker
-                    v-model="backupTime"
-                    placeholder="选择时间"
-                    value-format="HH:mm"
-                  />
-                </el-form-item>
-                <el-form-item>
-                  <el-switch v-model="autoBackup" active-text="启用" />
-                </el-form-item>
-              </el-form>
-            </div>
-
-            <div class="action-section">
-              <h4>数据恢复</h4>
-              <el-button type="warning" @click="handleRestore">
-                <el-icon><Upload /></el-icon>
-                从备份恢复
-              </el-button>
-            </div>
-          </div>
-
-          <div class="backup-list">
-            <h4>备份历史</h4>
-            <el-table :data="backupList" border>
-              <el-table-column prop="filename" label="文件名" />
-              <el-table-column prop="size" label="大小" width="100" />
-              <el-table-column prop="time" label="备份时间" width="160" />
-              <el-table-column prop="type" label="类型" width="100">
-                <template #default="{ row }">
-                  <el-tag :type="row.type === 'auto' ? 'success' : 'primary'">
-                    {{ row.type === 'auto' ? '自动' : '手动' }}
+          <el-table :data="roleList" empty-text="暂无角色" stripe>
+            <el-table-column prop="roleName" label="角色名称" width="140" />
+            <el-table-column prop="roleCode" label="角色代码" width="170" />
+            <el-table-column label="类型" width="95">
+              <template #default="{ row }">
+                <el-tag :type="row.systemRole ? 'info' : 'primary'" effect="plain">
+                  {{ row.systemRole ? '系统' : '自定义' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="userCount" label="人数" width="75" align="center" />
+            <el-table-column label="权限" min-width="360">
+              <template #default="{ row }">
+                <div class="tag-list permission-tags">
+                  <el-tag v-for="permission in row.permissions || []" :key="permission" size="small" effect="plain">
+                    {{ permissionLabel(permission) }}
                   </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="150">
-                <template #default="{ row }">
-                  <el-button link type="primary" size="small" @click="handleRestoreBackup(row)">
-                    恢复
-                  </el-button>
-                  <el-button link type="danger" size="small" @click="handleDeleteBackup(row)">
-                    删除
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
+                  <span v-if="!row.permissions?.length" class="muted">未配置权限</span>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
+      </el-tab-pane>
+
+      <el-tab-pane label="数据范围" name="scope">
+        <section class="tab-panel scope-panel">
+          <div v-for="rule in dataScopeRules" :key="rule.name" class="scope-row">
+            <div>
+              <strong>{{ rule.name }}</strong>
+              <span>{{ rule.description }}</span>
+            </div>
+            <el-tag effect="plain">{{ rule.scope }}</el-tag>
           </div>
-        </div>
+        </section>
+      </el-tab-pane>
+
+      <el-tab-pane label="操作日志" name="logs">
+        <section class="tab-panel">
+          <div class="toolbar">
+            <el-date-picker
+              v-model="logFilters.dateRange"
+              type="daterange"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              value-format="YYYY-MM-DD"
+            />
+            <el-select v-model="logFilters.module" placeholder="操作模块" clearable filterable>
+              <el-option v-for="module in auditModules" :key="module" :label="moduleLabel(module)" :value="module" />
+            </el-select>
+            <el-button type="primary" :icon="Search" @click="handleSearchLogs">查询</el-button>
+            <el-button :icon="Refresh" @click="loadAuditLogs">刷新</el-button>
+          </div>
+
+          <el-table :data="auditLogs" v-loading="logLoading" empty-text="暂无审计记录" stripe>
+            <el-table-column label="时间" width="175">
+              <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+            </el-table-column>
+            <el-table-column prop="userName" label="操作人" width="110" />
+            <el-table-column label="模块" min-width="150">
+              <template #default="{ row }">{{ moduleLabel(row.module) }}</template>
+            </el-table-column>
+            <el-table-column prop="operation" label="操作" min-width="150" />
+            <el-table-column label="结果" width="82">
+              <template #default="{ row }">
+                <el-tag :type="row.status === 1 ? 'success' : 'danger'" effect="plain">
+                  {{ row.status === 1 ? '成功' : '失败' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="耗时" width="90">
+              <template #default="{ row }">{{ row.executionTime ?? 0 }} ms</template>
+            </el-table-column>
+            <el-table-column prop="ip" label="来源 IP" width="140" />
+            <el-table-column label="操作" width="75" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openAuditDetail(row)">详情</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <div class="pagination">
+            <el-pagination
+              v-model:current-page="logPagination.page"
+              :page-size="logPagination.size"
+              :total="logPagination.total"
+              layout="total, prev, pager, next"
+              @current-change="loadAuditLogs"
+            />
+          </div>
+        </section>
+      </el-tab-pane>
+
+      <el-tab-pane label="AI 配置" name="ai">
+        <section class="tab-panel"><AIConfigPanel /></section>
+      </el-tab-pane>
+
+      <el-tab-pane label="数据备份" name="backup">
+        <section class="tab-panel" v-loading="backupLoading">
+          <div class="metric-strip">
+            <div><span>上次备份</span><strong>{{ lastBackupTime }}</strong></div>
+            <div><span>文件大小</span><strong>{{ backupSize }}</strong></div>
+            <div><span>保留周期</span><strong>{{ retentionDays }} 天</strong></div>
+          </div>
+
+          <div class="section-heading compact-heading backup-heading">
+            <div>
+              <h3>备份历史</h3>
+              <p>自动备份计划：每天 02:00</p>
+            </div>
+            <el-button type="primary" :icon="Download" :loading="backingUp" @click="handleBackupNow">
+              立即备份
+            </el-button>
+          </div>
+
+          <el-table :data="backupList" empty-text="暂无备份记录" stripe>
+            <el-table-column prop="fileName" label="文件名" min-width="230" />
+            <el-table-column label="大小" width="110">
+              <template #default="{ row }">{{ formatBytes(row.fileSize) }}</template>
+            </el-table-column>
+            <el-table-column label="备份时间" width="180">
+              <template #default="{ row }">{{ formatDateTime(row.backupTime) }}</template>
+            </el-table-column>
+            <el-table-column label="类型" width="90">
+              <template #default="{ row }">{{ row.backupType === 'AUTO' ? '自动' : '手动' }}</template>
+            </el-table-column>
+            <el-table-column label="状态" width="90">
+              <template #default="{ row }">
+                <el-tag :type="row.backupStatus === 'SUCCESS' ? 'success' : 'danger'" effect="plain">
+                  {{ row.backupStatus === 'SUCCESS' ? '成功' : '失败' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="140" fixed="right">
+              <template #default="{ row }">
+                <el-button
+                  link
+                  type="primary"
+                  :disabled="row.backupStatus !== 'SUCCESS'"
+                  @click="handleRestoreBackup(row)"
+                >恢复</el-button>
+                <el-button link type="danger" @click="handleDeleteBackup(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
       </el-tab-pane>
     </el-tabs>
 
-    <!-- 用户编辑对话框 -->
-    <el-dialog
-      v-model="userDialogVisible"
-      :title="userForm.id ? '编辑用户' : '新建用户'"
-      width="700px"
-    >
-      <el-form :model="userForm" label-width="100px" :rules="userRules">
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="用户名" prop="username" required>
-              <el-input
-                v-model="userForm.username"
-                :disabled="!!userForm.id"
-                placeholder="请输入用户名"
-              />
+    <el-dialog v-model="userDialogVisible" :title="userForm.id ? '编辑账号' : '新建账号'" width="680px">
+      <el-form ref="userFormRef" :model="userForm" :rules="userRules" label-width="90px">
+        <el-row :gutter="18">
+          <el-col :xs="24" :sm="12">
+            <el-form-item label="账号" prop="username">
+              <el-input v-model="userForm.username" :disabled="!!userForm.id" />
             </el-form-item>
           </el-col>
-          <el-col :span="12">
-            <el-form-item label="姓名" prop="realName" required>
-              <el-input v-model="userForm.realName" placeholder="请输入姓名" />
+          <el-col :xs="24" :sm="12">
+            <el-form-item label="姓名" prop="realName"><el-input v-model="userForm.realName" /></el-form-item>
+          </el-col>
+        </el-row>
+        <el-row v-if="!userForm.id" :gutter="18">
+          <el-col :span="24">
+            <el-form-item label="初始密码" prop="password">
+              <el-input v-model="userForm.password" type="password" show-password autocomplete="new-password" />
             </el-form-item>
           </el-col>
         </el-row>
-
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="邮箱" prop="email">
-              <el-input v-model="userForm.email" placeholder="请输入邮箱" />
+        <el-row :gutter="18">
+          <el-col :xs="24" :sm="12">
+            <el-form-item label="联系电话" prop="phone"><el-input v-model="userForm.phone" /></el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="12">
+            <el-form-item label="邮箱" prop="email"><el-input v-model="userForm.email" /></el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="18">
+          <el-col :xs="24" :sm="12">
+            <el-form-item label="所属部门" prop="departmentId">
+              <el-select v-model="userForm.departmentId" filterable style="width: 100%">
+                <el-option
+                  v-for="department in departmentOptions"
+                  :key="department.id"
+                  :label="department.deptName"
+                  :value="department.id"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="12">
-            <el-form-item label="手机号" prop="phone">
-              <el-input v-model="userForm.phone" placeholder="请输入手机号" />
+          <el-col :xs="24" :sm="12">
+            <el-form-item label="身份类别" prop="position">
+              <el-select v-model="userForm.position" filterable allow-create style="width: 100%">
+                <el-option v-for="identity in identityOptions" :key="identity" :label="identity" :value="identity" />
+              </el-select>
             </el-form-item>
           </el-col>
         </el-row>
-
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="性别">
-              <el-radio-group v-model="userForm.gender">
-                <el-radio label="男">男</el-radio>
-                <el-radio label="女">女</el-radio>
-              </el-radio-group>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="状态">
-              <el-switch v-model="userForm.active" active-text="启用" inactive-text="禁用" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-
-        <el-form-item label="部门">
-          <el-input v-model="userForm.department" placeholder="请输入部门" />
-        </el-form-item>
-
-        <el-form-item label="职位">
-          <el-input v-model="userForm.position" placeholder="请输入职位" />
-        </el-form-item>
-
-        <el-form-item v-if="!userForm.id" label="初始密码" prop="password">
-          <el-input
-            v-model="userForm.password"
-            type="password"
-            placeholder="请输入初始密码"
-            show-password
-          />
-        </el-form-item>
-
-        <el-form-item label="角色">
-          <el-select v-model="userForm.roleIds" multiple placeholder="请选择角色" style="width: 100%">
-            <el-option
-              v-for="role in roleList"
-              :key="role.id"
-              :label="role.roleName"
-              :value="role.id"
-            />
+        <el-form-item label="角色" prop="roleIds">
+          <el-select v-model="userForm.roleIds" multiple filterable style="width: 100%">
+            <el-option v-for="role in roleList" :key="role.id" :label="role.roleName" :value="role.id" />
           </el-select>
         </el-form-item>
+        <el-form-item label="账号状态" prop="status">
+          <el-radio-group v-model="userForm.status">
+            <el-radio :label="1">启用</el-radio>
+            <el-radio :label="0">停用</el-radio>
+          </el-radio-group>
+        </el-form-item>
       </el-form>
-
       <template #footer>
         <el-button @click="userDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSaveUser">保存</el-button>
+        <el-button type="primary" :loading="userSaving" @click="handleSaveUser">保存</el-button>
       </template>
     </el-dialog>
 
-    <!-- 角色编辑对话框 -->
-    <el-dialog v-model="roleDialogVisible" :title="roleForm.id ? '编辑角色' : '新建角色'" width="600px">
-      <el-form :model="roleForm" label-width="100px">
-        <el-form-item label="角色名称" required>
-          <el-input v-model="roleForm.name" placeholder="请输入角色名称" />
-        </el-form-item>
-
-        <el-form-item label="角色代码" required>
-          <el-input
-            v-model="roleForm.code"
-            placeholder="请输入角色代码，如：ROLE_LAWYER"
-            :disabled="!!roleForm.id"
-          />
-        </el-form-item>
-
-        <el-form-item label="角色描述">
-          <el-input
-            v-model="roleForm.description"
-            type="textarea"
-            :rows="3"
-            placeholder="请输入角色描述"
-          />
-        </el-form-item>
-
-        <el-form-item label="权限配置">
-          <el-checkbox-group v-model="roleForm.permissions">
-            <el-checkbox label="CASE_VIEW">查看案件</el-checkbox>
-            <el-checkbox label="CASE_CREATE">创建案件</el-checkbox>
-            <el-checkbox label="CASE_EDIT">编辑案件</el-checkbox>
-            <el-checkbox label="CASE_DELETE">删除案件</el-checkbox>
-            <el-checkbox label="DOCUMENT_MANAGE">文档管理</el-checkbox>
-            <el-checkbox label="FINANCE_VIEW">查看财务</el-checkbox>
-            <el-checkbox label="FINANCE_MANAGE">财务管理</el-checkbox>
-            <el-checkbox label="APPROVAL_PROCESS">审批流程</el-checkbox>
-            <el-checkbox label="USER_MANAGE">用户管理</el-checkbox>
-            <el-checkbox label="SYSTEM_CONFIG">系统配置</el-checkbox>
-          </el-checkbox-group>
-        </el-form-item>
-      </el-form>
-
-      <template #footer>
-        <el-button @click="roleDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmitRole">保存</el-button>
-      </template>
+    <el-dialog v-model="auditDetailVisible" title="审计记录" width="560px">
+      <el-descriptions v-if="selectedAuditLog" :column="1" border>
+        <el-descriptions-item label="时间">{{ formatDateTime(selectedAuditLog.createdAt) }}</el-descriptions-item>
+        <el-descriptions-item label="操作人">{{ selectedAuditLog.userName }}</el-descriptions-item>
+        <el-descriptions-item label="模块">{{ moduleLabel(selectedAuditLog.module) }}</el-descriptions-item>
+        <el-descriptions-item label="操作">{{ selectedAuditLog.operation }}</el-descriptions-item>
+        <el-descriptions-item label="接口方法">{{ selectedAuditLog.method || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="来源 IP">{{ selectedAuditLog.ip || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="执行结果">{{ selectedAuditLog.status === 1 ? '成功' : '失败' }}</el-descriptions-item>
+        <el-descriptions-item label="执行耗时">{{ selectedAuditLog.executionTime ?? 0 }} ms</el-descriptions-item>
+      </el-descriptions>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search, Download, Upload } from '@element-plus/icons-vue'
+import { Download, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import AIConfigPanel from '@/components/AIConfigPanel.vue'
-import { createUser, updateUser, deleteUser, getUserList, toggleUserStatus } from '@/api/user'
+import { useUserStore } from '@/stores/user'
+import {
+  createUser,
+  deleteUser,
+  getUserList,
+  resetPassword,
+  toggleUserStatus,
+  updateUser
+} from '@/api/user'
 import { getRoleList } from '@/api/role'
-import request from '@/utils/request'
+import { getDepartmentList } from '@/api/department'
+import {
+  createBackup,
+  deleteBackup,
+  getAuditLogDetail,
+  getAuditLogModules,
+  getAuditLogs,
+  getBackups,
+  getSystemHealthDetails,
+  restoreBackup
+} from '@/api/system'
 
-const activeTab = ref('users')
-const loading = ref(false)
-const userSearch = ref('')
-const logDateRange = ref([])
-const logModule = ref('')
-const logPage = ref(1)
-const logTotal = ref(0)
-const backingUp = ref(false)
-const backupTime = ref('02:00')
-const autoBackup = ref(true)
-const lastBackupTime = ref('2024-04-17 02:00')
-const backupSize = ref('256.5 MB')
-const retentionDays = ref(180)
+const userStore = useUserStore()
+const activeTab = ref('health')
 
-// 用户对话框
+const healthLoading = ref(false)
+const systemHealth = ref({})
+const healthCheckedAt = ref('')
+
+const userLoading = ref(false)
+const userSaving = ref(false)
+const userList = ref([])
+const departmentOptions = ref([])
+const roleLoading = ref(false)
+const roleList = ref([])
+const userFilters = reactive({ keyword: '', departmentId: null, status: null })
+const userPagination = reactive({ page: 1, size: 20, total: 0 })
 const userDialogVisible = ref(false)
-const userForm = ref({
+const userFormRef = ref(null)
+const identityOptions = [
+  '主任', '部门主管', '行政管理', '行政管理1', '行政管理2',
+  '财务管理', '出纳', '律师', '实习律师', '律师助理', '助理'
+]
+
+const emptyUserForm = () => ({
   id: null,
   username: '',
-  realName: '',
-  email: '',
-  phone: '',
-  gender: '男',
-  department: '',
-  position: '',
-  active: true,
   password: '',
-  roleIds: []
+  realName: '',
+  phone: '',
+  email: '',
+  departmentId: null,
+  position: '',
+  roleIds: [],
+  status: 1
 })
-
-// ==================== 角色对话框 ====================
-const roleDialogVisible = ref(false)
-const roleForm = ref({
-  id: null,
-  name: '',
-  code: '',
-  description: '',
-  permissions: []
-})
-
-// ==================== 日志搜索表单 ====================
-const logSearchForm = ref({
-  dateRange: [],
-  module: '',
-  keyword: '',
-  level: ''
-})
-
+const userForm = ref(emptyUserForm())
 const userRules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  realName: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+  username: [
+    { required: true, message: '请输入账号', trigger: 'blur' },
+    { min: 2, max: 50, message: '账号长度为 2 至 50 个字符', trigger: 'blur' }
+  ],
   password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码长度不能少于6位', trigger: 'blur' }
-  ]
+    { required: true, message: '请输入初始密码', trigger: 'blur' },
+    { min: 6, max: 100, message: '密码长度为 6 至 100 个字符', trigger: 'blur' }
+  ],
+  realName: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+  phone: [{ pattern: /^[+()\d\s-]{7,20}$/, message: '请输入手机号码或区号+固话', trigger: 'blur' }],
+  email: [{ type: 'email', message: '邮箱格式不正确', trigger: 'blur' }],
+  departmentId: [{ required: true, message: '请选择所属部门', trigger: 'change' }],
+  position: [{ required: true, message: '请选择身份类别', trigger: 'change' }],
+  roleIds: [{ type: 'array', required: true, min: 1, message: '请至少选择一个角色', trigger: 'change' }]
 }
 
-// 用户列表
-const userList = ref([
-  {
-    id: '1',
-    username: 'zhangsan',
-    name: '张三',
-    email: 'zhangsan@example.com',
-    phone: '13800138000',
-    role: '主办律师',
-    active: true
-  },
-  {
-    id: '2',
-    username: 'lisi',
-    name: '李四',
-    email: 'lisi@example.com',
-    phone: '13900139000',
-    role: '协办律师',
-    active: true
-  }
-])
+const dataScopeRules = [
+  { name: '案件数据', description: '律师及部门主管按所属部门查看；行政可查看案件整体信息；主任查看全部。', scope: '部门 / 全所' },
+  { name: '客户数据', description: '按案源人或承办人所属部门过滤；授权人员和主任可查看全部客户。', scope: '部门 / 授权' },
+  { name: '利冲检查', description: '利冲核对覆盖全所客户和案件主体，不受日常客户列表范围限制。', scope: '全所' },
+  { name: '案件文件', description: '文件访问继承案件可见范围，案件私密材料默认不进入 AI 知识库。', scope: '随案件' },
+  { name: '开票记录', description: '发起人查看本人申请，财务人员按处理权限查看待办和反馈记录。', scope: '本人 / 财务' }
+]
 
-// 角色列表
-const roleList = ref([
-  {
-    id: '1',
-    name: '系统管理员',
-    code: 'admin',
-    description: '拥有系统所有权限',
-    userCount: 2,
-    isSystem: true
-  },
-  {
-    id: '2',
-    name: '主办律师',
-    code: 'main-lawyer',
-    description: '可以创建和管理案件',
-    userCount: 15,
-    isSystem: true
-  },
-  {
-    id: '3',
-    name: '协办律师',
-    code: 'co-lawyer',
-    description: '可以编辑参与案件',
-    userCount: 20,
-    isSystem: true
-  },
-  {
-    id: '4',
-    name: '律师助理',
-    code: 'assistant',
-    description: '基础权限',
-    userCount: 25,
-    isSystem: true
-  },
-  {
-    id: '5',
-    name: '财务人员',
-    code: 'finance',
-    description: '财务管理权限',
-    userCount: 3,
-    isSystem: true
-  },
-  {
-    id: '6',
-    name: '行政人员',
-    code: 'admin-staff',
-    description: '行政管理权限',
-    userCount: 5,
-    isSystem: true
-  }
-])
+const logLoading = ref(false)
+const auditLogs = ref([])
+const auditModules = ref([])
+const logFilters = reactive({ dateRange: [], module: '' })
+const logPagination = reactive({ page: 1, size: 20, total: 0 })
+const auditDetailVisible = ref(false)
+const selectedAuditLog = ref(null)
 
-// 数据权限规则
-const permissionRules = ref([
-  {
-    id: '1',
-    name: '案件数据权限',
-    description: '控制用户可以查看哪些案件数据',
-    enabled: true,
-    scope: 'self'
-  },
-  {
-    id: '2',
-    name: '客户数据权限',
-    description: '控制用户可以查看哪些客户数据',
-    enabled: true,
-    scope: 'self'
-  },
-  {
-    id: '3',
-    name: '财务数据权限',
-    description: '控制用户可以查看哪些财务数据',
-    enabled: true,
-    scope: 'department'
-  }
-])
+const backupLoading = ref(false)
+const backingUp = ref(false)
+const backupList = ref([])
+const retentionDays = ref(180)
+const lastBackupTime = computed(() => backupList.value.length
+  ? formatDateTime(backupList.value[0].backupTime)
+  : '暂无备份')
+const backupSize = computed(() => backupList.value.length
+  ? formatBytes(backupList.value[0].fileSize)
+  : '-')
 
-// 操作日志
-const logList = ref([
-  {
-    id: '1',
-    timestamp: '2024-04-17 10:30:25',
-    user: '张三',
-    module: '案件管理',
-    action: '创建案件',
-    description: '创建了案件：张三诉李四买卖合同纠纷',
-    ip: '192.168.1.100'
-  },
-  {
-    id: '2',
-    timestamp: '2024-04-17 10:25:10',
-    user: '李四',
-    module: '用户管理',
-    action: '编辑用户',
-    description: '编辑了用户信息：王五',
-    ip: '192.168.1.101'
-  }
-])
-
-// 系统配置
-const systemConfig = reactive({
-  caseTypes: ['civil', 'commercial', 'criminal'],
-  caseReasons: '买卖合同纠纷,借款合同纠纷,离婚纠纷',
-  courts: '北京市朝阳区人民法院,北京市海淀区人民法院',
-  deadlineReminder: 7,
-  hearingReminder: 3
+const storageHealthItems = computed(() => {
+  const storage = systemHealth.value.storage || {}
+  const labels = { caseLibrary: '案件文件库', knowledgeLibrary: '知识库原件', backup: '数据库备份' }
+  return ['caseLibrary', 'knowledgeLibrary', 'backup']
+    .map(key => ({ key, label: labels[key], ...(storage[key] || {}) }))
 })
 
-// 备份列表
-const backupList = ref([
-  {
-    id: '1',
-    filename: 'backup_20240417_020000.sql',
-    size: '256.5 MB',
-    time: '2024-04-17 02:00',
-    type: 'auto'
-  },
-  {
-    id: '2',
-    filename: 'backup_20240416_150000.sql',
-    size: '256.3 MB',
-    time: '2024-04-16 15:00',
-    type: 'manual'
-  }
-])
+const permissionLabels = {
+  CASE_CREATE: '新建立案', CASE_VIEW: '查看案件', CASE_EDIT: '编辑案件', CASE_DELETE: '删除案件', CASE_ARCHIVE: '归档案件',
+  CASE_IMPORT: '导入案件', CASE_EXPORT: '导出案件', CLIENT_CREATE: '新建客户', CLIENT_VIEW: '查看客户', CLIENT_EDIT: '编辑客户',
+  CLIENT_DELETE: '删除客户', CLIENT_IMPORT: '导入客户', CLIENT_EXPORT: '导出客户', DOCUMENT_VIEW: '查看文档', DOCUMENT_EDIT: '编辑文档',
+  DOCUMENT_DELETE: '删除文档', APPROVAL_VIEW: '查看审批', APPROVAL_EDIT: '处理审批', APPROVAL_DELETE: '删除审批', TODO_VIEW: '查看待办',
+  TODO_EDIT: '编辑待办', TODO_DELETE: '删除待办', FINANCE_VIEW: '查看财务', FINANCE_EDIT: '处理财务', USER_VIEW: '查看用户',
+  USER_EDIT: '编辑用户', ROLE_VIEW: '查看角色', ROLE_EDIT: '编辑角色', AI_CONFIG: 'AI 配置', SYSTEM_CONFIG: '系统配置',
+  WORK_REPORT_REVIEW: '审核工作报告', KNOWLEDGE_DELETE: '删除知识', STATISTICS_VIEW: '查看统计', STATISTICS_EXPORT: '导出统计'
+}
+const moduleLabels = {
+  BackupController: '数据备份', UserController: '用户管理', RoleController: '角色权限',
+  CaseController: '案件管理', ClientController: '客户管理', ApprovalController: '审批管理',
+  CaseDocumentController: '案件文件', FinanceController: '财务管理'
+}
 
-// 用户操作
-const handleCreateUser = () => {
-  userForm.value = {
-    id: null,
-    username: '',
-    realName: '',
-    email: '',
-    phone: '',
-    gender: '男',
-    department: '',
-    position: '',
-    active: true,
-    password: '',
-    roleIds: []
+const loadSystemHealth = async () => {
+  healthLoading.value = true
+  try {
+    const response = await getSystemHealthDetails()
+    systemHealth.value = response.data || {}
+    healthCheckedAt.value = formatDateTime(systemHealth.value.time || new Date())
+  } catch {
+    systemHealth.value = { status: 'unavailable' }
+  } finally {
+    healthLoading.value = false
   }
+}
+
+const loadDepartments = async () => {
+  try {
+    const response = await getDepartmentList()
+    departmentOptions.value = response.data || []
+  } catch {
+    departmentOptions.value = []
+  }
+}
+
+const loadRoles = async () => {
+  roleLoading.value = true
+  try {
+    const response = await getRoleList({ page: 1, size: 200 })
+    roleList.value = response.data?.content || []
+  } catch {
+    roleList.value = []
+  } finally {
+    roleLoading.value = false
+  }
+}
+
+const loadUsers = async (page = userPagination.page) => {
+  userPagination.page = Number(page) || 1
+  userLoading.value = true
+  try {
+    const response = await getUserList({
+      page: userPagination.page,
+      size: userPagination.size,
+      keyword: userFilters.keyword || undefined,
+      departmentId: userFilters.departmentId || undefined,
+      status: userFilters.status ?? undefined
+    })
+    userList.value = response.data?.content || []
+    userPagination.total = response.data?.totalElements || 0
+  } catch {
+    userList.value = []
+    userPagination.total = 0
+  } finally {
+    userLoading.value = false
+  }
+}
+
+const handleSearchUsers = () => loadUsers(1)
+const handleUserPageSize = () => loadUsers(1)
+const handleCreateUser = () => {
+  userForm.value = emptyUserForm()
   userDialogVisible.value = true
 }
-
 const handleEditUser = (user) => {
   userForm.value = {
     id: user.id,
     username: user.username,
-    realName: user.name || user.realName,
-    email: user.email,
-    phone: user.phone,
-    gender: user.gender || '男',
-    department: user.department || '',
+    password: '',
+    realName: user.realName || '',
+    phone: user.phone || '',
+    email: user.email || '',
+    departmentId: user.departmentId,
     position: user.position || '',
-    active: user.active !== undefined ? user.active : true,
-    password: '', // 编辑时不需要密码
-    roleIds: user.roleIds || []
+    roleIds: [...(user.roleIds || [])],
+    status: user.status
   }
   userDialogVisible.value = true
 }
 
 const handleSaveUser = async () => {
+  await userFormRef.value?.validate()
+  userSaving.value = true
   try {
+    const common = {
+      realName: userForm.value.realName,
+      phone: userForm.value.phone || null,
+      email: userForm.value.email || null,
+      departmentId: userForm.value.departmentId,
+      position: userForm.value.position,
+      roleIds: userForm.value.roleIds,
+      status: userForm.value.status
+    }
     if (userForm.value.id) {
-      await updateUser(userForm.value.id, userForm.value)
-      ElMessage.success('更新成功')
+      await updateUser(userForm.value.id, common)
+      ElMessage.success('账号已更新')
     } else {
-      await createUser(userForm.value)
-      ElMessage.success('创建成功')
+      await createUser({ ...common, username: userForm.value.username, password: userForm.value.password })
+      ElMessage.success('账号已创建')
     }
     userDialogVisible.value = false
-    await loadUsers()
+    await Promise.all([loadUsers(), loadRoles()])
   } catch (error) {
-    console.error('保存用户失败:', error)
-    ElMessage.error('保存失败')
-  }
-}
-
-const handleToggleUserStatus = async (user) => {
-  try {
-    await toggleUserStatus(user.id, user.active ? 'ACTIVE' : 'INACTIVE')
-    ElMessage.success(`用户${user.name}状态已${user.active ? '启用' : '禁用'}`)
-  } catch (error) {
-    console.error('切换用户状态失败:', error)
-    ElMessage.error('操作失败')
-    // 回滚状态
-    user.active = !user.active
+    if (!isCancel(error)) ElMessage.error('保存账号失败')
+  } finally {
+    userSaving.value = false
   }
 }
 
 const handleResetPassword = async (user) => {
   try {
-    await ElMessageBox.confirm(`确定要重置用户 ${user.name} 的密码吗?`, '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
+    const { value } = await ElMessageBox.prompt(`请输入“${user.realName}”的新密码`, '重置密码', {
+      inputType: 'password',
+      inputPattern: /^.{6,100}$/,
+      inputErrorMessage: '密码长度为 6 至 100 个字符',
+      confirmButtonText: '确认重置',
+      cancelButtonText: '取消'
     })
-    ElMessage.success('密码已重置为：123456')
-  } catch {
-    // 用户取消
+    await resetPassword(user.id, { newPassword: value })
+    ElMessage.success('密码已重置')
+  } catch (error) {
+    if (!isCancel(error)) ElMessage.error('重置密码失败')
   }
 }
 
-// 加载角色列表
-const loadRoles = async () => {
+const handleToggleUserStatus = async (user) => {
+  const nextStatus = user.status === 1 ? 0 : 1
+  const action = nextStatus === 1 ? '启用' : '停用'
   try {
-    const { data } = await getRoleList({ page: 1, size: 100 })
-    roleList.value = data.records || []
+    await ElMessageBox.confirm(`确定${action}账号“${user.realName}”吗？`, `${action}账号`, {
+      type: 'warning', confirmButtonText: action, cancelButtonText: '取消'
+    })
+    await toggleUserStatus(user.id, nextStatus)
+    ElMessage.success(`账号已${action}`)
+    await loadUsers()
   } catch (error) {
-    console.error('获取角色列表失败:', error)
-  }
-}
-
-// 组件挂载时加载数据
-onMounted(() => {
-  loadUsers()
-  loadRoles()
-})
-
-const loadUsers = async () => {
-  try {
-    loading.value = true
-    const { data } = await getUserList({ page: 1, size: 100 })
-    userList.value = data.records || []
-  } catch (error) {
-    console.error('获取用户列表失败:', error)
-    ElMessage.error('获取用户列表失败')
-  } finally {
-    loading.value = false
+    if (!isCancel(error)) ElMessage.error(`${action}账号失败`)
   }
 }
 
 const handleDeleteUser = async (user) => {
   try {
-    await ElMessageBox.confirm(
-      `确定要删除用户"${user.name}"吗？删除后可进入回收站恢复。`,
-      '提示',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-    // 删除API（待后端实现）
-    ElMessage.success('删除成功')
-  } catch {
-    // 用户取消
-  }
-}
-
-// 角色操作
-const handleCreateRole = () => {
-  roleForm.value = {
-    id: null,
-    name: '',
-    code: '',
-    description: '',
-    permissions: []
-  }
-  roleDialogVisible.value = true
-}
-
-const handleEditRole = (role) => {
-  roleForm.value = {
-    id: role.id,
-    name: role.name,
-    code: role.code,
-    description: role.description,
-    permissions: role.permissions || []
-  }
-  roleDialogVisible.value = true
-}
-
-const handleSubmitRole = async () => {
-  if (!roleForm.value.name) {
-    ElMessage.warning('请输入角色名称')
-    return
-  }
-  if (!roleForm.value.code) {
-    ElMessage.warning('请输入角色代码')
-    return
-  }
-
-  try {
-    if (roleForm.value.id) {
-      // 编辑角色
-      ElMessage.success('角色更新成功')
-    } else {
-      // 新建角色
-      ElMessage.success('角色创建成功')
-    }
-    roleDialogVisible.value = false
-    // 刷新角色列表
-  } catch (error) {
-    console.error('保存角色失败:', error)
-    ElMessage.error('保存失败')
-  }
-}
-
-const handleDeleteRole = async (role) => {
-  try {
-    await ElMessageBox.confirm(
-      `确定要删除角色"${role.name}"吗？删除后可进入回收站恢复。`,
-      '提示',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-    // 删除API（待后端实现）
-    ElMessage.success('删除成功')
-  } catch {
-    // 用户取消
-  }
-}
-
-// 数据权限操作
-const handleTogglePermission = (rule) => {
-  ElMessageBox.confirm(
-    `确认${rule.enabled ? '启用' : '禁用'}权限规则"${rule.name}"吗？此操作可能影响系统功能。`,
-    '权限变更确认',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }
-  ).then(() => {
-    ElMessage.success(`权限规则${rule.name}已${rule.enabled ? '启用' : '禁用'}`)
-  }).catch(() => {
-    // 用户取消，恢复开关状态
-    rule.enabled = !rule.enabled
-    ElMessage.info('已取消权限变更')
-  })
-}
-
-// 日志操作
-const handleSearchLogs = async () => {
-  try {
-    // 使用搜索条件筛选日志
-    ElMessage.success('搜索完成')
-    // 这里可以调用API来搜索日志
-  } catch (error) {
-    console.error('搜索日志失败:', error)
-    ElMessage.error('搜索失败')
-  }
-}
-
-const handleExportLogs = async () => {
-  try {
-    const response = await request({
-      url: '/system/logs/export',
-      method: 'get',
-      params: logSearchForm.value,
-      responseType: 'blob'
+    await ElMessageBox.confirm(`确定删除账号“${user.realName}”吗？`, '删除账号', {
+      type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消'
     })
-
-    // 创建下载链接
-    const blob = new Blob([response], { type: 'application/vnd.ms-excel' })
-    const link = document.createElement('a')
-    link.href = window.URL.createObjectURL(blob)
-    link.download = `系统日志_${new Date().toISOString().split('T')[0]}.xlsx`
-    link.click()
-    window.URL.revokeObjectURL(link.href)
-
-    ElMessage.success('导出成功')
+    await deleteUser(user.id)
+    ElMessage.success('账号已删除')
+    await Promise.all([loadUsers(), loadRoles()])
   } catch (error) {
-    console.error('导出日志失败:', error)
-    ElMessage.error('导出失败')
+    if (!isCancel(error)) ElMessage.error('删除账号失败')
   }
 }
 
-const handleViewLogDetail = (log) => {
-  ElMessageBox.alert(
-    `<div style="text-align: left;">
-      <p><strong>时间：</strong>${log.timestamp}</p>
-      <p><strong>模块：</strong>${log.module}</p>
-      <p><strong>级别：</strong><span style="color: ${getLogLevelColor(log.level)}">${log.level}</span></p>
-      <p><strong>用户：</strong>${log.username}</p>
-      <p><strong>操作：</strong>${log.action}</p>
-      <p><strong>IP地址：</strong>${log.ip}</p>
-      <p><strong>详细信息：</strong></p>
-      <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto;">${log.message || '无'}</pre>
-    </div>`,
-    '日志详情',
-    {
-      dangerouslyUseHTMLString: true,
-      confirmButtonText: '关闭'
-    }
-  )
+const isLockedAccount = (user) => {
+  const username = String(user.username || '').toLowerCase()
+  return ['admin', 'amin'].includes(username) || String(user.id) === String(userStore.userId)
 }
 
-const getLogLevelColor = (level) => {
-  const colorMap = {
-    'ERROR': '#f56c6c',
-    'WARN': '#e6a23c',
-    'INFO': '#409eff',
-    'DEBUG': '#909399'
-  }
-  return colorMap[level] || '#606266'
-}
-
-// 系统配置操作
-const handleSaveConfig = () => {
-  ElMessage.success('配置已保存')
-}
-
-const handleResetConfig = async () => {
+const loadAuditModules = async () => {
   try {
-    await ElMessageBox.confirm(
-      '确定要重置系统配置吗？此操作将恢复所有设置为默认值，不可撤销。',
-      '重置配置',
-      {
-        confirmButtonText: '确定重置',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-
-    // 调用重置配置API
-    ElMessage.success('配置已重置为默认值')
-    // 刷新配置
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('重置配置失败:', error)
-      ElMessage.error('重置失败')
-    }
+    const response = await getAuditLogModules()
+    auditModules.value = response.data || []
+  } catch {
+    auditModules.value = []
   }
 }
 
-// 备份操作
+const loadAuditLogs = async (page = logPagination.page) => {
+  logPagination.page = Number(page) || 1
+  logLoading.value = true
+  try {
+    const response = await getAuditLogs({
+      page: logPagination.page,
+      size: logPagination.size,
+      module: logFilters.module || undefined,
+      startDate: logFilters.dateRange?.[0] || undefined,
+      endDate: logFilters.dateRange?.[1] || undefined
+    })
+    auditLogs.value = response.data?.content || []
+    logPagination.total = response.data?.totalElements || 0
+  } catch {
+    auditLogs.value = []
+    logPagination.total = 0
+  } finally {
+    logLoading.value = false
+  }
+}
+
+const handleSearchLogs = () => loadAuditLogs(1)
+const openAuditDetail = async (log) => {
+  try {
+    const response = await getAuditLogDetail(log.id)
+    selectedAuditLog.value = response.data
+    auditDetailVisible.value = true
+  } catch {
+    ElMessage.error('读取审计记录失败')
+  }
+}
+
+const loadBackups = async () => {
+  backupLoading.value = true
+  try {
+    const response = await getBackups()
+    backupList.value = response.data || []
+    retentionDays.value = backupList.value[0]?.retentionDays || 180
+  } catch {
+    backupList.value = []
+  } finally {
+    backupLoading.value = false
+  }
+}
+
 const handleBackupNow = async () => {
+  backingUp.value = true
   try {
-    backingUp.value = true
-    // 模拟备份
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    await createBackup()
     ElMessage.success('备份完成')
-    lastBackupTime.value = new Date().toLocaleString('zh-CN')
+    await loadBackups()
   } catch {
     ElMessage.error('备份失败')
   } finally {
@@ -986,213 +712,247 @@ const handleBackupNow = async () => {
   }
 }
 
-const handleRestore = async () => {
-  try {
-    const { value } = await ElMessageBox.prompt('请输入备份文件路径', '数据恢复', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputPlaceholder: '/path/to/backup.sql',
-      inputPattern: /^.{1,200}$/,
-      inputErrorMessage: '路径长度为1-200个字符'
-    })
-
-    // 文件路径恢复功能暂未实现，请使用备份列表中的恢复功能
-    ElMessage.warning('文件路径恢复功能暂未实现，请使用下方备份列表中的恢复按钮')
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('数据恢复失败:', error)
-      ElMessage.error('数据恢复失败')
-    }
-  }
-}
-
 const handleRestoreBackup = async (backup) => {
   try {
-    await ElMessageBox.confirm(
-      `确定要恢复备份"${backup.name}"吗？这将覆盖当前数据。`,
-      '恢复备份',
-      {
-        confirmButtonText: '确定恢复',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-
-    await request({
-      url: `/backup/restore/${backup.id}`,
-      method: 'post'
+    await ElMessageBox.prompt(`恢复“${backup.fileName}”将覆盖当前数据库。请输入 RESTORE 继续。`, '恢复备份', {
+      inputPattern: /^RESTORE$/,
+      inputErrorMessage: '请输入 RESTORE',
+      confirmButtonText: '确定恢复',
+      cancelButtonText: '取消',
+      type: 'warning'
     })
-
-    ElMessage.success(`备份恢复成功，系统将重新加载`)
-    setTimeout(() => {
-      location.reload()
-    }, 1500)
+    await restoreBackup(backup.id)
+    ElMessage.success('备份恢复成功，系统将重新加载')
+    setTimeout(() => window.location.reload(), 1500)
   } catch (error) {
-    if (error !== 'cancel') {
-      console.error('恢复备份失败:', error)
-      ElMessage.error('恢复备份失败')
-    }
+    if (!isCancel(error)) ElMessage.error('恢复备份失败')
   }
 }
 
 const handleDeleteBackup = async (backup) => {
   try {
-    await ElMessageBox.confirm(
-      `确定要删除备份"${backup.name}"吗？删除后无法恢复。`,
-      '删除备份',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-
-    await request({
-      url: `/backup/backup/${backup.id}`,
-      method: 'delete'
+    await ElMessageBox.confirm(`确定删除备份“${backup.fileName}”吗？`, '删除备份', {
+      type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消'
     })
-
-    const index = backupList.value.findIndex(b => b.id === backup.id)
-    if (index > -1) {
-      backupList.value.splice(index, 1)
-    }
-
-    ElMessage.success('删除成功')
+    await deleteBackup(backup.id)
+    ElMessage.success('备份已删除')
+    await loadBackups()
   } catch (error) {
-    if (error !== 'cancel') {
-      console.error('删除备份失败:', error)
-      ElMessage.error('删除备份失败')
-    }
+    if (!isCancel(error)) ElMessage.error('删除备份失败')
   }
 }
+
+const healthStatusLabel = status => ({
+  ready: '正常', degraded: '部分降级', readonly: '只读', missing: '目录缺失', unavailable: '不可用'
+}[status] || '待检查')
+const healthStatusType = status => ({
+  ready: 'success', degraded: 'warning', readonly: 'warning', missing: 'danger', unavailable: 'danger'
+}[status] || 'info')
+const permissionLabel = code => permissionLabels[code] || code
+const moduleLabel = module => moduleLabels[module] || module || '-'
+const storageDescription = item => {
+  if (item.status === 'missing') return '配置目录不存在'
+  if (item.status === 'unavailable') return '当前无法读取目录状态'
+  const storageType = item.storageClass === 'network' ? '网络存储' : '本机存储'
+  return `${storageType} · 可用 ${formatBytes(item.usableBytes)}`
+}
+const formatBytes = bytes => {
+  const value = Number(bytes)
+  if (!Number.isFinite(value) || value < 0) return '容量未知'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = value
+  let index = 0
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024
+    index += 1
+  }
+  return `${size.toFixed(index > 2 ? 1 : 0)} ${units[index]}`
+}
+const formatDateTime = value => {
+  if (!value) return '-'
+  const date = Array.isArray(value)
+    ? new Date(value[0], (value[1] || 1) - 1, value[2] || 1, value[3] || 0, value[4] || 0, value[5] || 0)
+    : new Date(value)
+  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString('zh-CN')
+}
+const isCancel = error => error === 'cancel' || error === 'close'
+
+watch(activeTab, tab => {
+  if (tab === 'users' && !userList.value.length) loadUsers(1)
+  if (tab === 'roles') loadRoles()
+  if (tab === 'logs') Promise.all([loadAuditModules(), loadAuditLogs(1)])
+  if (tab === 'backup') loadBackups()
+})
+
+onMounted(() => {
+  loadSystemHealth()
+  Promise.all([loadDepartments(), loadRoles()])
+})
 </script>
 
 <style scoped lang="scss">
-.settings {
+.settings-page {
   .settings-tabs {
-    margin-top: 20px;
-    background-color: #fff;
-    padding: 20px;
-    border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    padding: 18px 20px 24px;
+    background: #fff;
+    border: 1px solid #e7e9ed;
+    border-radius: 6px;
+  }
 
-    :deep(.el-tabs__header) {
-      margin: 0 0 20px;
+  .tab-panel {
+    min-height: 260px;
+  }
+
+  .health-panel {
+    max-width: 960px;
+  }
+
+  .section-heading,
+  .status-row,
+  .scope-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+  }
+
+  .section-heading {
+    padding-bottom: 18px;
+    border-bottom: 1px solid #e7e9ed;
+
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h3 {
+      color: #1f2329;
+      font-size: 17px;
+      font-weight: 600;
+    }
+
+    p {
+      margin-top: 5px;
+      color: #72777f;
+      font-size: 13px;
     }
   }
 
-  .tab-content {
-    .toolbar {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 20px;
-      flex-wrap: wrap;
+  .compact-heading {
+    margin-bottom: 16px;
+  }
+
+  .heading-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .status-row,
+  .scope-row {
+    min-height: 70px;
+    border-bottom: 1px solid #eef0f2;
+
+    strong,
+    span {
+      display: block;
     }
 
-    .pagination {
-      margin-top: 20px;
-      display: flex;
-      justify-content: flex-end;
+    strong {
+      color: #24262b;
+      font-size: 14px;
+      font-weight: 600;
     }
 
-    .permission-rules {
-      .permission-rule {
-        background-color: #f5f7fa;
-        padding: 15px;
-        border-radius: 4px;
-        margin-bottom: 15px;
+    span {
+      margin-top: 5px;
+      color: #737982;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+  }
 
-        .rule-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 10px;
+  .scope-panel {
+    max-width: 960px;
+  }
 
-          h4 {
-            margin: 0;
-            font-size: 14px;
-            color: #333;
-          }
-        }
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
 
-        .rule-content {
-          p {
-            margin: 0 0 10px;
-            font-size: 13px;
-            color: #666;
-          }
-        }
-      }
+    .search-input {
+      width: 220px;
     }
 
-    .config-section {
-      background-color: #f5f7fa;
-      padding: 20px;
-      border-radius: 4px;
-      margin-bottom: 20px;
+    :deep(.el-select) {
+      width: 170px;
+    }
+  }
 
-      h4 {
-        margin: 0 0 15px;
-        font-size: 14px;
-        color: #333;
-        border-left: 3px solid #1890ff;
-        padding-left: 10px;
-      }
+  .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .permission-tags {
+    padding: 5px 0;
+  }
+
+  .muted {
+    color: #9499a1;
+    font-size: 13px;
+  }
+
+  .pagination {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 18px;
+  }
+
+  .metric-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-bottom: 22px;
+    border-bottom: 1px solid #e7e9ed;
+
+    > div {
+      padding: 4px 20px 20px 0;
     }
 
-    .backup-info {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 20px;
-      margin-bottom: 30px;
-
-      .info-card {
-        background-color: #f5f7fa;
-        padding: 20px;
-        border-radius: 4px;
-        text-align: center;
-
-        .info-label {
-          font-size: 14px;
-          color: #666;
-          margin-bottom: 10px;
-        }
-
-        .info-value {
-          font-size: 18px;
-          font-weight: bold;
-          color: #1890ff;
-        }
-      }
+    span,
+    strong {
+      display: block;
     }
 
-    .backup-actions {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 20px;
-      margin-bottom: 30px;
-
-      .action-section {
-        background-color: #f5f7fa;
-        padding: 20px;
-        border-radius: 4px;
-
-        h4 {
-          margin: 0 0 15px;
-          font-size: 14px;
-          color: #333;
-        }
-      }
+    span {
+      color: #737982;
+      font-size: 13px;
     }
 
-    .backup-list {
-      h4 {
-        margin: 0 0 15px;
-        font-size: 14px;
-        color: #333;
-        border-left: 3px solid #1890ff;
-        padding-left: 10px;
-      }
+    strong {
+      margin-top: 7px;
+      color: #24262b;
+      font-size: 17px;
+      font-weight: 600;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .settings-tabs {
+      padding: 12px;
+    }
+
+    .metric-strip {
+      grid-template-columns: 1fr;
+    }
+
+    .section-heading,
+    .scope-row {
+      align-items: flex-start;
+      flex-direction: column;
     }
   }
 }

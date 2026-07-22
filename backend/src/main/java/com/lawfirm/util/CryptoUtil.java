@@ -29,7 +29,7 @@ public class CryptoUtil {
     private static final int GCM_IV_LENGTH = 12;
     private static final int GCM_TAG_LENGTH = 128;
 
-    @Value("${crypto.secret-key:lawfirm-secret-key-2024-aes-256-encryption}")
+    @Value("${crypto.secret-key:}")
     private String secretKeyStr;
 
     private SecretKey secretKey;
@@ -40,6 +40,9 @@ public class CryptoUtil {
     private SecretKey getSecretKey() {
         if (secretKey == null) {
             try {
+                if (secretKeyStr == null || secretKeyStr.trim().isEmpty()) {
+                    throw new IllegalStateException("必须通过 CRYPTO_SECRET_KEY 配置数据加密密钥");
+                }
                 // 使用SHA-256将字符串密钥转换为固定长度的密钥
                 MessageDigest sha = MessageDigest.getInstance("SHA-256");
                 byte[] keyBytes = sha.digest(secretKeyStr.getBytes(StandardCharsets.UTF_8));

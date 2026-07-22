@@ -2,6 +2,8 @@ package com.lawfirm.dto;
 
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 /**
  * 旧系统资料检索结果。
  */
@@ -24,7 +26,13 @@ public class LegacyMaterialSearchResultDTO {
 
     private String departmentName;
 
-    private String materialPath;
+    private Long legacyFileId;
+
+    private Long fileSize;
+
+    private LocalDateTime lastModifiedAt;
+
+    private Boolean downloadable = false;
 
     private String matchReason;
 

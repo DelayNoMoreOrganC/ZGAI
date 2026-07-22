@@ -1,6 +1,7 @@
 package com.lawfirm.controller;
 
 import com.lawfirm.dto.AIConfigDTO;
+import com.lawfirm.dto.AIConfigVO;
 import com.lawfirm.entity.AIConfig;
 import com.lawfirm.service.AIConfigService;
 import com.lawfirm.util.Result;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * AI配置控制器
@@ -26,27 +28,27 @@ public class AIConfigController {
      * 创建AI配置
      */
     @PostMapping
-    @PreAuthorize("isAuthenticated()")
-    public Result<AIConfig> createConfig(@Valid @RequestBody AIConfigDTO dto) {
+    @PreAuthorize("hasAuthority('AI_CONFIG')")
+    public Result<AIConfigVO> createConfig(@Valid @RequestBody AIConfigDTO dto) {
         AIConfig config = aiConfigService.createConfig(dto);
-        return Result.success(config);
+        return Result.success(AIConfigVO.from(config));
     }
 
     /**
      * 更新AI配置
      */
     @PutMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
-    public Result<AIConfig> updateConfig(@PathVariable Long id, @Valid @RequestBody AIConfigDTO dto) {
+    @PreAuthorize("hasAuthority('AI_CONFIG')")
+    public Result<AIConfigVO> updateConfig(@PathVariable Long id, @Valid @RequestBody AIConfigDTO dto) {
         AIConfig config = aiConfigService.updateConfig(id, dto);
-        return Result.success(config);
+        return Result.success(AIConfigVO.from(config));
     }
 
     /**
      * 删除AI配置
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('AI_CONFIG')")
     public Result<Void> deleteConfig(@PathVariable Long id) {
         aiConfigService.deleteConfig(id);
         return Result.success();
@@ -56,40 +58,40 @@ public class AIConfigController {
      * 获取AI配置详情
      */
     @GetMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
-    public Result<AIConfig> getConfig(@PathVariable Long id) {
+    @PreAuthorize("hasAuthority('AI_CONFIG')")
+    public Result<AIConfigVO> getConfig(@PathVariable Long id) {
         AIConfig config = aiConfigService.getConfig(id);
-        return Result.success(config);
+        return Result.success(AIConfigVO.from(config));
     }
 
     /**
      * 获取所有AI配置
      */
     @GetMapping
-    @PreAuthorize("isAuthenticated()")
-    public Result<List<AIConfig>> getAllConfigs() {
+    @PreAuthorize("hasAuthority('AI_CONFIG')")
+    public Result<List<AIConfigVO>> getAllConfigs() {
         List<AIConfig> configs = aiConfigService.getAllConfigs();
-        return Result.success(configs);
+        return Result.success(configs.stream().map(AIConfigVO::from).collect(Collectors.toList()));
     }
 
     /**
      * 获取默认配置
      */
     @GetMapping("/default")
-    @PreAuthorize("isAuthenticated()")
-    public Result<AIConfig> getDefaultConfig() {
+    @PreAuthorize("hasAuthority('AI_CONFIG')")
+    public Result<AIConfigVO> getDefaultConfig() {
         AIConfig config = aiConfigService.getDefaultConfig();
-        return Result.success(config);
+        return Result.success(AIConfigVO.from(config));
     }
 
     /**
      * 按提供商类型查找配置
      */
     @GetMapping("/provider/{providerType}")
-    @PreAuthorize("isAuthenticated()")
-    public Result<List<AIConfig>> getConfigsByProvider(@PathVariable String providerType) {
+    @PreAuthorize("hasAuthority('AI_CONFIG')")
+    public Result<List<AIConfigVO>> getConfigsByProvider(@PathVariable String providerType) {
         List<AIConfig> configs = aiConfigService.getConfigsByProvider(providerType);
-        return Result.success(configs);
+        return Result.success(configs.stream().map(AIConfigVO::from).collect(Collectors.toList()));
     }
 
     /**
@@ -97,7 +99,7 @@ public class AIConfigController {
      * POST /api/ai/config/test/{id}
      */
     @PostMapping("/test/{id}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('AI_CONFIG')")
     public Result<Map<String, Object>> testConnection(@PathVariable Long id) {
         Map<String, Object> result = aiConfigService.testConnection(id);
         return Result.success(result);

@@ -30,6 +30,9 @@ public class LegacyMaterialSearchRecord extends BaseEntity {
     @Column(name = "searched_by")
     private Long searchedBy;
 
+    @Column(name = "source_case_id")
+    private Long sourceCaseId;
+
     @Column(name = "result_count")
     private Integer resultCount = 0;
 

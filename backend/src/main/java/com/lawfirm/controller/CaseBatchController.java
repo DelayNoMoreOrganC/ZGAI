@@ -1,11 +1,13 @@
 package com.lawfirm.controller;
 
+import com.lawfirm.annotation.AuditLog;
 import com.lawfirm.dto.BatchOperationRequest;
 import com.lawfirm.security.SecurityUtils;
 import com.lawfirm.service.CaseService;
 import com.lawfirm.util.Result;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
@@ -27,6 +29,8 @@ public class CaseBatchController {
      * PUT /api/cases/batch/close
      */
     @PutMapping("/close")
+    @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "批量结案", operationType = "BATCH_UPDATE", logParams = false)
     public Result<Void> batchCloseCases(@Valid @RequestBody BatchOperationRequest request) {
         try {
             Long currentUserId = securityUtils.getCurrentUserId();
@@ -43,6 +47,8 @@ public class CaseBatchController {
      * PUT /api/cases/batch/archive
      */
     @PutMapping("/archive")
+    @PreAuthorize("hasAuthority('CASE_ARCHIVE')")
+    @AuditLog(value = "批量归档", operationType = "BATCH_ARCHIVE", logParams = false)
     public Result<Void> batchArchiveCases(@Valid @RequestBody BatchOperationRequest request) {
         try {
             Long currentUserId = securityUtils.getCurrentUserId();
@@ -59,6 +65,8 @@ public class CaseBatchController {
      * DELETE /api/cases/batch
      */
     @DeleteMapping
+    @PreAuthorize("hasAuthority('CASE_DELETE')")
+    @AuditLog(value = "批量删除案件", operationType = "BATCH_DELETE", logParams = false)
     public Result<Void> batchDeleteCases(@Valid @RequestBody BatchOperationRequest request) {
         try {
             Long currentUserId = securityUtils.getCurrentUserId();
@@ -75,6 +83,8 @@ public class CaseBatchController {
      * PUT /api/cases/batch/change-owner
      */
     @PutMapping("/change-owner")
+    @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "批量变更承办人", operationType = "BATCH_UPDATE", logParams = false)
     public Result<Void> batchChangeOwner(@Valid @RequestBody BatchOperationRequest request) {
         try {
             Long currentUserId = securityUtils.getCurrentUserId();

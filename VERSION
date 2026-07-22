@@ -1,25 +1,25 @@
-LAW FIRM CASE MANAGEMENT SYSTEM
-Version: 2.0.0
-Release Date: 2026-04-19
-Status: Production Ready
+ZGAI LAW FIRM MANAGEMENT SYSTEM
+Version: 3.0.0-dev
+Baseline Date: 2026-07-22
+Status: Controlled LAN Trial
 
 Backend: Spring Boot 2.7.18 (Java 11)
 Frontend: Vue 3 + Element Plus + Vite
-Database: H2 (Dev) / MySQL 8.0 (Prod)
+Database: H2 (Dev) / PostgreSQL 16 (Target)
 
-Core Features:
-- Case Management (Complete ✅)
-- AI OCR & Document Generation
-- Workflow & Approvals
-- Knowledge Base (RAG)
-- Calendar & Todo Management
+Core Scope:
+- Case and Client Management
+- Filing Approval
+- Case Files and NAS
+- Invoice Application
+- Knowledge Base and RAG Foundation
 
 Deployment:
 - Frontend: http://localhost:3017
 - Backend: http://localhost:8080/api
-- Default Account: admin / admin123
+- Accounts: initialized through environment variables or imported employee data
 
 Documentation:
 - PRD: PRD.md
-- Changelog: CHANGELOG.md
+- Handoff: handoff.md
 - Readme: README.md

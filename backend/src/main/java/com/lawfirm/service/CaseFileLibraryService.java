@@ -2,6 +2,7 @@ package com.lawfirm.service;
 
 import com.lawfirm.entity.Case;
 import com.lawfirm.entity.DocumentFolder;
+import com.lawfirm.enums.CaseStatus;
 import com.lawfirm.repository.CaseRepository;
 import com.lawfirm.repository.DocumentFolderRepository;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Year;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -119,6 +121,13 @@ public class CaseFileLibraryService {
     public List<DocumentFolder> getOrCreateCaseFolders(Long caseId) {
         Case caseEntity = caseRepository.findById(caseId)
                 .orElseThrow(() -> new IllegalArgumentException("案件不存在"));
+        CaseStatus status = CaseStatus.fromCode(caseEntity.getStatus());
+        if ((caseEntity.getCaseFolderPath() == null || caseEntity.getCaseFolderPath().trim().isEmpty())
+                && status != CaseStatus.ACTIVE
+                && status != CaseStatus.CLOSED
+                && status != CaseStatus.ARCHIVED) {
+            return Collections.emptyList();
+        }
         ensureCaseFolder(caseEntity);
         return getCaseFolders(caseId);
     }

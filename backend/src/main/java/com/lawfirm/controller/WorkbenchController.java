@@ -3,8 +3,11 @@ package com.lawfirm.controller;
 import com.lawfirm.service.StatisticsService;
 import com.lawfirm.service.TodoService;
 import com.lawfirm.service.CalendarService;
+import com.lawfirm.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -23,12 +26,14 @@ public class WorkbenchController {
     private final StatisticsService statisticsService;
     private final TodoService todoService;
     private final CalendarService calendarService;
+    private final SecurityUtils securityUtils;
 
     /**
      * 获取工作台统计数据
      * GET /api/workbench/stats
      */
     @GetMapping("/stats")
+    @PreAuthorize("hasAuthority('STATISTICS_VIEW')")
     public Map<String, Object> getStats(
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
@@ -38,7 +43,7 @@ public class WorkbenchController {
             return statisticsService.getStatsCards(start, end);
         } catch (Exception e) {
             log.error("获取工作台统计数据失败", e);
-            throw new RuntimeException("获取工作台统计数据失败: " + e.getMessage());
+            throw new RuntimeException("获取工作台统计数据失败");
         }
     }
 
@@ -47,6 +52,7 @@ public class WorkbenchController {
      * GET /api/workbench/case-trend
      */
     @GetMapping("/case-trend")
+    @PreAuthorize("hasAuthority('STATISTICS_VIEW')")
     public Map<String, Object> getCaseTrend(
             @RequestParam(defaultValue = "month") String period,
             @RequestParam(required = false) String startDate,
@@ -57,7 +63,7 @@ public class WorkbenchController {
             return statisticsService.getCaseTrend(period, start, end);
         } catch (Exception e) {
             log.error("获取案件趋势失败", e);
-            throw new RuntimeException("获取案件趋势失败: " + e.getMessage());
+            throw new RuntimeException("获取案件趋势失败");
         }
     }
 
@@ -66,10 +72,12 @@ public class WorkbenchController {
      * GET /api/workbench/todo-stats
      */
     @GetMapping("/todo-stats")
+    @PreAuthorize("hasAuthority('TODO_VIEW')")
     public Map<String, Object> getTodoStats(@RequestParam Long userId) {
+        Long visibleUserId = resolveVisibleUserId(userId);
         try {
             Map<String, Object> result = new HashMap<>();
-            var todos = todoService.getTodosByAssignee(userId);
+            var todos = todoService.getTodosByAssignee(visibleUserId);
             result.put("total", todos.size());
             result.put("pending", todos.stream().filter(t -> "PENDING".equals(t.getStatus())).count());
             result.put("completed", todos.stream().filter(t -> "COMPLETED".equals(t.getStatus())).count());
@@ -77,7 +85,7 @@ public class WorkbenchController {
             return result;
         } catch (Exception e) {
             log.error("获取待办统计失败", e);
-            throw new RuntimeException("获取待办统计失败: " + e.getMessage());
+            throw new RuntimeException("获取待办统计失败");
         }
     }
 
@@ -86,19 +94,32 @@ public class WorkbenchController {
      * GET /api/workbench/calendar-stats
      */
     @GetMapping("/calendar-stats")
+    @PreAuthorize("isAuthenticated()")
     public Map<String, Object> getCalendarStats(
             @RequestParam Long userId,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
+        Long visibleUserId = resolveVisibleUserId(userId);
         try {
             Map<String, Object> result = new HashMap<>();
-            var calendars = calendarService.getCalendarsByUser(userId);
+            var calendars = calendarService.getCalendarsByUser(visibleUserId);
             result.put("total", calendars.size());
             result.put("upcoming", calendars.stream().filter(c -> c.getStartTime().isAfter(java.time.LocalDateTime.now())).count());
             return result;
         } catch (Exception e) {
             log.error("获取日程统计失败", e);
-            throw new RuntimeException("获取日程统计失败: " + e.getMessage());
+            throw new RuntimeException("获取日程统计失败");
         }
+    }
+
+    private Long resolveVisibleUserId(Long requestedUserId) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        if (requestedUserId == null || currentUserId.equals(requestedUserId)) {
+            return currentUserId;
+        }
+        if (securityUtils.isAdmin()) {
+            return requestedUserId;
+        }
+        throw new AccessDeniedException("无权查看其他用户的个人工作台数据");
     }
 }

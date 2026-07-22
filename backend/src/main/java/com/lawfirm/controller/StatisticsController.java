@@ -4,6 +4,7 @@ import com.lawfirm.service.StatisticsService;
 import com.lawfirm.util.Result;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,7 +26,8 @@ public class StatisticsController {
      * 获取统计卡片数据
      * GET /api/statistics/overview
      */
-    @GetMapping("/overview")
+    @GetMapping({"/overview", "/cards"})
+    @PreAuthorize("hasAuthority('STATISTICS_VIEW')")
     public Result<Map<String, Object>> getOverview(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
@@ -34,7 +36,7 @@ public class StatisticsController {
             return Result.success(result);
         } catch (Exception e) {
             log.error("获取统计概览失败", e);
-            return Result.error("获取统计概览失败: " + e.getMessage());
+            return Result.error("获取统计概览失败");
         }
     }
 
@@ -42,7 +44,8 @@ public class StatisticsController {
      * 获取案件数量趋势
      * GET /api/statistics/case-trends
      */
-    @GetMapping("/case-trends")
+    @GetMapping({"/case-trends", "/case-trend"})
+    @PreAuthorize("hasAuthority('STATISTICS_VIEW')")
     public Result<Map<String, Object>> getCaseTrends(
             @RequestParam(defaultValue = "month") String period,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
@@ -52,7 +55,7 @@ public class StatisticsController {
             return Result.success(result);
         } catch (Exception e) {
             log.error("获取案件趋势失败", e);
-            return Result.error("获取案件趋势失败: " + e.getMessage());
+            return Result.error("获取案件趋势失败");
         }
     }
 
@@ -60,7 +63,8 @@ public class StatisticsController {
      * 获取案件类型分布
      * GET /api/statistics/case-types
      */
-    @GetMapping("/case-types")
+    @GetMapping({"/case-types", "/case-type-distribution"})
+    @PreAuthorize("hasAuthority('STATISTICS_VIEW')")
     public Result<Map<String, Object>> getCaseTypes(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
@@ -71,7 +75,7 @@ public class StatisticsController {
             return Result.success(result);
         } catch (Exception e) {
             log.error("获取案件类型分布失败", e);
-            return Result.error("获取案件类型分布失败: " + e.getMessage());
+            return Result.error("获取案件类型分布失败");
         }
     }
 
@@ -79,7 +83,8 @@ public class StatisticsController {
      * 获取收费统计
      * GET /api/statistics/fees
      */
-    @GetMapping("/fees")
+    @GetMapping({"/fees", "/fee-statistics"})
+    @PreAuthorize("hasAuthority('STATISTICS_VIEW')")
     public Result<Map<String, Object>> getFeeStatistics(
             @RequestParam(defaultValue = "month") String type,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
@@ -89,7 +94,7 @@ public class StatisticsController {
             return Result.success(result);
         } catch (Exception e) {
             log.error("获取收费统计失败", e);
-            return Result.error("获取收费统计失败: " + e.getMessage());
+            return Result.error("获取收费统计失败");
         }
     }
 
@@ -98,6 +103,7 @@ public class StatisticsController {
      * GET /api/statistics/lawyer-performance
      */
     @GetMapping("/lawyer-performance")
+    @PreAuthorize("hasAuthority('STATISTICS_VIEW')")
     public Result<Map<String, Object>> getLawyerPerformance(
             @RequestParam(defaultValue = "caseCount") String metric,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
@@ -107,7 +113,7 @@ public class StatisticsController {
             return Result.success(result);
         } catch (Exception e) {
             log.error("获取律师业绩排名失败", e);
-            return Result.error("获取律师业绩排名失败: " + e.getMessage());
+            return Result.error("获取律师业绩排名失败");
         }
     }
 
@@ -116,6 +122,7 @@ public class StatisticsController {
      * GET /api/statistics/win-rate
      */
     @GetMapping("/win-rate")
+    @PreAuthorize("hasAuthority('STATISTICS_VIEW')")
     public Result<Map<String, Object>> getWinRate(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
@@ -124,7 +131,7 @@ public class StatisticsController {
             return Result.success(result);
         } catch (Exception e) {
             log.error("获取胜诉率统计失败", e);
-            return Result.error("获取胜诉率统计失败: " + e.getMessage());
+            return Result.error("获取胜诉率统计失败");
         }
     }
 
@@ -133,6 +140,7 @@ public class StatisticsController {
      * GET /api/statistics/collection-rate
      */
     @GetMapping("/collection-rate")
+    @PreAuthorize("hasAuthority('STATISTICS_VIEW')")
     public Result<Map<String, Object>> getCollectionRate(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
@@ -141,7 +149,7 @@ public class StatisticsController {
             return Result.success(result);
         } catch (Exception e) {
             log.error("获取收款率统计失败", e);
-            return Result.error("获取收款率统计失败: " + e.getMessage());
+            return Result.error("获取收款率统计失败");
         }
     }
 
@@ -150,13 +158,14 @@ public class StatisticsController {
      * POST /api/statistics/export/excel
      */
     @PostMapping("/export/excel")
+    @PreAuthorize("hasAuthority('STATISTICS_EXPORT')")
     public Result<String> exportExcel(@RequestBody Map<String, Object> params) {
         try {
             String filePath = statisticsService.exportExcel(params);
             return Result.success("Excel导出成功", filePath);
         } catch (Exception e) {
             log.error("导出Excel失败", e);
-            return Result.error("导出Excel失败: " + e.getMessage());
+            return Result.error("导出Excel失败");
         }
     }
 
@@ -165,13 +174,14 @@ public class StatisticsController {
      * POST /api/statistics/export/pdf
      */
     @PostMapping("/export/pdf")
+    @PreAuthorize("hasAuthority('STATISTICS_EXPORT')")
     public Result<String> exportPdf(@RequestBody Map<String, Object> params) {
         try {
             String filePath = statisticsService.exportPdf(params);
             return Result.success("PDF导出成功", filePath);
         } catch (Exception e) {
             log.error("导出PDF失败", e);
-            return Result.error("导出PDF失败: " + e.getMessage());
+            return Result.error("导出PDF失败");
         }
     }
 }

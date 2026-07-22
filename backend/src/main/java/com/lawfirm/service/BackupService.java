@@ -15,6 +15,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -27,7 +29,7 @@ public class BackupService {
 
     private final DataBackupRepository dataBackupRepository;
 
-    @Value("${backup.base.dir:./backups}")
+    @Value("${backup.base-dir:./backups}")
     private String backupBaseDir;
 
     @Value("${spring.datasource.url}")
@@ -39,8 +41,11 @@ public class BackupService {
     @Value("${spring.datasource.password}")
     private String datasourcePassword;
 
-    @Value("${backup.retention.days:180}")
+    @Value("${backup.retention-days:180}")
     private Integer retentionDays;
+
+    @Value("${backup.postgres.pg-dump-path:pg_dump}")
+    private String pgDumpPath;
 
     /**
      * 每天凌晨2点执行自动备份
@@ -81,6 +86,7 @@ public class BackupService {
         backup.setCreatedBy(userId);
         backup.setRetentionDays(retentionDays);
         backup.setRemark(remark);
+        backup.setFilePath("");
 
         try {
             // 确保备份目录存在
@@ -91,8 +97,9 @@ public class BackupService {
 
             // 生成备份文件名
             String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            String backupFileName = "lawfirm_backup_" + timestamp + ".sql";
+            String backupFileName = "lawfirm_backup_" + timestamp + getBackupFileExtension();
             String backupFilePath = backupPath.resolve(backupFileName).toString();
+            backup.setFilePath(backupFilePath);
 
             // 执行数据库备份
             boolean success = backupDatabase(backupFilePath);
@@ -125,13 +132,15 @@ public class BackupService {
     }
 
     /**
-     * 备份数据库（支持H2和MySQL）
+     * 备份数据库（支持 H2、MySQL 和 PostgreSQL）
      */
     private boolean backupDatabase(String backupFilePath) {
         try {
             // 检测数据库类型
             if (datasourceUrl.contains("h2")) {
                 return backupH2Database(backupFilePath);
+            } else if (datasourceUrl.contains("postgresql")) {
+                return backupPostgreSQLDatabase(backupFilePath);
             } else if (datasourceUrl.contains("mysql")) {
                 return backupMySQLDatabase(backupFilePath);
             } else {
@@ -141,6 +150,88 @@ public class BackupService {
         } catch (Exception e) {
             log.error("执行数据库备份异常: {}", e.getMessage(), e);
             return false;
+        }
+    }
+
+    private String getBackupFileExtension() {
+        return datasourceUrl.contains("postgresql") ? ".dump" : ".sql";
+    }
+
+    /**
+     * 使用 PostgreSQL custom format 备份，密码只通过进程环境变量传递。
+     */
+    private boolean backupPostgreSQLDatabase(String backupFilePath) {
+        try {
+            PostgreSqlConnectionInfo connection = parsePostgreSqlConnection(datasourceUrl);
+            List<String> command = new ArrayList<>();
+            command.add(pgDumpPath);
+            command.add("--host=" + connection.host);
+            command.add("--port=" + connection.port);
+            command.add("--username=" + datasourceUsername);
+            command.add("--format=custom");
+            command.add("--no-owner");
+            command.add("--no-privileges");
+            command.add("--file=" + backupFilePath);
+            command.add(connection.database);
+
+            ProcessBuilder processBuilder = new ProcessBuilder(command);
+            processBuilder.redirectErrorStream(true);
+            if (datasourcePassword != null && !datasourcePassword.isEmpty()) {
+                processBuilder.environment().put("PGPASSWORD", datasourcePassword);
+            }
+
+            Process process = processBuilder.start();
+            String output = readProcessOutput(process);
+            int exitCode = process.waitFor();
+            Path backupFile = Paths.get(backupFilePath);
+            boolean success = exitCode == 0 && Files.exists(backupFile) && Files.size(backupFile) > 0;
+            if (!success) {
+                log.error("PostgreSQL数据库备份失败: exitCode={}, output={}", exitCode, output);
+            }
+            return success;
+        } catch (Exception e) {
+            log.error("执行PostgreSQL备份异常: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    static PostgreSqlConnectionInfo parsePostgreSqlConnection(String jdbcUrl) {
+        if (jdbcUrl == null || !jdbcUrl.startsWith("jdbc:postgresql://")) {
+            throw new IllegalArgumentException("无效的PostgreSQL JDBC地址");
+        }
+        URI uri = URI.create(jdbcUrl.substring("jdbc:".length()));
+        String path = uri.getPath();
+        if (path == null || path.length() <= 1) {
+            throw new IllegalArgumentException("PostgreSQL JDBC地址缺少数据库名");
+        }
+        return new PostgreSqlConnectionInfo(
+                uri.getHost(),
+                uri.getPort() > 0 ? uri.getPort() : 5432,
+                path.substring(1));
+    }
+
+    private String readProcessOutput(Process process) throws IOException {
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (output.length() < 4000) {
+                    output.append(line).append('\n');
+                }
+            }
+        }
+        return output.toString().trim();
+    }
+
+    static class PostgreSqlConnectionInfo {
+        final String host;
+        final int port;
+        final String database;
+
+        PostgreSqlConnectionInfo(String host, int port, String database) {
+            this.host = host;
+            this.port = port;
+            this.database = database;
         }
     }
 
@@ -347,6 +438,8 @@ public class BackupService {
             // 检测数据库类型并执行相应的恢复
             if (datasourceUrl.contains("h2")) {
                 return restoreH2Database(backup.getFilePath());
+            } else if (datasourceUrl.contains("postgresql")) {
+                throw new RuntimeException("PostgreSQL恢复必须停机后由管理员使用pg_restore执行，系统内不允许在线覆盖主库");
             } else if (datasourceUrl.contains("mysql")) {
                 return restoreMySQLDatabase(backup.getFilePath());
             } else {
@@ -476,7 +569,11 @@ public class BackupService {
             // 删除物理文件
             File backupFile = new File(backup.getFilePath());
             if (backupFile.exists()) {
-                backupFile.delete();
+                boolean fileDeleted = backupFile.delete();
+                if (!fileDeleted) {
+                    log.warn("备份文件删除失败，保留数据库记录: backupId={}", backupId);
+                    return false;
+                }
             }
 
             // 标记记录为已删除

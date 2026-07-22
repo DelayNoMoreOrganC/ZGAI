@@ -25,6 +25,13 @@ public class EmbeddingService {
             .writeTimeout(30, TimeUnit.SECONDS)
             .build();
 
+    public boolean isConfigured() {
+        String apiKey = config.getApiKey();
+        return apiKey != null
+                && !apiKey.trim().isEmpty()
+                && !apiKey.startsWith("your-");
+    }
+
     /**
      * 生成文本的向量表示
      *
@@ -34,6 +41,9 @@ public class EmbeddingService {
     public List<Double> embedText(String text) {
         if (text == null || text.trim().isEmpty()) {
             throw new IllegalArgumentException("文本不能为空");
+        }
+        if (!isConfigured()) {
+            throw new IllegalStateException("Embedding 服务未配置");
         }
 
         try {

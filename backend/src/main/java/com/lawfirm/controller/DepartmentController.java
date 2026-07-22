@@ -8,6 +8,7 @@ import javax.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -29,6 +30,7 @@ public class DepartmentController {
      * POST /api/department
      */
     @PostMapping
+    @PreAuthorize("hasAuthority('SYSTEM_CONFIG')")
     public Result<DepartmentDTO> createDepartment(@Valid @RequestBody DepartmentCreateRequest request) {
         try {
             DepartmentDTO result = departmentService.createDepartment(request);
@@ -44,6 +46,7 @@ public class DepartmentController {
      * PUT /api/department/{id}
      */
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('SYSTEM_CONFIG')")
     public Result<DepartmentDTO> updateDepartment(@PathVariable Long id,
                                                  @Valid @RequestBody DepartmentCreateRequest request) {
         try {
@@ -60,6 +63,7 @@ public class DepartmentController {
      * DELETE /api/department/{id}
      */
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('SYSTEM_CONFIG')")
     public Result<Void> deleteDepartment(@PathVariable Long id) {
         try {
             departmentService.deleteDepartment(id);
@@ -75,6 +79,7 @@ public class DepartmentController {
      * GET /api/department/tree
      */
     @GetMapping("/tree")
+    @PreAuthorize("isAuthenticated()")
     public Result<List<DepartmentDTO>> getDepartmentTree() {
         try {
             List<DepartmentDTO> result = departmentService.getDepartmentTree();
@@ -90,6 +95,7 @@ public class DepartmentController {
      * GET /api/department
      */
     @GetMapping
+    @PreAuthorize("isAuthenticated()")
     public Result<List<DepartmentDTO>> getDepartmentList() {
         try {
             List<DepartmentDTO> result = departmentService.getDepartmentList();
@@ -105,6 +111,7 @@ public class DepartmentController {
      * GET /api/department/{id}
      */
     @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public Result<DepartmentDTO> getDepartmentDetail(@PathVariable Long id) {
         try {
             DepartmentDTO result = departmentService.getDepartmentDetail(id);

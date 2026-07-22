@@ -31,6 +31,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class RAGKnowledgeService {
 
+    private static final java.util.regex.Pattern LEGAL_SEGMENT_START = java.util.regex.Pattern.compile(
+            "^(第[一二三四五六七八九十百千万零〇0-9]+[编章节条款部分]|[（(][一二三四五六七八九十百0-9]+[）)]|[一二三四五六七八九十百]+、).*");
+
     private final AIConfigService aiConfigService;
     private final KnowledgeArticleRepository knowledgeArticleRepository;
     private final EmbeddingService embeddingService;
@@ -57,21 +60,24 @@ public class RAGKnowledgeService {
 
         try {
             // Step 1: 向量检索相关文档
-            List<ScoredDocument> scoredDocs = searchRelevantDocumentsWithScore(question);
+            SearchExecution searchExecution = searchRelevantDocumentsWithScore(question);
+            List<ScoredDocument> scoredDocs = searchExecution.documents;
 
             if (scoredDocs.isEmpty()) {
                 Map<String, Object> emptyResult = new HashMap<>();
                 emptyResult.put("answer", "未找到相关文档。请尝试其他关键词。");
                 emptyResult.put("sources", List.of());
                 emptyResult.put("hasAnswer", false);
+                emptyResult.put("searchMethod", searchExecution.method);
+                emptyResult.put("answerMode", "RETRIEVAL_ONLY");
                 return emptyResult;
             }
 
             // Step 2: 构建增强上下文（包含相关性分数）
-            String context = buildEnhancedContext(scoredDocs);
+            String context = buildEnhancedContext(scoredDocs, question);
 
             // Step 3: 通过LLM生成答案
-            String answer = generateAnswer(question, context);
+            AnswerGeneration answerGeneration = generateAnswer(question, context, scoredDocs);
 
             // Step 4: 提取源信息（包含相关性分数）
             List<Map<String, Object>> sources = scoredDocs.stream()
@@ -84,6 +90,11 @@ public class RAGKnowledgeService {
                     sourceInfo.put("category", doc.getCategory());
                     sourceInfo.put("knowledgeSource", doc.getKnowledgeSource());
                     sourceInfo.put("indexStatus", doc.getIndexStatus());
+                    sourceInfo.put("issuingAuthority", doc.getIssuingAuthority());
+                    sourceInfo.put("documentNumber", doc.getDocumentNumber());
+                    sourceInfo.put("effectiveDate", doc.getEffectiveDate());
+                    sourceInfo.put("validityStatus", KnowledgeArticlePolicy.normalizeValidityStatus(doc.getValidityStatus()));
+                    sourceInfo.put("sourceReference", doc.getSourceReference());
                     sourceInfo.put("relevanceScore", String.format("%.2f", scoredDoc.score));
 
                     String summary = doc.getSummary();
@@ -92,17 +103,19 @@ public class RAGKnowledgeService {
                         summary = content.length() > 100 ? content.substring(0, 100) + "..." : content;
                     }
                     sourceInfo.put("summary", summary != null ? summary : "");
+                    sourceInfo.put("excerpt", extractRelevantExcerpt(doc, question, 480));
 
                     return sourceInfo;
                 })
                 .collect(Collectors.toList());
 
             Map<String, Object> result = new HashMap<>();
-            result.put("answer", answer);
+            result.put("answer", answerGeneration.answer);
             result.put("sources", sources);
             result.put("hasAnswer", true);
             result.put("documentCount", scoredDocs.size());
-            result.put("searchMethod", "Vector Search (Qdrant + Aliyun Embedding)");
+            result.put("searchMethod", searchExecution.method);
+            result.put("answerMode", answerGeneration.mode);
             return result;
 
         } catch (Exception e) {
@@ -124,8 +137,12 @@ public class RAGKnowledgeService {
      * 3. 检索速度 < 500ms
      * 4. 准确率 mAP@10 > 0.85
      */
-    private List<ScoredDocument> searchRelevantDocumentsWithScore(String question) {
+    private SearchExecution searchRelevantDocumentsWithScore(String question) {
         long startTime = System.currentTimeMillis();
+
+        if (!embeddingService.isConfigured()) {
+            return new SearchExecution(fallbackToKeywordSearch(question), "KEYWORD");
+        }
 
         try {
             // Step 1: 生成问题的向量表示
@@ -137,7 +154,7 @@ public class RAGKnowledgeService {
 
             if (searchResults.isEmpty()) {
                 log.info("向量检索未找到相关文档: question={}", question);
-                return Collections.emptyList();
+                return new SearchExecution(fallbackToKeywordSearch(question), "KEYWORD");
             }
 
             // Step 3: 根据检索结果获取完整文档
@@ -162,12 +179,12 @@ public class RAGKnowledgeService {
             log.info("向量检索完成: 问题={}, 检索结果数={}, 最终文档数={}, 耗时={}ms",
                     question, searchResults.size(), scoredDocs.size(), duration);
 
-            return scoredDocs;
+            return new SearchExecution(scoredDocs, "VECTOR");
 
         } catch (Exception e) {
             log.error("向量检索失败，降级到关键词检索: {}", e.getMessage());
             // 降级到关键词检索（原来的TF-IDF方法）
-            return fallbackToKeywordSearch(question);
+            return new SearchExecution(fallbackToKeywordSearch(question), "KEYWORD");
         }
     }
 
@@ -181,9 +198,9 @@ public class RAGKnowledgeService {
                     .collect(Collectors.toList());
             List<ScoredDocument> scoredDocs = new ArrayList<>();
 
-            String lowerQuestion = question.toLowerCase();
+            Set<String> keywords = extractKeywords(question);
             for (KnowledgeArticle doc : allDocs) {
-                double score = calculateKeywordRelevance(doc, lowerQuestion);
+                double score = calculateKeywordRelevance(doc, keywords);
                 if (score > 0.0) {
                     scoredDocs.add(new ScoredDocument(doc, score));
                 }
@@ -203,36 +220,70 @@ public class RAGKnowledgeService {
     /**
      * 计算关键词相关性（简单的关键词匹配）
      */
-    private double calculateKeywordRelevance(KnowledgeArticle doc, String question) {
+    private double calculateKeywordRelevance(KnowledgeArticle doc, Set<String> keywords) {
         String title = doc.getTitle() != null ? doc.getTitle().toLowerCase() : "";
         String content = doc.getContent() != null ? doc.getContent().toLowerCase() : "";
-
-        // 提取问题中的关键词（长度>=2的词）
-        String[] keywords = question.split("\\s+");
-        int matchCount = 0;
-        int totalKeywords = 0;
-
+        if (keywords.isEmpty()) {
+            return 0.0;
+        }
+        double matchedWeight = 0;
         for (String keyword : keywords) {
-            if (keyword.length() >= 2) {
-                totalKeywords++;
-                if (title.contains(keyword) || content.contains(keyword)) {
-                    matchCount++;
+            if (title.contains(keyword)) {
+                matchedWeight += 2.0;
+            } else if (content.contains(keyword)) {
+                matchedWeight += 1.0;
+            }
+        }
+        return Math.min(1.0, matchedWeight / keywords.size());
+    }
+
+    private Set<String> extractKeywords(String question) {
+        Set<String> keywords = new LinkedHashSet<>();
+        if (question == null) {
+            return keywords;
+        }
+        String normalized = question.toLowerCase(Locale.ROOT)
+                .replaceAll("[\\p{P}\\p{S}\\s]+", " ")
+                .trim();
+        for (String token : normalized.split(" +")) {
+            if (token.length() < 2) {
+                continue;
+            }
+            keywords.add(token);
+            if (token.matches(".*[\\u4e00-\\u9fff].*") && token.length() > 2) {
+                int maxGramLength = Math.min(6, token.length());
+                for (int length = maxGramLength; length >= 2; length--) {
+                    for (int i = 0; i <= token.length() - length; i++) {
+                        keywords.add(token.substring(i, i + length));
+                    }
                 }
             }
         }
+        addIntentExpansion(normalized, keywords);
+        return keywords;
+    }
 
-        if (totalKeywords == 0) {
-            return 0.0;
+    private void addIntentExpansion(String normalizedQuestion, Set<String> keywords) {
+        if (normalizedQuestion.contains("如何处理")
+                || normalizedQuestion.contains("怎么处理")
+                || normalizedQuestion.contains("应如何")) {
+            keywords.addAll(Arrays.asList("主动回避", "回避", "解除委托", "解除", "书面同意"));
         }
-
-        // 关键词匹配率
-        return (double) matchCount / totalKeywords;
+        if (normalizedQuestion.contains("多久") || normalizedQuestion.contains("期限")) {
+            keywords.addAll(Arrays.asList("期限", "个月", "年内"));
+        }
+        if (normalizedQuestion.contains("刑事")) {
+            keywords.addAll(Arrays.asList("辩护人", "被害人", "犯罪嫌疑人", "被告人"));
+        }
+        if (normalizedQuestion.contains("商业银行") || normalizedQuestion.contains("分支机构")) {
+            keywords.addAll(Arrays.asList("商业银行", "分支机构", "省级"));
+        }
     }
 
     /**
      * 构建增强上下文（包含相关性分数）
      */
-    private String buildEnhancedContext(List<ScoredDocument> scoredDocs) {
+    private String buildEnhancedContext(List<ScoredDocument> scoredDocs, String question) {
         StringBuilder context = new StringBuilder();
         context.append("知识库文档（按相关性排序）:\n\n");
 
@@ -243,13 +294,21 @@ public class RAGKnowledgeService {
             context.append(String.format("[文档%d 相关度: %.2f] %s\n",
                 i + 1, scoredDoc.score, doc.getTitle()));
             context.append(String.format("分类: %s\n", doc.getCategory()));
+            context.append(String.format("有效状态: %s\n",
+                    KnowledgeArticlePolicy.normalizeValidityStatus(doc.getValidityStatus())));
+            if (doc.getIssuingAuthority() != null) {
+                context.append(String.format("发布机关: %s\n", doc.getIssuingAuthority()));
+            }
+            if (doc.getDocumentNumber() != null) {
+                context.append(String.format("文号: %s\n", doc.getDocumentNumber()));
+            }
 
             if (doc.getSummary() != null) {
                 context.append(String.format("摘要: %s\n", doc.getSummary()));
-            } else if (doc.getContent() != null) {
-                String content = doc.getContent();
-                context.append(String.format("内容: %s\n",
-                    content.length() > 500 ? content.substring(0, 500) + "..." : content));
+            }
+            if (doc.getContent() != null) {
+                context.append(String.format("命中内容: %s\n",
+                        extractRelevantExcerpt(doc, question, 1500)));
             }
             context.append("\n");
         }
@@ -260,21 +319,154 @@ public class RAGKnowledgeService {
     /**
      * Generate answer via LLM
      */
-    private String generateAnswer(String question, String context) {
+    private AnswerGeneration generateAnswer(String question, String context, List<ScoredDocument> scoredDocs) {
         try {
-            AIConfig config = aiConfigService.getDefaultConfig();
+            AIConfig config = aiConfigService.getUsableDefaultConfigOrNull();
             if (config == null) {
-                return "AI service not configured.";
+                return new AnswerGeneration(buildRetrievalAnswer(question, scoredDocs), "RETRIEVAL_ONLY");
             }
 
             String prompt = buildPrompt(question, context);
             String response = callLLMAPI(config, prompt);
-            return extractAnswer(response);
+            return new AnswerGeneration(extractAnswer(response), "LLM");
 
         } catch (Exception e) {
             log.error("LLM call failed", e);
-            return "Answer generation failed. Please try again later.";
+            return new AnswerGeneration(buildRetrievalAnswer(question, scoredDocs), "RETRIEVAL_ONLY");
         }
+    }
+
+    private String buildRetrievalAnswer(String question, List<ScoredDocument> scoredDocs) {
+        StringBuilder answer = new StringBuilder("已从知识库定位到以下相关资料。当前尚未接入本地大模型，以下为原文检索结果，请打开完整文档核对后使用：\n\n");
+        for (int i = 0; i < Math.min(3, scoredDocs.size()); i++) {
+            KnowledgeArticle doc = scoredDocs.get(i).document;
+            answer.append(i + 1).append(". ").append(doc.getTitle()).append("\n");
+            String excerpt = extractRelevantExcerpt(doc, question, 520);
+            if (excerpt != null && !excerpt.trim().isEmpty()) {
+                answer.append(excerpt).append("\n\n");
+            }
+        }
+        answer.append("提示：检索结果不替代律师对现行有效性、适用范围及个案事实的专业判断。");
+        return answer.toString();
+    }
+
+    private String extractRelevantExcerpt(KnowledgeArticle doc, String question, int maxLength) {
+        String content = doc.getContent() != null ? doc.getContent() : doc.getSummary();
+        if (content == null || content.trim().isEmpty()) {
+            return "";
+        }
+
+        List<String> segments = splitLegalSegments(content);
+        if (segments.isEmpty()) {
+            return abbreviate(content.replaceAll("\\s+", " ").trim(), maxLength);
+        }
+
+        Set<String> keywords = extractKeywords(question).stream()
+                .filter(keyword -> keyword.length() <= 8)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        List<Map.Entry<Integer, Double>> rankedSegments = new ArrayList<>();
+        for (int i = 0; i < segments.size(); i++) {
+            String candidate = segments.get(i).toLowerCase(Locale.ROOT);
+            double score = 0;
+            for (String keyword : keywords) {
+                if (candidate.contains(keyword)) {
+                    score += Math.max(1.0, keyword.length() * keyword.length());
+                }
+            }
+            if (score > 0) {
+                rankedSegments.add(new AbstractMap.SimpleEntry<>(i, score));
+            }
+        }
+        rankedSegments.sort((left, right) -> Double.compare(right.getValue(), left.getValue()));
+        LinkedHashSet<Integer> selectedIndexes = new LinkedHashSet<>();
+        for (Map.Entry<Integer, Double> entry : rankedSegments) {
+            if (selectedIndexes.size() >= 4) {
+                break;
+            }
+            int index = entry.getKey();
+            selectedIndexes.add(index);
+            if (selectedIndexes.size() < 4 && index + 1 < segments.size()) {
+                selectedIndexes.add(index + 1);
+            }
+        }
+        if (selectedIndexes.isEmpty()) {
+            selectedIndexes.add(0);
+        }
+
+        StringBuilder excerpt = new StringBuilder();
+        for (Integer index : selectedIndexes) {
+            String segment = segments.get(index);
+            if (excerpt.length() > 0) {
+                excerpt.append("\n");
+            }
+            excerpt.append(segment);
+            if (excerpt.length() >= maxLength) {
+                break;
+            }
+        }
+        return abbreviate(excerpt.toString(), maxLength);
+    }
+
+    private List<String> splitLegalSegments(String content) {
+        List<String> segments = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        for (String rawLine : content.replace("\r", "").split("\n")) {
+            String line = rawLine.trim();
+            if (line.isEmpty()) {
+                flushSegment(segments, current);
+                continue;
+            }
+            if (LEGAL_SEGMENT_START.matcher(line).matches()) {
+                flushSegment(segments, current);
+            }
+            if (current.length() > 0 && needsWordSeparator(current, line)) {
+                current.append(' ');
+            }
+            current.append(line);
+            if (line.endsWith("。") || line.endsWith("；") || line.endsWith("！") || line.endsWith("？")) {
+                flushSegment(segments, current);
+            }
+        }
+        flushSegment(segments, current);
+        return segments;
+    }
+
+    private void flushSegment(List<String> segments, StringBuilder current) {
+        if (current.length() > 0) {
+            segments.add(current.toString().replaceAll("\\s+", " ").trim());
+            current.setLength(0);
+        }
+    }
+
+    private boolean needsWordSeparator(StringBuilder current, String nextLine) {
+        char previous = current.charAt(current.length() - 1);
+        char next = nextLine.charAt(0);
+        return isAsciiWord(previous) && isAsciiWord(next);
+    }
+
+    private boolean isAsciiWord(char value) {
+        return (value >= 'a' && value <= 'z')
+                || (value >= 'A' && value <= 'Z')
+                || (value >= '0' && value <= '9');
+    }
+
+    private String abbreviate(String text, int maxLength) {
+        if (text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, Math.max(1, maxLength - 3)) + "...";
+    }
+
+    public Map<String, Object> healthStatus() {
+        boolean embeddingConfigured = embeddingService.isConfigured();
+        boolean llmConfigured = aiConfigService.getUsableDefaultConfigOrNull() != null;
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("status", embeddingConfigured && llmConfigured ? "READY" : "DEGRADED");
+        status.put("mode", embeddingConfigured ? "VECTOR_READY" : "KEYWORD");
+        status.put("embedding", embeddingConfigured ? "CONFIGURED" : "NOT_CONFIGURED");
+        status.put("llm", llmConfigured ? "CONFIGURED" : "NOT_CONFIGURED");
+        status.put("service", "ZGAI Knowledge RAG");
+        return status;
     }
 
     /**
@@ -299,19 +491,7 @@ public class RAGKnowledgeService {
     }
 
     private boolean isRagIndexable(KnowledgeArticle article) {
-        if (article == null || Boolean.TRUE.equals(article.getDeleted())) {
-            return false;
-        }
-        if (!Boolean.TRUE.equals(article.getKnowledgeEligible())) {
-            return false;
-        }
-        String source = article.getKnowledgeSource();
-        return source == null
-                || "FIRM_KNOWLEDGE".equals(source)
-                || "LAW_REGULATION".equals(source)
-                || "FIRM_POLICY".equals(source)
-                || "PUBLIC_TEMPLATE".equals(source)
-                || "REFERENCE_MATERIAL".equals(source);
+        return KnowledgeArticlePolicy.isRagIndexable(article);
     }
 
     /**
@@ -485,6 +665,26 @@ public class RAGKnowledgeService {
         ScoredDocument(KnowledgeArticle document, double score) {
             this.document = document;
             this.score = score;
+        }
+    }
+
+    private static class SearchExecution {
+        final List<ScoredDocument> documents;
+        final String method;
+
+        SearchExecution(List<ScoredDocument> documents, String method) {
+            this.documents = documents;
+            this.method = method;
+        }
+    }
+
+    private static class AnswerGeneration {
+        final String answer;
+        final String mode;
+
+        AnswerGeneration(String answer, String mode) {
+            this.answer = answer;
+            this.mode = mode;
         }
     }
 }

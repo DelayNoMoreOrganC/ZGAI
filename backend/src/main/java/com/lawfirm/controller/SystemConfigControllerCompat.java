@@ -27,7 +27,7 @@ public class SystemConfigControllerCompat {
      * GET /api/admin/settings
      */
     @GetMapping("/settings")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('SYSTEM_CONFIG')")
     public Result<Map<String, String>> getSettings(@RequestParam(required = false) String category) {
         try {
             if (category != null && !category.isEmpty()) {

@@ -249,6 +249,29 @@ public class ClientService {
         }
     }
 
+    public void assertClientEditable(Long clientId, Long currentUserId) {
+        Client client = clientRepository.findById(clientId)
+                .orElseThrow(() -> new ResourceNotFoundException("客户", clientId));
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
+        if (isDevelopmentAdmin(currentUser) || "主任".equals(currentUser.getPosition())) {
+            return;
+        }
+        if (client == null || Boolean.TRUE.equals(client.getDeleted())) {
+            throw new IllegalArgumentException("客户不存在");
+        }
+        List<Long> relatedUserIds = new ArrayList<>();
+        relatedUserIds.addAll(parseIds(client.getSourceUserIds()));
+        relatedUserIds.addAll(parseIds(client.getClientOwnerIds()));
+        if (client.getOwnerId() != null) {
+            relatedUserIds.add(client.getOwnerId());
+        }
+        if (relatedUserIds.stream().anyMatch(currentUserId::equals)) {
+            return;
+        }
+        throw new IllegalArgumentException("仅案源人、承办人、主任或管理员可修改该客户");
+    }
+
     public boolean canAccessClient(Long clientId, Long currentUserId) {
         Client client = clientRepository.findById(clientId)
                 .orElseThrow(() -> new ResourceNotFoundException("客户", clientId));
@@ -678,7 +701,7 @@ public class ClientService {
      */
     @Transactional
     public com.lawfirm.entity.CommunicationRecord createCommunication(Long clientId, com.lawfirm.dto.CommunicationRecordDTO dto, Long operatorId) {
-        assertClientVisible(clientId, operatorId);
+        assertClientEditable(clientId, operatorId);
         if (!clientRepository.existsById(clientId)) {
             throw new IllegalArgumentException("客户不存在");
         }
@@ -715,7 +738,7 @@ public class ClientService {
     }
 
     public com.lawfirm.entity.CommunicationRecord updateCommunication(Long clientId, Long communicationId, com.lawfirm.dto.CommunicationRecordDTO dto, Long currentUserId) {
-        assertClientVisible(clientId, currentUserId);
+        assertClientEditable(clientId, currentUserId);
         return updateCommunication(clientId, communicationId, dto);
     }
 
@@ -735,7 +758,7 @@ public class ClientService {
     }
 
     public void deleteCommunication(Long clientId, Long communicationId, Long currentUserId) {
-        assertClientVisible(clientId, currentUserId);
+        assertClientEditable(clientId, currentUserId);
         deleteCommunication(clientId, communicationId);
     }
 

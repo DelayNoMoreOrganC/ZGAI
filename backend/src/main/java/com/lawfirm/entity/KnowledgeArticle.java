@@ -9,6 +9,7 @@ import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 /**
  * 知识库文章实体
@@ -80,6 +81,33 @@ public class KnowledgeArticle extends LogicalDeleteEntity {
      */
     @Column(name = "attachment_path")
     private String attachmentPath;
+
+    /**
+     * Official URL, internal document reference, or licensed source description.
+     */
+    @Column(name = "source_reference", length = 500)
+    private String sourceReference;
+
+    @Column(name = "issuing_authority", length = 200)
+    private String issuingAuthority;
+
+    @Column(name = "document_number", length = 100)
+    private String documentNumber;
+
+    @Column(name = "effective_date")
+    private LocalDate effectiveDate;
+
+    /**
+     * EFFECTIVE, AMENDED, REPEALED, UNKNOWN.
+     */
+    @Column(name = "validity_status", length = 20)
+    private String validityStatus = "UNKNOWN";
+
+    /**
+     * Required before externally sourced reference material may enter RAG.
+     */
+    @Column(name = "authorization_confirmed")
+    private Boolean authorizationConfirmed = false;
 
     @Column(name = "knowledge_eligible")
     private Boolean knowledgeEligible = true;

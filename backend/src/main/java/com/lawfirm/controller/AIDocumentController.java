@@ -7,6 +7,7 @@ import com.lawfirm.service.CaseService;
 import com.lawfirm.util.Result;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -17,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RestController
 @RequestMapping("ai/documents")
 @RequiredArgsConstructor
+@PreAuthorize("isAuthenticated()")
 public class AIDocumentController {
 
     private final AIDocumentService aiDocumentService;
@@ -37,22 +39,7 @@ public class AIDocumentController {
             @RequestParam(value = "caseId", required = false) Long caseId) {
 
         try {
-            // 参数校验
-            if (file.isEmpty()) {
-                return Result.error("文件不能为空");
-            }
-
-            // 检查文件类型
-            String contentType = file.getContentType();
-            if (contentType == null || (!contentType.startsWith("image/") &&
-                    !contentType.equals("application/pdf"))) {
-                return Result.error("仅支持图片和PDF文件");
-            }
-
-            // 文件大小校验（限制10MB）
-            if (file.getSize() > 10 * 1024 * 1024) {
-                return Result.error("文件大小不能超过10MB");
-            }
+            validateDocument(file);
 
             // 获取当前用户ID
             Long userId = securityUtils.getCurrentUserId();
@@ -71,9 +58,11 @@ public class AIDocumentController {
 
             return Result.success("文档识别成功", result);
 
+        } catch (IllegalArgumentException e) {
+            return Result.validationError(e.getMessage());
         } catch (Exception e) {
             log.error("文档识别失败", e);
-            return Result.error("文档识别失败: " + e.getMessage());
+            return Result.error("文档识别失败");
         }
     }
 
@@ -107,6 +96,7 @@ public class AIDocumentController {
             java.util.List<AIDocumentRecognitionResult> results = new java.util.ArrayList<>();
 
             for (MultipartFile file : files) {
+                validateDocument(file);
                 try {
                     AIDocumentRecognitionResult result =
                             aiDocumentService.recognizeLegalDocument(file, userId, caseId);
@@ -121,9 +111,25 @@ public class AIDocumentController {
 
             return Result.success("批量识别完成", results);
 
+        } catch (IllegalArgumentException e) {
+            return Result.validationError(e.getMessage());
         } catch (Exception e) {
             log.error("批量文档识别失败", e);
-            return Result.error("批量识别失败: " + e.getMessage());
+            return Result.error("批量识别失败");
+        }
+    }
+
+    private void validateDocument(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("文件不能为空");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || (!contentType.startsWith("image/")
+                && !"application/pdf".equals(contentType))) {
+            throw new IllegalArgumentException("仅支持图片和PDF文件");
+        }
+        if (file.getSize() > 10 * 1024 * 1024) {
+            throw new IllegalArgumentException("文件大小不能超过10MB");
         }
     }
 }

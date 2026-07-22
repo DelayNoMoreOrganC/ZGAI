@@ -492,7 +492,6 @@ public class CaseService {
                 .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
         boolean hasAllCaseViewAccess = hasAllCaseViewAccess(currentUser);
         boolean hasDepartmentCaseViewAccess = !hasAllCaseViewAccess && isDepartmentManager(currentUser);
-        boolean hasPendingApprovalViewAccess = !hasAllCaseViewAccess && isAdministrativeUser(currentUser);
         List<Long> visibleUserIds = hasAllCaseViewAccess
                 ? Collections.emptyList()
                 : (hasDepartmentCaseViewAccess ? getDepartmentScopedUserIds(currentUser) : Collections.singletonList(currentUserId));
@@ -522,9 +521,6 @@ public class CaseService {
                 }
                 if (!visibleCaseIds.isEmpty()) {
                     accessPredicates.add(root.get("id").in(visibleCaseIds));
-                }
-                if (hasPendingApprovalViewAccess) {
-                    accessPredicates.add(cb.equal(root.get("status"), CaseStatus.PENDING_APPROVAL.getCode()));
                 }
                 if (accessPredicates.isEmpty()) {
                     predicates.add(cb.disjunction());
@@ -616,7 +612,7 @@ public class CaseService {
     }
 
     /**
-     * 开发管理员账号保留全所可见能力，其余账号按所属部门隔离案件。
+     * 开发管理员、主任和行政可查看全所案件；其他账号按案件关系或所属部门隔离。
      */
     private boolean isDevelopmentAdmin(User user) {
         return user != null && "admin".equals(user.getUsername());
@@ -627,7 +623,7 @@ public class CaseService {
             return true;
         }
         String position = user == null ? null : user.getPosition();
-        return "主任".equals(position);
+        return "主任".equals(position) || isAdministrativeUser(user);
     }
 
     private boolean isAdministrativeUser(User user) {
@@ -755,10 +751,38 @@ public class CaseService {
                 .orElseThrow(() -> new ResourceNotFoundException("案件", caseId));
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
-        if (isCaseFilingAdministrator(currentUser)
-                && ("CLOSED".equals(caseEntity.getStatus()) || "ARCHIVED".equals(caseEntity.getStatus()))) {
-            throw new InvalidParameterException("caseId", "案件已结案或归档，行政立案人员不能继续修改案件信息");
+        if ("CLOSED".equals(caseEntity.getStatus()) || "ARCHIVED".equals(caseEntity.getStatus())) {
+            throw new InvalidParameterException("caseId", "案件已结案或归档，案件信息已锁定");
         }
+        if (isDevelopmentAdmin(currentUser) || "主任".equals(currentUser.getPosition())
+                || isCaseFilingAdministrator(currentUser)) {
+            return;
+        }
+        if (isAdministrativeUser(currentUser)) {
+            throw new InvalidParameterException("caseId", "行政管理账号可查看全案，但无权直接修改案件信息");
+        }
+        if (Objects.equals(caseEntity.getOwnerId(), currentUserId)) {
+            return;
+        }
+        List<CaseMember> members = caseMemberRepository.findByCaseIdAndDeletedFalse(caseId);
+        if (members.stream().map(CaseMember::getUserId).anyMatch(currentUserId::equals)) {
+            return;
+        }
+        if (isDepartmentManager(currentUser) && currentUser.getDepartmentId() != null) {
+            User owner = userRepository.findById(caseEntity.getOwnerId()).orElse(null);
+            boolean ownerInDepartment = owner != null
+                    && Objects.equals(owner.getDepartmentId(), currentUser.getDepartmentId());
+            boolean memberInDepartment = members.stream()
+                    .map(CaseMember::getUserId)
+                    .map(userRepository::findById)
+                    .filter(Optional::isPresent)
+                    .map(Optional::get)
+                    .anyMatch(user -> Objects.equals(user.getDepartmentId(), currentUser.getDepartmentId()));
+            if (ownerInDepartment || memberInDepartment) {
+                return;
+            }
+        }
+        throw new InvalidParameterException("caseId", "无权修改非本人或非本部门案件");
     }
 
     @Transactional(readOnly = true)
@@ -770,8 +794,7 @@ public class CaseService {
         if (hasAllCaseViewAccess(currentUser)) {
             return true;
         }
-        if (isAdministrativeUser(currentUser)
-                && CaseStatus.PENDING_APPROVAL.getCode().equals(caseEntity.getStatus())) {
+        if (isAdministrativeUser(currentUser)) {
             return true;
         }
         if (Objects.equals(caseEntity.getOwnerId(), currentUserId)) {
@@ -1433,14 +1456,21 @@ public class CaseService {
      */
     @Transactional
     public void batchCloseCases(List<Long> caseIds, Long operatorId) {
-        if (caseIds == null || caseIds.isEmpty()) {
-            throw new IllegalArgumentException("Case ID list cannot be empty");
+        List<Case> cases = requireBatchCases(caseIds);
+        for (Case caseEntity : cases) {
+            assertCaseEditable(caseEntity.getId(), operatorId);
+            if (!CaseStatus.ACTIVE.getCode().equals(caseEntity.getStatus())) {
+                throw new InvalidParameterException("caseIds", "只有审理中的案件可以结案：" + caseEntity.getCaseName());
+            }
         }
-
-        List<Case> cases = caseRepository.findAllById(caseIds);
         for (Case caseEntity : cases) {
             caseEntity.setStatus(CaseStatus.CLOSED.getCode());
             caseEntity.setUpdatedAt(LocalDateTime.now());
+            caseTimelineService.createSystemTimeline(
+                    caseEntity.getId(),
+                    "CASE_CLOSED",
+                    "案件已通过批量操作结案"
+            );
         }
 
         caseRepository.saveAll(cases);
@@ -1452,14 +1482,22 @@ public class CaseService {
      */
     @Transactional
     public void batchArchiveCases(List<Long> caseIds, Long operatorId) {
-        if (caseIds == null || caseIds.isEmpty()) {
-            throw new IllegalArgumentException("Case ID list cannot be empty");
+        List<Case> cases = requireBatchCases(caseIds);
+        for (Case caseEntity : cases) {
+            assertCaseVisible(caseEntity.getId(), operatorId);
+            if (!CaseStatus.CLOSED.getCode().equals(caseEntity.getStatus())) {
+                throw new InvalidParameterException("caseIds", "只有已结案案件可以归档：" + caseEntity.getCaseName());
+            }
         }
-
-        List<Case> cases = caseRepository.findAllById(caseIds);
         for (Case caseEntity : cases) {
             caseEntity.setArchiveDate(LocalDate.now());
             caseEntity.setStatus(CaseStatus.ARCHIVED.getCode());
+            caseEntity.setUpdatedAt(LocalDateTime.now());
+            caseTimelineService.createSystemTimeline(
+                    caseEntity.getId(),
+                    "CASE_ARCHIVED",
+                    "案件已通过批量操作归档"
+            );
         }
 
         caseRepository.saveAll(cases);
@@ -1471,13 +1509,18 @@ public class CaseService {
      */
     @Transactional
     public void batchDeleteCases(List<Long> caseIds, Long operatorId) {
-        if (caseIds == null || caseIds.isEmpty()) {
-            throw new IllegalArgumentException("Case ID list cannot be empty");
+        List<Case> cases = requireBatchCases(caseIds);
+        for (Case caseEntity : cases) {
+            assertCaseVisible(caseEntity.getId(), operatorId);
         }
-
-        List<Case> cases = caseRepository.findAllById(caseIds);
         for (Case caseEntity : cases) {
             caseEntity.setDeleted(true);
+            caseEntity.setUpdatedAt(LocalDateTime.now());
+            caseTimelineService.createSystemTimeline(
+                    caseEntity.getId(),
+                    "CASE_DELETED",
+                    "案件已通过批量操作删除"
+            );
         }
 
         caseRepository.saveAll(cases);
@@ -1489,24 +1532,46 @@ public class CaseService {
      */
     @Transactional
     public void batchChangeOwner(List<Long> caseIds, Long newOwnerId, Long operatorId) {
-        if (caseIds == null || caseIds.isEmpty()) {
-            throw new IllegalArgumentException("Case ID list cannot be empty");
-        }
-
         if (newOwnerId == null) {
-            throw new IllegalArgumentException("Owner ID cannot be empty");
+            throw new InvalidParameterException("ownerId", "新承办人不能为空");
         }
 
         User newOwner = userRepository.findById(newOwnerId)
-                .orElseThrow(() -> new ResourceNotFoundException("User", newOwnerId));
+                .filter(user -> !Boolean.TRUE.equals(user.getDeleted()) && user.getStatus() != null && user.getStatus() == 1)
+                .orElseThrow(() -> new ResourceNotFoundException("有效用户", newOwnerId));
 
-        List<Case> cases = caseRepository.findAllById(caseIds);
+        List<Case> cases = requireBatchCases(caseIds);
         for (Case caseEntity : cases) {
+            assertCaseEditable(caseEntity.getId(), operatorId);
+        }
+        for (Case caseEntity : cases) {
+            Long previousOwnerId = caseEntity.getOwnerId();
             caseEntity.setOwnerId(newOwnerId);
             caseEntity.setUpdatedAt(LocalDateTime.now());
+            caseTimelineService.createSystemTimeline(
+                    caseEntity.getId(),
+                    "OWNER_CHANGED",
+                    String.format("承办人由「%s」变更为「%s」",
+                            getUserName(previousOwnerId), newOwner.getRealName())
+            );
         }
 
         caseRepository.saveAll(cases);
         log.info("Batch change owner completed: count={}, newOwner={}, operator={}", caseIds.size(), newOwnerId, operatorId);
+    }
+
+    private List<Case> requireBatchCases(List<Long> caseIds) {
+        if (caseIds == null || caseIds.isEmpty()) {
+            throw new InvalidParameterException("caseIds", "案件列表不能为空");
+        }
+        List<Long> distinctIds = caseIds.stream().filter(Objects::nonNull).distinct().collect(Collectors.toList());
+        if (distinctIds.isEmpty()) {
+            throw new InvalidParameterException("caseIds", "案件列表不能为空");
+        }
+        List<Case> cases = caseRepository.findAllById(distinctIds);
+        if (cases.size() != distinctIds.size()) {
+            throw new InvalidParameterException("caseIds", "批量操作中包含不存在的案件");
+        }
+        return cases;
     }
 }

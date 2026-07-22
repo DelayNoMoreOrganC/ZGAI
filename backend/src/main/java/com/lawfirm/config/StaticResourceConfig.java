@@ -1,14 +1,15 @@
 package com.lawfirm.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.ResourceLoader;
 import org.springframework.http.CacheControl;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.resource.PathResourceResolver;
 
 import java.io.IOException;
+import java.nio.file.Paths;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -22,29 +23,33 @@ import java.util.concurrent.TimeUnit;
 @Configuration
 public class StaticResourceConfig implements WebMvcConfigurer {
 
-    private static final String[] STATIC_LOCATIONS = {
-        "file:/Users/juno/ZGAI/frontend/dist/",
-        "classpath:/static/"
-    };
+    private final String[] staticLocations;
+
+    public StaticResourceConfig(@Value("${file.frontend-dist-path:../frontend/dist/}") String frontendDistPath) {
+        this.staticLocations = new String[] {
+                Paths.get(frontendDistPath).toAbsolutePath().normalize().toUri().toString(),
+                "classpath:/static/"
+        };
+    }
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         // 静态资源（JS/CSS/图片等）- 强缓存1年，内容hash化
         registry.addResourceHandler("/assets/**")
-                .addResourceLocations(STATIC_LOCATIONS)
+                .addResourceLocations(staticLocations)
                 .setCacheControl(CacheControl.maxAge(365, TimeUnit.DAYS).cachePublic())
                 .resourceChain(true)
                 .addResolver(new PathResourceResolver());
 
         // 其他静态资源（favicon等）- 弱缓存
         registry.addResourceHandler("/favicon.svg", "/favicon.ico")
-                .addResourceLocations(STATIC_LOCATIONS)
+                .addResourceLocations(staticLocations)
                 .setCacheControl(CacheControl.maxAge(1, TimeUnit.DAYS))
                 .resourceChain(true);
 
         // SPA fallback: 所有非API路径返回 index.html
         registry.addResourceHandler("/**")
-                .addResourceLocations(STATIC_LOCATIONS)
+                .addResourceLocations(staticLocations)
                 .resourceChain(true)
                 .addResolver(new SpaFallbackResourceResolver());
     }

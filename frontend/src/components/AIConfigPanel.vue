@@ -47,7 +47,12 @@
             </el-col>
             <el-col :span="12">
               <el-form-item label="API Key">
-                <el-input v-model="deepseekForm.apiKey" type="password" show-password placeholder="sk-xxxxxxxx" />
+                <el-input
+                  v-model="deepseekForm.apiKey"
+                  type="password"
+                  show-password
+                  :placeholder="deepseekForm.apiKeyConfigured ? '已配置，留空则保留' : '请输入 API Key'"
+                />
               </el-form-item>
             </el-col>
           </el-row>
@@ -167,6 +172,7 @@ watch([deepseekConfig, ollamaConfig], () => {
 const deepseekForm = ref({
   apiUrl: 'https://api.deepseek.com/v1/chat/completions',
   apiKey: '',
+  apiKeyConfigured: false,
   modelName: 'deepseek-v4-flash',
   temperature: 0.3,
   maxTokens: 8192,
@@ -183,6 +189,7 @@ const deepseekForm = ref({
 const ollamaForm = ref({
   apiUrl: 'http://localhost:11434',
   apiKey: '',
+  apiKeyConfigured: false,
   modelName: 'qwen3:8b',
   temperature: 0.1,
   maxTokens: 4096,
@@ -210,7 +217,8 @@ async function loadConfigs() {
 function syncFormFromConfig(config, form) {
   if (!config) return
   form.apiUrl = config.apiUrl || form.apiUrl
-  form.apiKey = config.apiKey || ''
+  form.apiKey = ''
+  form.apiKeyConfigured = Boolean(config.apiKeyConfigured)
   form.modelName = config.modelName || form.modelName
   form.temperature = config.temperature ?? form.temperature
   form.maxTokens = config.maxTokens ?? form.maxTokens
@@ -220,7 +228,7 @@ function syncFormFromConfig(config, form) {
 
 async function saveConfig(id, form) {
   try {
-    const payload = { ...form }
+    const { apiKeyConfigured, ...payload } = form
     await request({ url: `/ai/config/${id}`, method: 'put', data: payload })
     ElMessage.success('配置已保存')
     await loadConfigs()

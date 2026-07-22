@@ -21,10 +21,10 @@
 
         <el-form-item label="文章类型" prop="articleType">
           <el-select v-model="form.articleType" placeholder="请选择文章类型">
-            <el-option label="文档模板" value="TEMPLATE" />
-            <el-option label="类案检索" value="CASE" />
+            <el-option label="知识文档" value="DOCUMENT" />
+            <el-option label="公共模板" value="TEMPLATE" />
             <el-option label="办案指南" value="GUIDE" />
-            <el-option label="经验分享" value="EXPERIENCE" />
+            <el-option label="经验参考" value="EXPERIENCE" />
           </el-select>
         </el-form-item>
 
@@ -35,7 +35,6 @@
             <el-option label="公共模板" value="PUBLIC_TEMPLATE" />
             <el-option label="参考资料" value="REFERENCE_MATERIAL" />
             <el-option label="全所知识" value="FIRM_KNOWLEDGE" />
-            <el-option label="案件沉淀（暂不索引）" value="CASE_DEPOSIT" />
           </el-select>
           <div class="form-tip">
             第一阶段 AI 知识库只索引法律法规、律所制度、公共模板和参考资料；案件沉淀需人工审核后再开放。
@@ -44,6 +43,44 @@
 
         <el-form-item label="分类">
           <el-input v-model="form.category" placeholder="例如：合同、劳动、侵权" />
+        </el-form-item>
+
+        <template v-if="form.knowledgeSource === 'LAW_REGULATION'">
+          <el-form-item label="发布机关">
+            <el-input v-model="form.issuingAuthority" maxlength="200" placeholder="例如：全国人民代表大会常务委员会" />
+          </el-form-item>
+          <el-form-item label="文号">
+            <el-input v-model="form.documentNumber" maxlength="100" placeholder="请输入法规文号（如有）" />
+          </el-form-item>
+          <el-form-item label="生效日期">
+            <el-date-picker
+              v-model="form.effectiveDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="请选择生效日期"
+            />
+          </el-form-item>
+          <el-form-item label="有效状态">
+            <el-select v-model="form.validityStatus">
+              <el-option label="现行有效" value="EFFECTIVE" />
+              <el-option label="已修订" value="AMENDED" />
+              <el-option label="已废止" value="REPEALED" />
+              <el-option label="待核验" value="UNKNOWN" />
+            </el-select>
+          </el-form-item>
+        </template>
+
+        <el-form-item label="来源依据">
+          <el-input
+            v-model="form.sourceReference"
+            maxlength="500"
+            placeholder="官方网址、内部制度编号或经授权来源说明"
+          />
+        </el-form-item>
+
+        <el-form-item v-if="form.knowledgeSource === 'REFERENCE_MATERIAL'" label="授权确认">
+          <el-checkbox v-model="form.authorizationConfirmed">已确认具备律所内部使用授权</el-checkbox>
+          <div class="form-tip">未确认授权的外部参考资料可以保存，但不会进入 AI 检索。</div>
         </el-form-item>
 
         <el-form-item label="标签">
@@ -69,19 +106,20 @@
             v-model="form.content"
             type="textarea"
             :rows="15"
-            placeholder="支持富文本HTML格式"
+            placeholder="请输入法规正文、制度内容、模板文本或参考资料"
           />
-          <div class="form-tip">
-            提示：可以使用HTML标签进行格式化，例如 &lt;h2&gt;标题&lt;/h2&gt;、&lt;p&gt;段落&lt;/p&gt;
-          </div>
         </el-form-item>
 
         <el-form-item label="选项">
           <el-checkbox v-model="form.isTop">置顶显示</el-checkbox>
-          <el-checkbox v-model="form.isPublic">公开（全所可见）</el-checkbox>
-          <el-checkbox v-model="form.knowledgeEligible" :disabled="form.knowledgeSource === 'CASE_DEPOSIT'">
+          <el-checkbox v-model="form.isPublic">全所可见</el-checkbox>
+          <el-checkbox
+            v-model="form.knowledgeEligible"
+            :disabled="!form.isPublic || (form.knowledgeSource === 'REFERENCE_MATERIAL' && !form.authorizationConfirmed)"
+          >
             允许进入 AI 知识库
           </el-checkbox>
+          <div class="form-tip">关闭“全所可见”后，文章仅本人和管理员可见，且不会进入 AI 检索。</div>
         </el-form-item>
 
         <el-form-item>
@@ -89,7 +127,6 @@
             {{ isEdit ? '保存修改' : '发布文章' }}
           </el-button>
           <el-button @click="handleCancel">取消</el-button>
-          <el-button @click="handlePreview" v-if="!isEdit">预览</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -113,12 +150,18 @@ const isEdit = computed(() => !!route.params.id)
 
 const form = ref({
   title: '',
-  articleType: '',
-  knowledgeSource: 'FIRM_KNOWLEDGE',
+  articleType: 'DOCUMENT',
+  knowledgeSource: 'LAW_REGULATION',
   category: '',
   tags: '',
   summary: '',
   content: '',
+  sourceReference: '',
+  issuingAuthority: '',
+  documentNumber: '',
+  effectiveDate: '',
+  validityStatus: 'UNKNOWN',
+  authorizationConfirmed: false,
   isTop: false,
   isPublic: true,
   knowledgeEligible: true
@@ -154,6 +197,12 @@ const loadArticle = async () => {
       tags: data.tags,
       summary: data.summary,
       content: data.content,
+      sourceReference: data.sourceReference || '',
+      issuingAuthority: data.issuingAuthority || '',
+      documentNumber: data.documentNumber || '',
+      effectiveDate: normalizeDate(data.effectiveDate),
+      validityStatus: data.validityStatus || 'UNKNOWN',
+      authorizationConfirmed: data.authorizationConfirmed === true,
       isTop: data.isTop,
       isPublic: data.isPublic,
       knowledgeEligible: data.knowledgeEligible !== false
@@ -185,7 +234,7 @@ const handleSubmit = async () => {
       method,
       data: {
         ...form.value,
-        knowledgeEligible: form.value.knowledgeSource === 'CASE_DEPOSIT' ? false : form.value.knowledgeEligible
+        knowledgeEligible: form.value.isPublic && form.value.knowledgeEligible
       }
     })
 
@@ -208,17 +257,18 @@ const handleCancel = () => {
   }).catch(() => {})
 }
 
-// 预览
-const handlePreview = () => {
-  const previewData = JSON.stringify(form.value)
-  sessionStorage.setItem('knowledge_preview', previewData)
-  window.open('/knowledge/preview', '_blank')
-}
-
 const inferKnowledgeSource = (articleType) => {
   if (articleType === 'TEMPLATE') return 'PUBLIC_TEMPLATE'
-  if (articleType === 'CASE') return 'CASE_DEPOSIT'
   return 'FIRM_KNOWLEDGE'
+}
+
+const normalizeDate = (date) => {
+  if (!date) return ''
+  if (Array.isArray(date)) {
+    const [year, month, day] = date
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  }
+  return String(date).substring(0, 10)
 }
 
 onMounted(() => {
@@ -233,17 +283,21 @@ watch(
     if (!isEdit.value && articleType === 'TEMPLATE') {
       form.value.knowledgeSource = 'PUBLIC_TEMPLATE'
       form.value.knowledgeEligible = true
-    } else if (articleType === 'CASE') {
-      form.value.knowledgeSource = 'CASE_DEPOSIT'
-      form.value.knowledgeEligible = false
     }
   }
 )
 
 watch(
-  () => form.value.knowledgeSource,
-  (source) => {
-    if (source === 'CASE_DEPOSIT') {
+  () => form.value.isPublic,
+  (isPublic) => {
+    if (!isPublic) form.value.knowledgeEligible = false
+  }
+)
+
+watch(
+  () => [form.value.knowledgeSource, form.value.authorizationConfirmed],
+  ([source, authorizationConfirmed]) => {
+    if (source === 'REFERENCE_MATERIAL' && !authorizationConfirmed) {
       form.value.knowledgeEligible = false
     }
   }

@@ -1,13 +1,16 @@
 package com.lawfirm.controller;
 
+import com.lawfirm.annotation.AuditLog;
 import com.lawfirm.dto.RoleCreateRequest;
 import com.lawfirm.dto.RoleDTO;
+import com.lawfirm.exception.BusinessException;
 import com.lawfirm.service.RoleService;
 import com.lawfirm.util.Result;
 import javax.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -29,13 +32,17 @@ public class RoleController {
      * POST /api/role
      */
     @PostMapping
+    @PreAuthorize("hasAuthority('ROLE_EDIT')")
+    @AuditLog(value = "创建角色", operationType = "CREATE", logParams = false)
     public Result<RoleDTO> createRole(@Valid @RequestBody RoleCreateRequest request) {
         try {
             RoleDTO result = roleService.createRole(request);
             return Result.success(result);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("创建角色失败", e);
-            return Result.error(e.getMessage());
+            return Result.error("创建角色失败");
         }
     }
 
@@ -44,14 +51,18 @@ public class RoleController {
      * PUT /api/role/{id}
      */
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('ROLE_EDIT')")
+    @AuditLog(value = "更新角色", operationType = "UPDATE", logParams = false)
     public Result<RoleDTO> updateRole(@PathVariable Long id,
                                      @Valid @RequestBody RoleCreateRequest request) {
         try {
             RoleDTO result = roleService.updateRole(id, request);
             return Result.success(result);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("更新角色失败", e);
-            return Result.error(e.getMessage());
+            return Result.error("更新角色失败");
         }
     }
 
@@ -60,13 +71,17 @@ public class RoleController {
      * DELETE /api/role/{id}
      */
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('ROLE_EDIT')")
+    @AuditLog(value = "删除角色", operationType = "DELETE", logParams = false)
     public Result<Void> deleteRole(@PathVariable Long id) {
         try {
             roleService.deleteRole(id);
             return Result.success();
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("删除角色失败", e);
-            return Result.error(e.getMessage());
+            return Result.error("删除角色失败");
         }
     }
 
@@ -75,15 +90,18 @@ public class RoleController {
      * GET /api/role
      */
     @GetMapping
+    @PreAuthorize("hasAuthority('ROLE_VIEW')")
     public Result<Page<RoleDTO>> getRoleList(
-            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         try {
             Page<RoleDTO> result = roleService.getRoleList(page, size);
             return Result.success(result);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取角色列表失败", e);
-            return Result.error(e.getMessage());
+            return Result.error("获取角色列表失败");
         }
     }
 
@@ -92,13 +110,16 @@ public class RoleController {
      * GET /api/role/{id}
      */
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('ROLE_VIEW')")
     public Result<RoleDTO> getRoleDetail(@PathVariable Long id) {
         try {
             RoleDTO result = roleService.getRoleDetail(id);
             return Result.success(result);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取角色详情失败", e);
-            return Result.error(e.getMessage());
+            return Result.error("获取角色详情失败");
         }
     }
 
@@ -107,15 +128,19 @@ public class RoleController {
      * PUT /api/role/{id}/permissions
      */
     @PutMapping("/{id}/permissions")
+    @PreAuthorize("hasAuthority('ROLE_EDIT')")
+    @AuditLog(value = "分配角色权限", operationType = "UPDATE", logParams = false)
     public Result<Void> assignPermissions(@PathVariable Long id,
                                          @RequestBody Map<String, List<Long>> params) {
         try {
             List<Long> permissionIds = params.get("permissionIds");
             roleService.assignPermissions(id, permissionIds);
             return Result.success();
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("分配权限失败", e);
-            return Result.error(e.getMessage());
+            return Result.error("分配权限失败");
         }
     }
 
@@ -124,13 +149,16 @@ public class RoleController {
      * GET /api/role/all
      */
     @GetMapping("/all")
+    @PreAuthorize("hasAuthority('ROLE_VIEW')")
     public Result<List<RoleDTO>> getAllRoles() {
         try {
             List<RoleDTO> result = roleService.getAllRoles();
             return Result.success(result);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取所有角色失败", e);
-            return Result.error(e.getMessage());
+            return Result.error("获取所有角色失败");
         }
     }
 }

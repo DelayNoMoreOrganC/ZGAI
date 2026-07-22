@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 /**
  * 知识库文章VO
@@ -23,6 +24,13 @@ public class KnowledgeArticleVO {
     private String summary;
     private String content;
     private String attachmentPath;
+    private String attachmentName;
+    private String sourceReference;
+    private String issuingAuthority;
+    private String documentNumber;
+    private LocalDate effectiveDate;
+    private String validityStatus;
+    private Boolean authorizationConfirmed;
     private Integer viewCount;
     private Integer likeCount;
     private Boolean isTop;

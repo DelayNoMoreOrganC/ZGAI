@@ -2,6 +2,7 @@ package com.lawfirm.controller;
 
 import com.lawfirm.dto.CaseDocumentDTO;
 import com.lawfirm.service.CaseDocumentService;
+import com.lawfirm.service.CaseFileLibraryService;
 import com.lawfirm.service.CaseService;
 import com.lawfirm.security.SecurityUtils;
 import com.lawfirm.util.Result;
@@ -11,6 +12,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletResponse;
@@ -34,6 +36,7 @@ import java.util.stream.Collectors;
 public class DocumentControllerCompat {
 
     private final CaseDocumentService caseDocumentService;
+    private final CaseFileLibraryService caseFileLibraryService;
     private final CaseService caseService;
     private final SecurityUtils securityUtils;
 
@@ -43,7 +46,7 @@ public class DocumentControllerCompat {
      * 返回当前用户有权限访问的所有案件的文档
      */
     @GetMapping
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('DOCUMENT_VIEW')")
     public Result<List<CaseDocumentDTO>> getAllDocuments(
             @RequestParam(required = false) String documentType,
             @RequestParam(required = false) Long caseId) {
@@ -67,7 +70,7 @@ public class DocumentControllerCompat {
             return Result.success(documents);
         } catch (Exception e) {
             log.error("获取文档列表失败", e);
-            return Result.error(e.getMessage());
+            return Result.error("获取文档列表失败");
         }
     }
 
@@ -76,7 +79,7 @@ public class DocumentControllerCompat {
      * GET /api/documents/{id}
      */
     @GetMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('DOCUMENT_VIEW')")
     public Result<CaseDocumentDTO> getDocument(@PathVariable Long id) {
         try {
             CaseDocumentDTO result = caseDocumentService.getDocumentById(id);
@@ -84,7 +87,7 @@ public class DocumentControllerCompat {
             return Result.success(result);
         } catch (Exception e) {
             log.error("获取文档详情失败", e);
-            return Result.error(e.getMessage());
+            return Result.error("获取文档详情失败");
         }
     }
 
@@ -93,7 +96,7 @@ public class DocumentControllerCompat {
      * GET /api/documents/{id}/download
      */
     @GetMapping("/{id}/download")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('DOCUMENT_VIEW')")
     public void downloadDocument(@PathVariable Long id, HttpServletResponse response) throws IOException {
         try {
             CaseDocumentDTO document = caseDocumentService.getDocumentById(id);
@@ -105,8 +108,8 @@ public class DocumentControllerCompat {
                 return;
             }
 
-            Path filePath = Paths.get(document.getFilePath());
-            if (!java.nio.file.Files.exists(filePath)) {
+            Path filePath = resolveReadableFile(document);
+            if (!java.nio.file.Files.isRegularFile(filePath)) {
                 response.setStatus(HttpServletResponse.SC_NOT_FOUND);
                 response.getWriter().write("文件不存在");
                 return;
@@ -119,12 +122,16 @@ public class DocumentControllerCompat {
                     .replace("+", "%20");
             response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
                     "attachment; filename*=UTF-8''" + encodedFilename);
-            org.springframework.util.StreamUtils.copy(resource.getInputStream(), response.getOutputStream());
+            try (java.io.InputStream inputStream = resource.getInputStream()) {
+                org.springframework.util.StreamUtils.copy(inputStream, response.getOutputStream());
+            }
             response.flushBuffer();
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("下载文档失败", e);
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-            response.getWriter().write("下载失败: " + e.getMessage());
+            response.getWriter().write("下载失败");
         }
     }
 
@@ -139,5 +146,14 @@ public class DocumentControllerCompat {
                 .filter(document -> document.getCaseId() != null)
                 .filter(document -> caseService.canAccessCase(document.getCaseId(), currentUserId))
                 .collect(Collectors.toList());
+    }
+
+    private Path resolveReadableFile(CaseDocumentDTO document) {
+        Path root = caseFileLibraryService.getCaseLibraryRootPath().toAbsolutePath().normalize();
+        Path file = Paths.get(document.getFilePath()).toAbsolutePath().normalize();
+        if (!file.startsWith(root)) {
+            throw new IllegalArgumentException("文档路径超出案件文件库");
+        }
+        return file;
     }
 }

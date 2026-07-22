@@ -59,7 +59,7 @@ public class CaseSearchController {
 
         } catch (Exception e) {
             log.error("类案检索失败", e);
-            return Result.error("检索失败: " + e.getMessage());
+            return Result.error("检索失败");
         }
     }
 
@@ -90,7 +90,7 @@ public class CaseSearchController {
 
         } catch (Exception e) {
             log.error("根据案件ID检索失败", e);
-            return Result.error("检索失败: " + e.getMessage());
+            return Result.error("检索失败");
         }
     }
 

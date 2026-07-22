@@ -48,11 +48,7 @@ public class RAGKnowledgeController {
      * GET /api/knowledge/rag/health
      */
     @GetMapping("/health")
-    public Result<Map<String, String>> health() {
-        return Result.success(Map.of(
-            "status", "ok",
-            "service", "RAG Knowledge MVP",
-            "version", "1.0.0"
-        ));
+    public Result<Map<String, Object>> health() {
+        return Result.success(ragKnowledgeService.healthStatus());
     }
 }

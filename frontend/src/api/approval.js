@@ -17,6 +17,14 @@ export function getApprovalDetail(id) {
   })
 }
 
+// 获取审批流程记录
+export function getApprovalFlow(id) {
+  return request({
+    url: `/approval/${id}/flow`,
+    method: 'get'
+  })
+}
+
 // 创建审批
 export function createApproval(data) {
   return request({

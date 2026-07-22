@@ -1,5 +1,6 @@
 package com.lawfirm.dto;
 
+import java.util.List;
 import javax.validation.constraints.Email;
 import lombok.Data;
 
@@ -15,4 +16,5 @@ public class UserUpdateRequest {
     private String position;
     private String avatar;
     private Integer status;
+    private List<Long> roleIds;
 }

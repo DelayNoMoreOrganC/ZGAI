@@ -8,6 +8,8 @@ import com.lawfirm.util.Result;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import javax.validation.Valid;
 
@@ -31,7 +33,10 @@ public class TodoController {
      * POST /api/todos
      */
     @PostMapping
+    @PreAuthorize("hasAuthority('TODO_EDIT')")
     public Result<TodoDTO> createTodo(@Valid @RequestBody TodoDTO dto) {
+        assertUserVisible(dto.getAssigneeId());
+        assertCaseVisibleIfPresent(dto.getCaseId());
         try {
             Long userId = securityUtils.getCurrentUserId();
             TodoDTO result = todoService.createTodo(dto, userId);
@@ -50,7 +55,11 @@ public class TodoController {
      * PUT /api/todos/{id}
      */
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('TODO_EDIT')")
     public Result<TodoDTO> updateTodo(@PathVariable Long id, @Valid @RequestBody TodoDTO dto) {
+        assertTodoEditable(id);
+        assertUserVisible(dto.getAssigneeId());
+        assertCaseVisibleIfPresent(dto.getCaseId());
         try {
             TodoDTO result = todoService.updateTodo(id, dto);
             return Result.success(result);
@@ -68,7 +77,9 @@ public class TodoController {
      * DELETE /api/todos/{id}
      */
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('TODO_EDIT')")
     public Result<Void> deleteTodo(@PathVariable Long id) {
+        assertTodoEditable(id);
         try {
             todoService.deleteTodo(id);
             return Result.success();
@@ -86,7 +97,9 @@ public class TodoController {
      * GET /api/todos/{id}
      */
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('TODO_VIEW')")
     public Result<TodoDTO> getTodo(@PathVariable Long id) {
+        assertTodoReadable(id);
         try {
             TodoDTO result = todoService.getTodoById(id);
             return Result.success(result);
@@ -104,7 +117,9 @@ public class TodoController {
      * GET /api/todos/assignee/{assigneeId}
      */
     @GetMapping("/assignee/{assigneeId}")
+    @PreAuthorize("hasAuthority('TODO_VIEW')")
     public Result<List<TodoDTO>> getTodosByAssignee(@PathVariable Long assigneeId) {
+        assertUserVisible(assigneeId);
         try {
             List<TodoDTO> result = todoService.getTodosByAssignee(assigneeId);
             return Result.success(result);
@@ -119,7 +134,9 @@ public class TodoController {
      * GET /api/todos/assignee/{assigneeId}/priority
      */
     @GetMapping("/assignee/{assigneeId}/priority")
+    @PreAuthorize("hasAuthority('TODO_VIEW')")
     public Result<List<TodoDTO>> getTodosByAssigneeWithPrioritySort(@PathVariable Long assigneeId) {
+        assertUserVisible(assigneeId);
         try {
             List<TodoDTO> result = todoService.getTodosByAssigneeWithPrioritySort(assigneeId);
             return Result.success(result);
@@ -134,7 +151,9 @@ public class TodoController {
      * GET /api/todos/assignee/{assigneeId}/pending
      */
     @GetMapping("/assignee/{assigneeId}/pending")
+    @PreAuthorize("hasAuthority('TODO_VIEW')")
     public Result<List<TodoDTO>> getPendingTodos(@PathVariable Long assigneeId) {
+        assertUserVisible(assigneeId);
         try {
             List<TodoDTO> result = todoService.getPendingTodos(assigneeId);
             return Result.success(result);
@@ -149,7 +168,9 @@ public class TodoController {
      * GET /api/todos/assignee/{assigneeId}/completed
      */
     @GetMapping("/assignee/{assigneeId}/completed")
+    @PreAuthorize("hasAuthority('TODO_VIEW')")
     public Result<List<TodoDTO>> getCompletedTodos(@PathVariable Long assigneeId) {
+        assertUserVisible(assigneeId);
         try {
             List<TodoDTO> result = todoService.getCompletedTodos(assigneeId);
             return Result.success(result);
@@ -164,7 +185,9 @@ public class TodoController {
      * GET /api/todos/assignee/{assigneeId}/overdue
      */
     @GetMapping("/assignee/{assigneeId}/overdue")
+    @PreAuthorize("hasAuthority('TODO_VIEW')")
     public Result<List<TodoDTO>> getOverdueTodos(@PathVariable Long assigneeId) {
+        assertUserVisible(assigneeId);
         try {
             List<TodoDTO> result = todoService.getOverdueTodos(assigneeId);
             return Result.success(result);
@@ -179,6 +202,7 @@ public class TodoController {
      * GET /api/todos/case/{caseId}
      */
     @GetMapping("/case/{caseId}")
+    @PreAuthorize("hasAuthority('TODO_VIEW')")
     public Result<List<TodoDTO>> getTodosByCase(@PathVariable Long caseId) {
         try {
             assertCaseVisible(caseId);
@@ -201,10 +225,12 @@ public class TodoController {
      * 必须在 /{id} 之前定义，否则会被 /{id} 捕获
      */
     @GetMapping("/search")
+    @PreAuthorize("hasAuthority('TODO_VIEW')")
     public Result<List<TodoDTO>> getTodosByFilter(
             @RequestParam Long assignee,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String sort) {
+        assertUserVisible(assignee);
         try {
             List<TodoDTO> result;
 
@@ -240,16 +266,54 @@ public class TodoController {
      * GET /api/todos?page={page}&size={size}&assigneeId={assigneeId}
      */
     @GetMapping
+    @PreAuthorize("hasAuthority('TODO_VIEW')")
     public Result<com.lawfirm.util.PageResult<TodoDTO>> getTodos(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) Long assigneeId) {
+        Long visibleAssigneeId = assigneeId == null ? securityUtils.getCurrentUserId() : assigneeId;
+        assertUserVisible(visibleAssigneeId);
         try {
-            var result = todoService.getTodos(page, size, assigneeId);
+            var result = todoService.getTodos(page, size, visibleAssigneeId);
             return Result.success(result);
         } catch (Exception e) {
             log.error("分页查询待办异常", e);
             return Result.error("分页查询待办失败");
+        }
+    }
+
+    private void assertUserVisible(Long requestedUserId) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        if (requestedUserId == null || currentUserId.equals(requestedUserId) || securityUtils.isAdmin()) {
+            return;
+        }
+        throw new AccessDeniedException("无权访问其他用户的待办");
+    }
+
+    private void assertTodoReadable(Long todoId) {
+        TodoDTO todo = todoService.getTodoById(todoId);
+        Long currentUserId = securityUtils.getCurrentUserId();
+        if (currentUserId.equals(todo.getAssigneeId()) || securityUtils.isAdmin()) {
+            return;
+        }
+        if (todo.getCaseId() != null && caseService.canAccessCase(todo.getCaseId(), currentUserId)) {
+            return;
+        }
+        throw new AccessDeniedException("无权查看该待办");
+    }
+
+    private void assertTodoEditable(Long todoId) {
+        TodoDTO todo = todoService.getTodoById(todoId);
+        Long currentUserId = securityUtils.getCurrentUserId();
+        if (currentUserId.equals(todo.getAssigneeId()) || securityUtils.isAdmin()) {
+            return;
+        }
+        throw new AccessDeniedException("无权修改该待办");
+    }
+
+    private void assertCaseVisibleIfPresent(Long caseId) {
+        if (caseId != null) {
+            assertCaseVisible(caseId);
         }
     }
 }

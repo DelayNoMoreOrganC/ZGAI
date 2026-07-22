@@ -2,6 +2,8 @@ package com.lawfirm.repository;
 
 import com.lawfirm.entity.Invoice;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -21,6 +23,8 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
      */
     List<Invoice> findByCaseId(Long caseId);
 
+    List<Invoice> findByCaseIdAndApplicantId(Long caseId, Long applicantId);
+
     /**
      * 根据发票号码查找
      */
@@ -31,10 +35,16 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
      */
     List<Invoice> findByStatus(String status);
 
+    List<Invoice> findByStatusAndApplicantId(String status, Long applicantId);
+
     /**
      * 根据开票日期范围查找
      */
     List<Invoice> findByBillingDateBetween(LocalDate startDate, LocalDate endDate);
+
+    List<Invoice> findByBillingDateBetweenAndApplicantId(LocalDate startDate, LocalDate endDate, Long applicantId);
+
+    Page<Invoice> findByApplicantId(Long applicantId, Pageable pageable);
 
     /**
      * 统计案件开票金额

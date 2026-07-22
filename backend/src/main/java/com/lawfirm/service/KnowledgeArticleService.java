@@ -4,13 +4,13 @@ import com.lawfirm.dto.KnowledgeArticleDTO;
 import com.lawfirm.dto.KnowledgeArticleVO;
 import com.lawfirm.entity.KnowledgeArticle;
 import com.lawfirm.mapper.KnowledgeArticleMapper;
+import com.lawfirm.repository.UserRepository;
+import com.lawfirm.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,30 +29,42 @@ public class KnowledgeArticleService {
 
     private final KnowledgeArticleMapper articleMapper;
     private final VectorMigrationService vectorMigrationService;
+    private final SecurityUtils securityUtils;
+    private final UserRepository userRepository;
 
     /**
      * 创建文章
      */
     @Transactional
     public KnowledgeArticleVO createArticle(KnowledgeArticleDTO dto) {
+        return createArticleInternal(dto, null);
+    }
+
+    @Transactional
+    public KnowledgeArticleVO createImportedArticle(KnowledgeArticleDTO dto, String attachmentPath) {
+        return createArticleInternal(dto, attachmentPath);
+    }
+
+    private KnowledgeArticleVO createArticleInternal(KnowledgeArticleDTO dto, String attachmentPath) {
         KnowledgeArticle article = new KnowledgeArticle();
         article.setTitle(dto.getTitle());
         article.setArticleType(dto.getArticleType());
+        article.setIsPublic(dto.getIsPublic() != null ? dto.getIsPublic() : true);
+        applyKnowledgeMetadata(article, dto);
         applyKnowledgeScope(article, dto);
         article.setCategory(dto.getCategory());
         article.setTags(dto.getTags());
         article.setSummary(dto.getSummary());
         article.setContent(dto.getContent());
-        article.setAttachmentPath(dto.getAttachmentPath());
-        article.setIsPublic(dto.getIsPublic() != null ? dto.getIsPublic() : true);
+        article.setAttachmentPath(attachmentPath);
         article.setIsTop(dto.getIsTop() != null ? dto.getIsTop() : false);
         article.setViewCount(0);
         article.setLikeCount(0);
         article.setDeleted(false);
 
         // 设置作者
-        Long userId = getCurrentUserId();
-        String username = getCurrentUsername();
+        Long userId = securityUtils.getCurrentUserId();
+        String username = getCurrentUserName(userId);
         article.setAuthorId(userId);
         article.setAuthorName(username);
 
@@ -76,20 +88,21 @@ public class KnowledgeArticleService {
         if (article == null) {
             throw new RuntimeException("文章不存在");
         }
+        assertCanModify(article);
 
         article.setTitle(dto.getTitle());
         article.setArticleType(dto.getArticleType());
+        article.setIsPublic(dto.getIsPublic() != null ? dto.getIsPublic() : true);
+        applyKnowledgeMetadata(article, dto);
         applyKnowledgeScope(article, dto);
         article.setCategory(dto.getCategory());
         article.setTags(dto.getTags());
         article.setSummary(dto.getSummary());
         article.setContent(dto.getContent());
-        article.setAttachmentPath(dto.getAttachmentPath());
-        article.setIsPublic(dto.getIsPublic());
         article.setIsTop(dto.getIsTop());
 
         // 更新修改人和时间
-        article.setUpdaterId(getCurrentUserId());
+        article.setUpdaterId(securityUtils.getCurrentUserId());
         article.setUpdatedAt(LocalDateTime.now());
 
         articleMapper.update(article);
@@ -107,7 +120,9 @@ public class KnowledgeArticleService {
         if (article == null) {
             throw new RuntimeException("文章不存在");
         }
+        assertCanModify(article);
         articleMapper.deleteById(id, LocalDateTime.now());
+        vectorMigrationService.deleteArticleIndex(id);
         log.info("删除知识库文章成功: id={}", id);
     }
 
@@ -116,16 +131,18 @@ public class KnowledgeArticleService {
      */
     @Transactional(readOnly = true)
     public KnowledgeArticleVO getArticle(Long id) {
-        KnowledgeArticle article = articleMapper.selectById(id);
-        if (article == null) {
-            throw new RuntimeException("文章不存在");
-        }
+        KnowledgeArticle article = getAuthorizedArticle(id);
 
         // 增加浏览次数
         articleMapper.incrementViewCount(id);
         article.setViewCount(article.getViewCount() + 1);
 
         return toVO(article);
+    }
+
+    @Transactional(readOnly = true)
+    public KnowledgeArticle getArticleForAttachment(Long id) {
+        return getAuthorizedArticle(id);
     }
 
     /**
@@ -137,8 +154,21 @@ public class KnowledgeArticleService {
         if (article == null) {
             throw new RuntimeException("文章不存在");
         }
+        assertCanView(article);
         articleMapper.incrementLikeCount(id);
         log.info("点赞文章成功: id={}", id);
+    }
+
+    @Transactional
+    public KnowledgeArticleVO reindexArticle(Long id) {
+        KnowledgeArticle article = articleMapper.selectById(id);
+        if (article == null) {
+            throw new RuntimeException("文章不存在");
+        }
+        assertCanModify(article);
+        vectorMigrationService.indexNewArticle(article);
+        KnowledgeArticle refreshed = articleMapper.selectById(id);
+        return toVO(refreshed != null ? refreshed : article);
     }
 
     /**
@@ -177,6 +207,24 @@ public class KnowledgeArticleService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public Page<KnowledgeArticleVO> listBySource(String source, Pageable pageable) {
+        String normalizedSource = validateKnowledgeSource(source);
+        if ("CASE_DEPOSIT".equals(normalizedSource)) {
+            throw new RuntimeException("案件沉淀暂不在共享知识库开放");
+        }
+        int offset = (int) pageable.getOffset();
+        int pageSize = pageable.getPageSize();
+
+        List<KnowledgeArticle> articles = articleMapper.selectBySourceAndPage(normalizedSource, offset, pageSize);
+        int total = articleMapper.countBySource(normalizedSource);
+        return new PageImpl<>(
+                articles.stream().map(this::toVO).collect(Collectors.toList()),
+                pageable,
+                total
+        );
+    }
+
     /**
      * 根据分类查询
      */
@@ -199,12 +247,24 @@ public class KnowledgeArticleService {
      * 搜索文章
      */
     @Transactional(readOnly = true)
-    public Page<KnowledgeArticleVO> searchArticles(String keyword, Pageable pageable) {
+    public Page<KnowledgeArticleVO> searchArticles(String keyword, String source, Pageable pageable) {
         int offset = (int) pageable.getOffset();
         int pageSize = pageable.getPageSize();
 
-        List<KnowledgeArticle> articles = articleMapper.searchByKeyword(keyword, offset, pageSize);
-        int total = articleMapper.countSearch(keyword);
+        String normalizedKeyword = keyword == null ? "" : keyword.trim();
+        String normalizedSource = source == null || source.trim().isEmpty()
+                ? null
+                : validateKnowledgeSource(source);
+        if (KnowledgeArticlePolicy.CASE_DEPOSIT.equals(normalizedSource)) {
+            throw new IllegalArgumentException("案件沉淀暂不在共享知识库开放");
+        }
+
+        List<KnowledgeArticle> articles = normalizedSource == null
+                ? articleMapper.searchByKeyword(normalizedKeyword, offset, pageSize)
+                : articleMapper.searchByKeywordAndSource(normalizedKeyword, normalizedSource, offset, pageSize);
+        int total = normalizedSource == null
+                ? articleMapper.countSearch(normalizedKeyword)
+                : articleMapper.countSearchBySource(normalizedKeyword, normalizedSource);
 
         return new PageImpl<>(
                 articles.stream().map(this::toVO).collect(Collectors.toList()),
@@ -251,7 +311,7 @@ public class KnowledgeArticleService {
      */
     @Transactional(readOnly = true)
     public Page<KnowledgeArticleVO> getMyArticles(Pageable pageable) {
-        Long userId = getCurrentUserId();
+        Long userId = securityUtils.getCurrentUserId();
         int offset = (int) pageable.getOffset();
         int pageSize = pageable.getPageSize();
 
@@ -278,7 +338,15 @@ public class KnowledgeArticleService {
         vo.setTags(entity.getTags());
         vo.setSummary(entity.getSummary());
         vo.setContent(entity.getContent());
-        vo.setAttachmentPath(entity.getAttachmentPath());
+        // 只向前端暴露附件是否存在，绝不暴露 NAS/本机绝对路径。
+        vo.setAttachmentPath(entity.getAttachmentPath() == null ? null : "AVAILABLE");
+        vo.setAttachmentName(resolveAttachmentName(entity.getAttachmentPath()));
+        vo.setSourceReference(entity.getSourceReference());
+        vo.setIssuingAuthority(entity.getIssuingAuthority());
+        vo.setDocumentNumber(entity.getDocumentNumber());
+        vo.setEffectiveDate(entity.getEffectiveDate());
+        vo.setValidityStatus(KnowledgeArticlePolicy.normalizeValidityStatus(entity.getValidityStatus()));
+        vo.setAuthorizationConfirmed(entity.getAuthorizationConfirmed());
         vo.setViewCount(entity.getViewCount());
         vo.setLikeCount(entity.getLikeCount());
         vo.setIsTop(entity.getIsTop());
@@ -295,20 +363,30 @@ public class KnowledgeArticleService {
     private void applyKnowledgeScope(KnowledgeArticle article, KnowledgeArticleDTO dto) {
         String source = normalizeKnowledgeSource(dto.getKnowledgeSource(), dto.getArticleType());
         article.setKnowledgeSource(source);
-        boolean indexable = isFirstStageIndexableSource(source);
-        article.setKnowledgeEligible(dto.getKnowledgeEligible() != null ? dto.getKnowledgeEligible() && indexable : indexable);
+        boolean requested = dto.getKnowledgeEligible() == null || dto.getKnowledgeEligible();
+        article.setKnowledgeEligible(requested);
+        if (!KnowledgeArticlePolicy.isRagIndexable(article)) {
+            article.setKnowledgeEligible(false);
+        }
         if (!article.getKnowledgeEligible()) {
             article.setIndexStatus("FORBIDDEN");
-        } else if (dto.getIndexStatus() != null && !dto.getIndexStatus().trim().isEmpty()) {
-            article.setIndexStatus(dto.getIndexStatus());
         } else {
             article.setIndexStatus("PENDING");
         }
     }
 
+    private void applyKnowledgeMetadata(KnowledgeArticle article, KnowledgeArticleDTO dto) {
+        article.setSourceReference(trimToNull(dto.getSourceReference()));
+        article.setIssuingAuthority(trimToNull(dto.getIssuingAuthority()));
+        article.setDocumentNumber(trimToNull(dto.getDocumentNumber()));
+        article.setEffectiveDate(dto.getEffectiveDate());
+        article.setValidityStatus(KnowledgeArticlePolicy.normalizeValidityStatus(dto.getValidityStatus()));
+        article.setAuthorizationConfirmed(Boolean.TRUE.equals(dto.getAuthorizationConfirmed()));
+    }
+
     private String normalizeKnowledgeSource(String source, String articleType) {
         if (source != null && !source.trim().isEmpty()) {
-            return source.trim();
+            return validateKnowledgeSource(source);
         }
         if ("TEMPLATE".equals(articleType)) {
             return "PUBLIC_TEMPLATE";
@@ -319,37 +397,55 @@ public class KnowledgeArticleService {
         return "FIRM_KNOWLEDGE";
     }
 
-    private boolean isFirstStageIndexableSource(String source) {
-        return source == null
-                || "FIRM_KNOWLEDGE".equals(source)
-                || "LAW_REGULATION".equals(source)
-                || "FIRM_POLICY".equals(source)
-                || "PUBLIC_TEMPLATE".equals(source)
-                || "REFERENCE_MATERIAL".equals(source);
+    private String validateKnowledgeSource(String source) {
+        return KnowledgeArticlePolicy.normalizeSource(source);
     }
 
-    /**
-     * 获取当前用户ID
-     */
-    private Long getCurrentUserId() {
-        // 从SecurityContext获取用户ID
-        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        if (principal instanceof UserDetails) {
-            String username = ((UserDetails) principal).getUsername();
-            // 简化实现：从用户名解析ID（生产环境应从UserService获取）
-            return 1L; // 临时返回固定值
+    private void assertCanModify(KnowledgeArticle article) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        if (currentUserId.equals(article.getAuthorId()) || securityUtils.isAdmin()) {
+            return;
         }
-        return 1L;
+        throw new RuntimeException("无权修改他人的知识库文章");
     }
 
-    /**
-     * 获取当前用户名
-     */
-    private String getCurrentUsername() {
-        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        if (principal instanceof UserDetails) {
-            return ((UserDetails) principal).getUsername();
+    private void assertCanView(KnowledgeArticle article) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        boolean sharedKnowledge = Boolean.TRUE.equals(article.getIsPublic())
+                && !"CASE_DEPOSIT".equals(article.getKnowledgeSource());
+        if (sharedKnowledge || currentUserId.equals(article.getAuthorId()) || securityUtils.isAdmin()) {
+            return;
         }
-        return "admin";
+        throw new RuntimeException("无权查看该知识库文章");
+    }
+
+    private KnowledgeArticle getAuthorizedArticle(Long id) {
+        KnowledgeArticle article = articleMapper.selectById(id);
+        if (article == null) {
+            throw new RuntimeException("文章不存在");
+        }
+        assertCanView(article);
+        return article;
+    }
+
+    private String resolveAttachmentName(String attachmentPath) {
+        if (attachmentPath == null || attachmentPath.trim().isEmpty()) {
+            return null;
+        }
+        String fileName = java.nio.file.Paths.get(attachmentPath).getFileName().toString();
+        return fileName.replaceFirst("^[0-9a-fA-F-]{36}_", "");
+    }
+
+    private String trimToNull(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private String getCurrentUserName(Long userId) {
+        return userRepository.findById(userId)
+                .map(user -> user.getRealName() == null ? user.getUsername() : user.getRealName())
+                .orElse("未知用户");
     }
 }

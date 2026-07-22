@@ -1,5 +1,12 @@
 import request from '@/utils/request'
 
+export function getSystemHealthDetails() {
+  return request({
+    url: '/system/health/details',
+    method: 'get'
+  })
+}
+
 // 用户管理
 export function getUserList(params) {
   return request({
@@ -87,6 +94,20 @@ export function getAuditLogs(params) {
   })
 }
 
+export function getAuditLogDetail(id) {
+  return request({
+    url: `/audit-logs/${id}`,
+    method: 'get'
+  })
+}
+
+export function getAuditLogModules() {
+  return request({
+    url: '/audit-logs/modules',
+    method: 'get'
+  })
+}
+
 // 系统配置
 export function getSystemConfig() {
   return request({
@@ -108,5 +129,26 @@ export function createBackup() {
   return request({
     url: '/system/backup',
     method: 'post'
+  })
+}
+
+export function getBackups() {
+  return request({
+    url: '/system/backups',
+    method: 'get'
+  })
+}
+
+export function restoreBackup(id) {
+  return request({
+    url: `/system/restore/${id}`,
+    method: 'post'
+  })
+}
+
+export function deleteBackup(id) {
+  return request({
+    url: `/system/backup/${id}`,
+    method: 'delete'
   })
 }

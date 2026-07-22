@@ -1,5 +1,6 @@
 package com.lawfirm.controller;
 
+import com.lawfirm.annotation.AuditLog;
 import com.lawfirm.dto.ClientDTO;
 import com.lawfirm.service.ClientService;
 import com.lawfirm.util.Result;
@@ -7,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import javax.validation.Valid;
@@ -30,6 +32,8 @@ public class ClientController {
      * POST /api/clients
      */
     @PostMapping
+    @PreAuthorize("hasAuthority('CLIENT_CREATE')")
+    @AuditLog(value = "创建客户", operationType = "CREATE", logParams = false)
     public Result<ClientDTO> createClient(@Valid @RequestBody ClientDTO dto) {
         try {
             Long userId = getCurrentUserId();
@@ -49,9 +53,11 @@ public class ClientController {
      * PUT /api/clients/{id}
      */
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('CLIENT_EDIT')")
+    @AuditLog(value = "更新客户", operationType = "UPDATE", logParams = false)
     public Result<ClientDTO> updateClient(@PathVariable Long id, @Valid @RequestBody ClientDTO dto) {
         try {
-            clientService.assertClientVisible(id, getCurrentUserId());
+            clientService.assertClientEditable(id, getCurrentUserId());
             ClientDTO result = clientService.updateClient(id, dto);
             return Result.success(result);
         } catch (IllegalArgumentException e) {
@@ -68,9 +74,11 @@ public class ClientController {
      * DELETE /api/clients/{id}
      */
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('CLIENT_DELETE')")
+    @AuditLog(value = "删除客户", operationType = "DELETE", logParams = false)
     public Result<Void> deleteClient(@PathVariable Long id) {
         try {
-            clientService.assertClientVisible(id, getCurrentUserId());
+            clientService.assertClientEditable(id, getCurrentUserId());
             clientService.deleteClient(id);
             return Result.success();
         } catch (IllegalArgumentException e) {
@@ -180,6 +188,7 @@ public class ClientController {
      * POST /api/clients/conflict-check
      */
     @PostMapping("/conflict-check")
+    @AuditLog(value = "执行利冲检查", operationType = "CHECK", logParams = false)
     public Result<ClientDTO> checkConflictPreview(@RequestBody ClientDTO dto) {
         try {
             Long userId = getCurrentUserId();
@@ -243,6 +252,7 @@ public class ClientController {
      * POST /api/clients/{id}/communications
      */
     @PostMapping("/{id}/communications")
+    @AuditLog(value = "新增客户沟通记录", operationType = "CREATE", logParams = false)
     public Result<com.lawfirm.entity.CommunicationRecord> createCommunication(
             @PathVariable Long id,
             @RequestBody com.lawfirm.dto.CommunicationRecordDTO dto) {
@@ -261,6 +271,7 @@ public class ClientController {
      * PUT /api/clients/{id}/communications/{communicationId}
      */
     @PutMapping("/{id}/communications/{communicationId}")
+    @AuditLog(value = "更新客户沟通记录", operationType = "UPDATE", logParams = false)
     public Result<com.lawfirm.entity.CommunicationRecord> updateCommunication(
             @PathVariable Long id,
             @PathVariable Long communicationId,
@@ -282,6 +293,7 @@ public class ClientController {
      * DELETE /api/clients/{id}/communications/{communicationId}
      */
     @DeleteMapping("/{id}/communications/{communicationId}")
+    @AuditLog(value = "删除客户沟通记录", operationType = "DELETE", logParams = false)
     public Result<Void> deleteCommunication(
             @PathVariable Long id,
             @PathVariable Long communicationId) {

@@ -101,7 +101,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="applicantName" label="申请人" width="100" sortable />
-            <el-table-column prop="applyTime" label="申请时间" width="160" sortable />
+            <el-table-column prop="applyTime" label="申请时间" width="160" sortable :formatter="formatTableDateTime" />
             <el-table-column prop="currentApproverName" label="当前审批人" width="120" />
             <el-table-column prop="caseName" label="关联案件" width="200">
               <template #default="{ row }">
@@ -151,7 +151,7 @@
               <template #default="{ row }">{{ formatApprovalType(row.approvalType) }}</template>
             </el-table-column>
             <el-table-column prop="applicantName" label="申请人" width="100" sortable />
-            <el-table-column prop="approvedTime" label="处理时间" width="160" sortable />
+            <el-table-column prop="approvedTime" label="处理时间" width="160" sortable :formatter="formatTableDateTime" />
             <el-table-column prop="statusDesc" label="处理结果" width="90">
               <template #default="{ row }">
                 <el-tag :type="row.status === 'APPROVED' ? 'success' : row.status === 'REJECTED' ? 'danger' : 'info'">
@@ -180,7 +180,7 @@
               <template #default="{ row }">{{ formatApprovalType(row.approvalType) }}</template>
             </el-table-column>
             <el-table-column prop="applicantName" label="申请人" width="100" sortable />
-            <el-table-column prop="applyTime" label="申请时间" width="160" sortable />
+            <el-table-column prop="applyTime" label="申请时间" width="160" sortable :formatter="formatTableDateTime" />
             <el-table-column prop="currentApproverName" label="当前审批人" width="120" />
             <el-table-column prop="status" label="状态" width="100">
               <template #default="{ row }">
@@ -252,6 +252,22 @@
           </el-select>
         </el-form-item>
 
+        <el-form-item label="审批人" required>
+          <el-select
+            v-model="approvalForm.currentApproverId"
+            filterable
+            placeholder="请选择审批人"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="user in userOptions"
+              :key="user.id"
+              :label="`${user.realName || user.username}${user.position ? `（${user.position}）` : ''}`"
+              :value="user.id"
+            />
+          </el-select>
+        </el-form-item>
+
         <el-form-item label="紧急程度">
           <el-radio-group v-model="approvalForm.urgency">
             <el-radio label="NORMAL">普通</el-radio>
@@ -272,6 +288,38 @@
       <template #footer>
         <el-button @click="approvalDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleSubmitApproval">提交审批</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="transferDialogVisible" title="转交审批" width="480px">
+      <el-form label-width="90px">
+        <el-form-item label="新审批人" required>
+          <el-select
+            v-model="transferForm.newApproverId"
+            filterable
+            placeholder="请选择接收人"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="user in transferUserOptions"
+              :key="user.id"
+              :label="`${user.realName || user.username}${user.position ? `（${user.position}）` : ''}`"
+              :value="user.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="转审原因" required>
+          <el-input
+            v-model="transferForm.comments"
+            type="textarea"
+            :rows="4"
+            placeholder="请输入转审原因"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="transferDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitTransfer">确定转审</el-button>
       </template>
     </el-dialog>
 
@@ -303,6 +351,7 @@ import {
   withdrawApproval
 } from '@/api/approval'
 import { getCaseList } from '@/api/case'
+import { getUserList } from '@/api/user'
 
 const router = useRouter()
 const route = useRoute()
@@ -326,7 +375,7 @@ const currentPosition = computed(() => userStore.userInfo?.position || '')
 const isDirector = computed(() => currentPosition.value === '主任')
 const isAdministrativeUser = computed(() => {
   const position = currentPosition.value
-  return isSuperAdmin.value || position.startsWith('行政管理') || position === '主任' || position === '财务管理'
+  return isSuperAdmin.value || position.startsWith('行政管理') || position === '主任'
 })
 
 const approvalTypeMap = {
@@ -342,6 +391,16 @@ const approvalTypeMap = {
 }
 
 const isSuccessResponse = (response) => response?.success || response?.code === 200
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  if (Array.isArray(value)) {
+    const [year, month, day, hour = 0, minute = 0, second = 0] = value
+    const pad = number => String(number).padStart(2, '0')
+    return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(minute)}:${pad(second)}`
+  }
+  return String(value).replace('T', ' ')
+}
+const formatTableDateTime = (row, column, value) => formatDateTime(value)
 const formatApprovalType = (type) => approvalTypeMap[type] || type || '-'
 const isCaseFilingApproval = (row) => ['CASE_FILING', 'CASE_FILING_DIRECTOR'].includes(row?.approvalType)
 const getApproveActionText = (row) => {
@@ -360,9 +419,15 @@ const approvalForm = ref({
   title: '',
   approvalType: 'SEAL',
   caseId: null,
+  currentApproverId: null,
   urgency: 'NORMAL',
   description: ''
 })
+const userOptions = ref([])
+const transferDialogVisible = ref(false)
+const transferTarget = ref(null)
+const transferForm = ref({ newApproverId: null, comments: '' })
+const transferUserOptions = computed(() => userOptions.value.filter(user => Number(user.id) !== currentUserId.value))
 
 // 案件列表
 const caseList = ref([])
@@ -474,22 +539,31 @@ const getStatusTagType = (status) => {
 }
 
 const handleCreateApproval = async () => {
-  // 加载案件列表
   try {
-    const { data } = await getCaseList({ page: 1, size: 100 })
-    caseList.value = data.records || []
+    const [caseResponse] = await Promise.all([
+      getCaseList({ page: 0, size: 100 }),
+      loadUserOptions()
+    ])
+    caseList.value = caseResponse.data?.records || []
   } catch (error) {
-    console.error('加载案件列表失败:', error)
+    console.error('加载审批选项失败:', error)
   }
 
   approvalForm.value = {
     title: '',
     approvalType: 'SEAL',
     caseId: null,
+    currentApproverId: null,
     urgency: 'NORMAL',
     description: ''
   }
   approvalDialogVisible.value = true
+}
+
+const loadUserOptions = async () => {
+  const response = await getUserList({ page: 1, size: 300, status: 1 })
+  const pageData = response.data || {}
+  userOptions.value = pageData.content || pageData.records || []
 }
 
 const handleSubmitApproval = async () => {
@@ -501,12 +575,20 @@ const handleSubmitApproval = async () => {
     ElMessage.warning('请输入审批内容')
     return
   }
+  if (!approvalForm.value.currentApproverId) {
+    ElMessage.warning('请选择审批人')
+    return
+  }
 
   try {
-    await createApproval({
+    const response = await createApproval({
       ...approvalForm.value,
       content: approvalForm.value.description
     })
+    if (!isSuccessResponse(response)) {
+      ElMessage.error(response.message || '提交失败')
+      return
+    }
     ElMessage.success('审批提交成功')
     approvalDialogVisible.value = false
     await fetchApprovalList()
@@ -525,6 +607,8 @@ const handleApprove = async (row) => {
         confirmButtonText: getApproveActionText(row),
         cancelButtonText: '取消',
         inputPlaceholder: isCaseFilingApproval(row) ? '例如：经核查，未发现利益冲突，同意立案' : '请输入审批意见',
+        inputPattern: isCaseFilingApproval(row) ? /\S+/ : undefined,
+        inputErrorMessage: isCaseFilingApproval(row) ? '立案审批意见不能为空' : undefined,
         type: 'success'
       }
     )
@@ -578,31 +662,37 @@ const handleReject = async (row) => {
 
 const handleTransfer = async (row) => {
   try {
-    const { value } = await ElMessageBox.prompt(
-      '请输入转审原因（必填）',
-      `转审：${row.title}`,
-      {
-        confirmButtonText: '确定转审',
-        cancelButtonText: '取消',
-        inputPlaceholder: '请输入转审原因',
-        inputPattern: /.+/,
-        inputErrorMessage: '转审原因不能为空',
-        type: 'info'
-      }
-    )
-
-    const response = await transferApproval(row.id, { comments: value })
-    if (isSuccessResponse(response)) {
-      ElMessage.success('审批已转审')
-      await fetchApprovalList()
-    } else {
-      ElMessage.error(response.message || '操作失败')
-    }
+    if (userOptions.value.length === 0) await loadUserOptions()
+    transferTarget.value = row
+    transferForm.value = { newApproverId: null, comments: '' }
+    transferDialogVisible.value = true
   } catch (error) {
-    if (error !== 'cancel') {
-      console.error('转审审批失败:', error)
-      ElMessage.error('操作失败')
+    console.error('加载转审人员失败:', error)
+    ElMessage.error('加载人员列表失败')
+  }
+}
+
+const submitTransfer = async () => {
+  if (!transferForm.value.newApproverId) {
+    ElMessage.warning('请选择新审批人')
+    return
+  }
+  if (!transferForm.value.comments.trim()) {
+    ElMessage.warning('请输入转审原因')
+    return
+  }
+  try {
+    const response = await transferApproval(transferTarget.value.id, transferForm.value)
+    if (!isSuccessResponse(response)) {
+      ElMessage.error(response.message || '操作失败')
+      return
     }
+    ElMessage.success('审批已转交')
+    transferDialogVisible.value = false
+    await fetchApprovalList()
+  } catch (error) {
+    console.error('转审审批失败:', error)
+    ElMessage.error('操作失败')
   }
 }
 
@@ -647,7 +737,12 @@ const fetchApprovalList = async () => {
       params.status = 'PENDING'
     } else if (activeTab.value === 'my-requests') {
       params.applicantId = currentUserId.value
-    } else if (!isAdministrativeUser.value) {
+    }
+
+    if (activeTab.value !== 'my-requests'
+      && !isCaseApprovalMode.value
+      && !isSuperAdmin.value
+      && !isDirector.value) {
       params.currentApproverId = currentUserId.value
     }
 

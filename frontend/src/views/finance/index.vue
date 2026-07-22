@@ -5,7 +5,7 @@
     <el-tabs v-model="activeTab" type="card" class="finance-tabs"
       :class="'tab-' + activeTab">
       <!-- 费用记录 -->
-      <el-tab-pane label="费用记录" name="expenses">
+      <el-tab-pane v-if="isFinanceUser" label="费用记录" name="expenses">
         <div class="tab-content">
           <div class="toolbar">
             <el-button type="primary" @click="handleAddExpense" class="add-btn">
@@ -66,7 +66,7 @@
       </el-tab-pane>
 
       <!-- 律师费管理 -->
-      <el-tab-pane label="律师费管理" name="lawyer-fees">
+      <el-tab-pane v-if="isFinanceUser" label="律师费管理" name="lawyer-fees">
         <div class="tab-content">
           <div class="fee-summary">
             <div class="summary-card">
@@ -127,7 +127,7 @@
       </el-tab-pane>
 
       <!-- 收款记录 -->
-      <el-tab-pane label="收款记录" name="payments">
+      <el-tab-pane v-if="isFinanceUser" label="收款记录" name="payments">
         <div class="tab-content">
           <div class="toolbar">
             <el-button type="primary" @click="handleAddPayment" class="add-btn">
@@ -603,11 +603,8 @@ const issueForm = ref({
 const invoiceDetailVisible = ref(false)
 const selectedInvoice = ref({})
 
-const FINANCE_USER_NAMES = ['admin', '黄智明', '邝凤兰']
 const currentUserId = computed(() => Number(userStore.userInfo?.id || userStore.userId || 0))
-const currentUserName = computed(() => userStore.userInfo?.username || userStore.userInfo?.realName || '')
-const currentUserPosition = computed(() => userStore.userInfo?.position || '')
-const isFinanceUser = computed(() => FINANCE_USER_NAMES.includes(currentUserName.value) || currentUserPosition.value === '财务管理')
+const isFinanceUser = computed(() => userStore.hasPermission('FINANCE_EDIT'))
 
 const isInvoiceApplicant = (row) => {
   return Number(row.applicantId) === currentUserId.value
@@ -1060,6 +1057,11 @@ const goToCase = (caseId) => {
 }
 
 onMounted(() => {
+  if (!isFinanceUser.value) {
+    activeTab.value = 'invoices'
+    fetchInvoices()
+    return
+  }
   fetchFinanceDashboard()
   if (activeTab.value === 'invoices') {
     fetchInvoices()

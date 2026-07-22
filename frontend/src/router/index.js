@@ -41,7 +41,7 @@ const routes = [
         path: 'case',
         name: 'Case',
         redirect: '/case/list',
-        meta: { title: '案件', icon: '⚖️' },
+        meta: { title: '案件', icon: '⚖️', requiredPermission: 'CASE_VIEW' },
         children: [
           {
             path: 'list',
@@ -53,13 +53,13 @@ const routes = [
             path: 'create',
             name: 'CaseCreate',
             component: () => import('@/views/case/create.vue'),
-            meta: { title: '新建案件' }
+            meta: { title: '新建案件', requiredPermission: 'CASE_CREATE' }
           },
           {
             path: ':id/edit',
             name: 'CaseEdit',
             component: () => import('@/views/case/create.vue'),
-            meta: { title: '编辑案件' }
+            meta: { title: '编辑案件', requiredPermission: 'CASE_EDIT' }
           },
           {
             path: ':id',
@@ -119,7 +119,7 @@ const routes = [
         path: 'client',
         name: 'Client',
         redirect: '/client/list',
-        meta: { title: '客户', icon: '👥' },
+        meta: { title: '客户', icon: '👥', requiredPermission: 'CLIENT_VIEW' },
         children: [
           {
             path: 'list',
@@ -131,7 +131,7 @@ const routes = [
             path: 'create',
             name: 'ClientCreate',
             component: () => import('@/views/client/create.vue'),
-            meta: { title: '新建客户' }
+            meta: { title: '新建客户', requiredPermission: 'CLIENT_CREATE' }
           },
           {
             path: 'conflict-check',
@@ -143,7 +143,7 @@ const routes = [
             path: ':id/edit',
             name: 'ClientEdit',
             component: () => import('@/views/client/create.vue'),
-            meta: { title: '编辑客户' }
+            meta: { title: '编辑客户', requiredPermission: 'CLIENT_EDIT' }
           },
           {
             path: ':id',
@@ -178,7 +178,7 @@ const routes = [
         path: 'approval',
         name: 'Approval',
         component: () => import('@/views/approval/index.vue'),
-        meta: { title: '审批', icon: '✅' }
+        meta: { title: '审批', icon: '✅', requiredPermission: 'APPROVAL_VIEW' }
       },
       // 行政OA
       {
@@ -192,7 +192,7 @@ const routes = [
         path: 'statistics',
         name: 'Statistics',
         component: () => import('@/views/statistics/index.vue'),
-        meta: { title: '统计', icon: '📈' }
+        meta: { title: '统计', icon: '📈', requiredPermission: 'STATISTICS_VIEW' }
       },
       // 知识库
       {
@@ -272,7 +272,7 @@ const routes = [
         path: 'legacy-materials',
         name: 'LegacyMaterials',
         component: () => import('@/views/legacy-materials/index.vue'),
-        meta: { title: '旧系统资料检索' }
+        meta: { title: '旧系统资料检索', requiredPermission: 'CASE_VIEW' }
       },
       // 工具集
       {
@@ -280,6 +280,18 @@ const routes = [
         name: 'Tools',
         component: () => import('@/views/tools/index.vue'),
         meta: { title: '工具集', icon: '🔧' }
+      },
+      {
+        path: 'tools/ssb',
+        name: 'ToolsSsb',
+        component: () => import('@/views/tools/index.vue'),
+        meta: { title: '省时宝' }
+      },
+      {
+        path: 'tools/ac',
+        name: 'ToolsAc',
+        component: () => import('@/views/tools/index.vue'),
+        meta: { title: 'AC精算' }
       },
       // ===== 不良资产管理 =====
       {
@@ -354,10 +366,16 @@ const routes = [
       },
       // 系统设置
       {
+        path: 'profile',
+        name: 'Profile',
+        component: () => import('@/views/profile/index.vue'),
+        meta: { title: '个人中心' }
+      },
+      {
         path: 'settings',
         name: 'Settings',
         component: () => import('@/views/settings/index.vue'),
-        meta: { title: '设置', icon: '⚙️' }
+        meta: { title: '系统设置', icon: '⚙️', requiredPermission: 'SYSTEM_CONFIG' }
       }
     ]
   },
@@ -375,7 +393,7 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from) => {
+router.beforeEach(async (to, from) => {
   const userStore = useUserStore()
 
   // 设置页面标题
@@ -392,6 +410,27 @@ router.beforeEach((to, from) => {
       path: '/login',
       query: { redirect: to.fullPath }
     }
+  }
+
+  if (userStore.isLoggedIn && userStore.permissions.length === 0) {
+    try {
+      await userStore.getUserInfo()
+    } catch {
+      return {
+        path: '/login',
+        query: { redirect: to.fullPath }
+      }
+    }
+  }
+
+  const requiredPermission = [...to.matched]
+    .reverse()
+    .find(record => record.meta.requiredPermission)
+    ?.meta.requiredPermission
+
+  if (requiredPermission && !userStore.hasPermission(requiredPermission)) {
+    ElMessage.warning('当前账号无权访问该页面')
+    return { path: '/dashboard' }
   }
 
   // 允许导航

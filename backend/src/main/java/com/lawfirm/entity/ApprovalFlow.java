@@ -39,4 +39,7 @@ public class ApprovalFlow {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    @Transient
+    private String approverName;
 }

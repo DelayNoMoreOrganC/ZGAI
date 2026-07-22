@@ -53,10 +53,6 @@
           </el-menu-item>
         </template>
       </el-menu>
-      <div v-if="!isCollapse" class="sidebar-footer">
-        <span class="footer-label">下一阶段</span>
-        <span class="footer-text">文档、审批等模块将在稳定后逐步开放。</span>
-      </div>
     </el-aside>
 
     <!-- 主内容区 -->
@@ -91,11 +87,11 @@
             <el-icon><Search /></el-icon>
           </el-button>
 
-          <el-button v-if="!isMobile" class="quick-create" @click="router.push('/client/create')">
+          <el-button v-if="!isMobile && canCreateClient" class="quick-create" @click="router.push('/client/create')">
             <el-icon><UserFilled /></el-icon>
             新建客户
           </el-button>
-          <el-button v-if="!isMobile" type="primary" class="quick-create primary" @click="router.push('/case/create')">
+          <el-button v-if="!isMobile && canCreateCase" type="primary" class="quick-create primary" @click="router.push('/case/create')">
             <el-icon><FolderAdd /></el-icon>
             新建案件
           </el-button>
@@ -112,7 +108,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="profile">个人中心</el-dropdown-item>
-                <el-dropdown-item command="settings">系统设置</el-dropdown-item>
+                <el-dropdown-item v-if="canAccessSettings" command="settings">系统设置</el-dropdown-item>
                 <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -213,6 +209,20 @@ const activeMenu = computed(() => {
   return path
 })
 
+const isAdministrativeUser = computed(() => {
+  const position = userStore.userInfo?.position || ''
+  return position.startsWith('行政管理') || userStore.roles.some(role => String(role).includes('ADMINISTRATIVE'))
+})
+
+const isFinanceUser = computed(() => {
+  const position = userStore.userInfo?.position || ''
+  return position.includes('财务') || position === '出纳' || userStore.roles.includes('FINANCE')
+})
+
+const canUseLegalCalendar = computed(() => !isAdministrativeUser.value && !isFinanceUser.value)
+const canCreateCase = computed(() => userStore.hasPermission('CASE_CREATE'))
+const canCreateClient = computed(() => userStore.hasPermission('CLIENT_CREATE'))
+
 // 菜单路由
 const menuRoutes = computed(() => {
   const routes = [
@@ -220,17 +230,19 @@ const menuRoutes = computed(() => {
     {
       path: '/case',
       meta: { title: '案件管理', icon: '⚖️' },
+      permission: 'CASE_VIEW',
       children: [
         { path: '/case/list', meta: { title: '全部案件' } },
-        { path: '/case/create', meta: { title: '新建案件' } }
+        { path: '/case/create', meta: { title: '新建案件' }, permission: 'CASE_CREATE' }
       ]
     },
     {
       path: '/client',
       meta: { title: '客户管理', icon: '👥' },
+      permission: 'CLIENT_VIEW',
       children: [
         { path: '/client/list', meta: { title: '全部客户' } },
-        { path: '/client/create', meta: { title: '新建客户' } },
+        { path: '/client/create', meta: { title: '新建客户' }, permission: 'CLIENT_CREATE' },
         { path: '/client/conflict-check', meta: { title: '利冲检查' } }
       ]
     },
@@ -243,7 +255,8 @@ const menuRoutes = computed(() => {
     },
     {
       path: '/approval',
-      meta: { title: '审批管理', icon: '✅' }
+      meta: { title: '审批管理', icon: '✅' },
+      permission: 'APPROVAL_VIEW'
     },
     {
       path: '/knowledge',
@@ -257,12 +270,23 @@ const menuRoutes = computed(() => {
       path: '/tools',
       meta: { title: '智能工具', icon: '🔧' },
       children: [
-        { path: '/legacy-materials', meta: { title: '旧资料检索' } },
-        { path: '/tools', meta: { title: '省时宝/AC精算' } }
+        { path: '/legacy-materials', meta: { title: '旧资料检索' }, permission: 'CASE_VIEW' },
+        { path: '/tools/ssb', meta: { title: '省时宝' } },
+        { path: '/tools/ac', meta: { title: 'AC精算' } },
+        { path: '/tools', meta: { title: '常用计算工具' } }
       ]
     }
   ]
+  if (canUseLegalCalendar.value) {
+    routes.splice(1, 0, { path: '/calendar', meta: { title: '日程', icon: '📅' } })
+  }
+
   return routes
+    .filter(item => !item.permission || userStore.hasPermission(item.permission))
+    .map(item => ({
+      ...item,
+      children: item.children?.filter(child => !child.permission || userStore.hasPermission(child.permission))
+    }))
 })
 
 // 面包屑
@@ -277,6 +301,7 @@ const breadcrumbs = computed(() => {
 // 用户信息
 const userName = computed(() => userStore.userName)
 const userAvatar = computed(() => userStore.userInfo?.avatar)
+const canAccessSettings = computed(() => userStore.hasPermission('SYSTEM_CONFIG'))
 
 // 搜索
 const searchKeyword = ref('')
@@ -315,7 +340,7 @@ const closeMobileSidebar = () => {
 const handleUserAction = async (command) => {
   switch (command) {
     case 'profile':
-      router.push('/settings')
+      router.push('/profile')
       break
     case 'settings':
       router.push('/settings')
@@ -347,8 +372,18 @@ const handleResize = () => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener('resize', handleResize)
+
+  if (userStore.isLoggedIn) {
+    try {
+      await userStore.getUserInfo()
+    } catch {
+      await userStore.logout()
+      router.push('/login')
+      return
+    }
+  }
 
   // 移动端初始化时自动折叠侧边栏
   if (isMobile.value) {

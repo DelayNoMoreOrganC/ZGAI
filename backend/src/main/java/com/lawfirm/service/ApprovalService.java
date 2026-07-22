@@ -100,6 +100,10 @@ public class ApprovalService {
             throw new RuntimeException("审批单状态不正确");
         }
 
+        if (isCaseFilingApproval(approval) && !hasText(comments)) {
+            throw new RuntimeException("立案审批意见不能为空");
+        }
+
         // 更新审批单状态
         approval.setStatus(ApprovalStatus.APPROVED.getCode());
         approval.setApprovedTime(LocalDateTime.now());
@@ -146,6 +150,10 @@ public class ApprovalService {
             throw new RuntimeException("审批单状态不正确");
         }
 
+        if (!hasText(comments)) {
+            throw new RuntimeException("驳回理由不能为空");
+        }
+
         // 更新审批单状态
         approval.setStatus(ApprovalStatus.REJECTED.getCode());
         approval.setApprovedTime(LocalDateTime.now());
@@ -163,7 +171,7 @@ public class ApprovalService {
 
         if ((TYPE_CASE_FILING.equals(approval.getApprovalType()) || TYPE_CASE_FILING_DIRECTOR.equals(approval.getApprovalType()))
                 && approval.getCaseId() != null) {
-            rejectCaseFiling(approval, comments);
+            rejectCaseFiling(approval, comments, approverId);
         }
     }
 
@@ -281,7 +289,7 @@ public class ApprovalService {
      */
     public PageResult<ApprovalDTO> getApprovalList(ApprovalQueryRequest request, Long currentUserId) {
         Pageable pageable = PageRequest.of(
-                Math.max(0, request.getPage()),
+                Math.max(0, request.getPage() - 1),
                 request.getSize(),
                 Sort.by(Sort.Direction.fromString(request.getSortDirection()), request.getSortField())
         );
@@ -344,12 +352,16 @@ public class ApprovalService {
                 .map(this::toDTO)
                 .collect(Collectors.toList());
 
-        return PageResult.of(
+        PageResult<ApprovalDTO> result = PageResult.of(
                 (long) request.getPage(),
                 (long) request.getSize(),
                 page.getTotalElements(),
                 records
         );
+        result.setTotalPages((long) page.getTotalPages());
+        result.setHasPrevious(page.hasPrevious());
+        result.setHasNext(page.hasNext());
+        return result;
     }
 
     /**
@@ -369,7 +381,9 @@ public class ApprovalService {
         Approval approval = approvalRepository.findById(approvalId)
                 .orElseThrow(() -> new RuntimeException("审批单不存在"));
         assertApprovalVisible(approval, currentUserId);
-        return approvalFlowRepository.findByApprovalIdOrderByActionTimeAsc(approvalId);
+        List<ApprovalFlow> flows = approvalFlowRepository.findByApprovalIdOrderByActionTimeAsc(approvalId);
+        flows.forEach(flow -> flow.setApproverName(getUserName(flow.getApproverId())));
+        return flows;
     }
 
     /**
@@ -581,7 +595,7 @@ public class ApprovalService {
         }
     }
 
-    private void rejectCaseFiling(Approval approval, String comments) {
+    private void rejectCaseFiling(Approval approval, String comments, Long approverId) {
         Case caseEntity = caseRepository.findById(approval.getCaseId())
                 .orElseThrow(() -> new RuntimeException("案件不存在"));
         caseEntity.setStatus("FILING_REJECTED");
@@ -590,7 +604,7 @@ public class ApprovalService {
         caseTimelineService.createSystemTimeline(
                 caseEntity.getId(),
                 "CASE_FILING_REJECTED",
-                "行政管理驳回立案申请：" + (comments == null ? "" : comments)
+                getUserName(approverId) + "驳回立案申请：" + comments.trim()
         );
     }
 
@@ -703,6 +717,10 @@ public class ApprovalService {
 
     private boolean isDirector(User user) {
         return user != null && "主任".equals(user.getPosition());
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 
     private String getStatusDesc(String status) {

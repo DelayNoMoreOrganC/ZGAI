@@ -4,6 +4,7 @@ import com.lawfirm.dto.CaseDocumentDTO;
 import com.lawfirm.entity.Case;
 import com.lawfirm.entity.CaseDocument;
 import com.lawfirm.entity.DocumentFolder;
+import com.lawfirm.enums.CaseStatus;
 import com.lawfirm.repository.CaseDocumentRepository;
 import com.lawfirm.repository.CaseRepository;
 import com.lawfirm.repository.UserRepository;
@@ -51,9 +52,9 @@ public class CaseDocumentService {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("上传文件不能为空");
         }
-
-        if ("PENDING_APPROVAL".equals(caseEntity.getStatus())) {
-            throw new IllegalArgumentException("案件尚未审批通过，不能上传案件文件");
+        assertDocumentEditable(caseEntity);
+        if (documentType == null || documentType.trim().isEmpty()) {
+            throw new IllegalArgumentException("文件类型不能为空");
         }
 
         // 创建目录
@@ -87,7 +88,7 @@ public class CaseDocumentService {
         document.setVersionNo(versionNo);
         document.setUploadBy(userId);
         document.setKnowledgeEligible(false);
-        document.setIndexStatus("NOT_INDEXED");
+        document.setIndexStatus("FORBIDDEN");
 
         CaseDocument saved = caseDocumentRepository.save(document);
         log.info("上传案件文档成功: caseId={}, fileName={}", caseId, originalFilename);
@@ -104,7 +105,7 @@ public class CaseDocumentService {
 
     private int resolveNextVersion(Long caseId, String folderPath, String documentName) {
         return caseDocumentRepository.findByCaseIdAndDeletedFalseOrderByCreatedAtDesc(caseId).stream()
-                .filter(doc -> documentName.equals(doc.getDocumentName()))
+                .filter(doc -> belongsToVersionFamily(doc, documentName))
                 .filter(doc -> {
                     if (folderPath == null) {
                         return doc.getFolderPath() == null;
@@ -173,9 +174,14 @@ public class CaseDocumentService {
         CaseDocument document = caseDocumentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("文档不存在"));
 
-        String requestedFolderPath = normalizeFolderPath(dto.getFolderPath());
-        if (!Objects.equals(normalizeFolderPath(document.getFolderPath()), requestedFolderPath)) {
-            document = moveDocumentEntity(document, requestedFolderPath);
+        Case ownerCase = caseRepository.findById(document.getCaseId()).orElse(null);
+        assertDocumentEditable(ownerCase);
+
+        if (dto.getFolderPath() != null) {
+            String requestedFolderPath = normalizeFolderPath(dto.getFolderPath());
+            if (!Objects.equals(normalizeFolderPath(document.getFolderPath()), requestedFolderPath)) {
+                document = moveDocumentEntity(document, requestedFolderPath);
+            }
         }
 
         if (dto.getDocumentName() != null && !dto.getDocumentName().trim().isEmpty()) {
@@ -185,8 +191,9 @@ public class CaseDocumentService {
             document.setDocumentType(dto.getDocumentType());
         }
         document.setTags(dto.getTags());
-        if (dto.getKnowledgeEligible() != null) document.setKnowledgeEligible(dto.getKnowledgeEligible());
-        if (dto.getIndexStatus() != null) document.setIndexStatus(dto.getIndexStatus());
+        // 第一阶段案件文件不得进入 RAG，避免普通案件编辑权限绕过知识库审核。
+        document.setKnowledgeEligible(false);
+        document.setIndexStatus("FORBIDDEN");
         document.setOcrResult(dto.getOcrResult());
 
         CaseDocument updated = caseDocumentRepository.save(document);
@@ -203,7 +210,10 @@ public class CaseDocumentService {
         CaseDocument document = caseDocumentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("文档不存在"));
 
-        // 删除不直接清除NAS文件，先移入文件库回收区，便于误删恢复。
+        Case ownerCase = caseRepository.findById(document.getCaseId()).orElse(null);
+        assertDocumentEditable(ownerCase);
+
+        // 删除不直接清除 NAS 文件，先移入文件库回收区，便于误删恢复。
         try {
             if (document.getFilePath() != null && !document.getFilePath().trim().isEmpty()) {
                 Path filePath = Paths.get(document.getFilePath());
@@ -219,7 +229,7 @@ public class CaseDocumentService {
                 }
             }
         } catch (IOException e) {
-            log.warn("移动文件到回收区失败: {}", document.getFilePath(), e);
+            throw new IllegalArgumentException("文件移入回收区失败，未删除记录: " + e.getMessage(), e);
         }
 
         document.setDeleted(true);
@@ -234,6 +244,9 @@ public class CaseDocumentService {
     public CaseDocumentDTO moveDocument(Long id, String newFolderPath) {
         CaseDocument document = caseDocumentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("文档不存在"));
+
+        Case ownerCase = caseRepository.findById(document.getCaseId()).orElse(null);
+        assertDocumentEditable(ownerCase);
 
         document = moveDocumentEntity(document, normalizeFolderPath(newFolderPath));
         CaseDocument updated = caseDocumentRepository.save(document);
@@ -287,7 +300,7 @@ public class CaseDocumentService {
     private TargetFolder resolveTargetFolder(Long caseId, Path caseFolder, String folderPath) {
         String normalizedFolderPath = normalizeFolderPath(folderPath);
         if (normalizedFolderPath == null) {
-            return new TargetFolder(null, null, caseFolder.normalize());
+            throw new IllegalArgumentException("请选择标准案件目录");
         }
 
         DocumentFolder folder = caseFileLibraryService.findCaseFolder(caseId, normalizedFolderPath)
@@ -312,9 +325,59 @@ public class CaseDocumentService {
         }
     }
 
+   /**
+    * 查询同名文档的版本历史：按版本号倒序返回同目录下同名文件的各版本。
+    */
+    public List<CaseDocumentDTO> getVersionHistory(Long caseId, Long documentId) {
+        CaseDocument document = caseDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new IllegalArgumentException("文档不存在"));
+        if (Boolean.TRUE.equals(document.getDeleted())) {
+            throw new IllegalArgumentException("文档已删除");
+        }
+        if (!document.getCaseId().equals(caseId)) {
+            throw new IllegalArgumentException("文档不属于该案件");
+        }
+        final String familyName = getVersionFamilyName(document);
+        final String folder = normalizeFolderPath(document.getFolderPath());
+        return caseDocumentRepository.findByCaseIdAndDeletedFalseOrderByCreatedAtDesc(caseId).stream()
+                .filter(doc -> belongsToVersionFamily(doc, familyName))
+                .filter(doc -> Objects.equals(folder, normalizeFolderPath(doc.getFolderPath())))
+                .sorted((a, b) -> Integer.compare(
+                        b.getVersionNo() == null ? 0 : b.getVersionNo(),
+                        a.getVersionNo() == null ? 0 : a.getVersionNo()))
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+    }
+
+    private boolean belongsToVersionFamily(CaseDocument document, String familyName) {
+        return familyName != null && familyName.equals(getVersionFamilyName(document));
+    }
+
+    private String getVersionFamilyName(CaseDocument document) {
+        String sourceName = document.getOriginalFileName();
+        if (sourceName == null || sourceName.trim().isEmpty()) {
+            sourceName = document.getDocumentName();
+        }
+        return sanitizeFileName(sourceName);
+    }
+
     /**
-     * 转换为DTO
+     * 案卷仅在立案审批通过后的审理中状态可修改。
      */
+    private void assertDocumentEditable(Case caseEntity) {
+        if (caseEntity == null) {
+            throw new IllegalArgumentException("案件不存在");
+        }
+        CaseStatus status = CaseStatus.fromCode(caseEntity.getStatus());
+        if (status != CaseStatus.ACTIVE) {
+            String statusName = status == null ? "未知状态" : status.getDescription();
+            throw new IllegalArgumentException("案件「" + statusName + "」，案卷当前只读");
+        }
+    }
+
+    /**
+    * 转换为DTO
+    */
     private CaseDocumentDTO convertToDTO(CaseDocument document) {
         CaseDocumentDTO dto = new CaseDocumentDTO();
         dto.setId(document.getId());

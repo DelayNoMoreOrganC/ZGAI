@@ -135,6 +135,9 @@ public class VectorMigrationService {
                 payload.addProperty("title", article.getTitle());
                 payload.addProperty("category", article.getCategory());
                 payload.addProperty("knowledgeSource", article.getKnowledgeSource());
+                payload.addProperty("validityStatus", KnowledgeArticlePolicy.normalizeValidityStatus(article.getValidityStatus()));
+                payload.addProperty("issuingAuthority", article.getIssuingAuthority());
+                payload.addProperty("documentNumber", article.getDocumentNumber());
                 payload.addProperty("createdAt", article.getCreatedAt().toString());
 
                 points.add(new QdrantVectorService.VectorPoint(
@@ -174,7 +177,14 @@ public class VectorMigrationService {
             if (!isRagIndexable(article)) {
                 article.setIndexStatus("FORBIDDEN");
                 knowledgeArticleRepository.save(article);
+                deleteArticleIndex(article.getId());
                 log.info("文章不在RAG第一阶段索引范围内，跳过: id={}, source={}", article.getId(), article.getKnowledgeSource());
+                return;
+            }
+            if (!embeddingService.isConfigured()) {
+                article.setIndexStatus("NOT_INDEXED");
+                knowledgeArticleRepository.save(article);
+                log.info("Embedding未配置，文章保留为关键词检索: id={}", article.getId());
                 return;
             }
             // 提取文本
@@ -189,6 +199,9 @@ public class VectorMigrationService {
             payload.addProperty("title", article.getTitle());
             payload.addProperty("category", article.getCategory());
             payload.addProperty("knowledgeSource", article.getKnowledgeSource());
+            payload.addProperty("validityStatus", KnowledgeArticlePolicy.normalizeValidityStatus(article.getValidityStatus()));
+            payload.addProperty("issuingAuthority", article.getIssuingAuthority());
+            payload.addProperty("documentNumber", article.getDocumentNumber());
             payload.addProperty("createdAt", article.getCreatedAt().toString());
 
             // 插入Qdrant
@@ -253,18 +266,6 @@ public class VectorMigrationService {
     }
 
     private boolean isRagIndexable(KnowledgeArticle article) {
-        if (article == null || Boolean.TRUE.equals(article.getDeleted())) {
-            return false;
-        }
-        if (!Boolean.TRUE.equals(article.getKnowledgeEligible())) {
-            return false;
-        }
-        String source = article.getKnowledgeSource();
-        return source == null
-                || "FIRM_KNOWLEDGE".equals(source)
-                || "LAW_REGULATION".equals(source)
-                || "FIRM_POLICY".equals(source)
-                || "PUBLIC_TEMPLATE".equals(source)
-                || "REFERENCE_MATERIAL".equals(source);
+        return KnowledgeArticlePolicy.isRagIndexable(article);
     }
 }

@@ -17,7 +17,7 @@
       >
         <div class="approval-card-main">
           <strong>{{ approval.title }}</strong>
-          <span>{{ approval.applyTime || '-' }}</span>
+          <span>{{ formatDateTime(approval.applyTime) }}</span>
         </div>
         <el-tag :type="getApprovalStatusType(approval.status)" size="small">
           {{ approval.statusDesc || approval.status }}
@@ -38,7 +38,7 @@
           <el-descriptions-item label="审批标题">{{ selectedApproval.title || '-' }}</el-descriptions-item>
           <el-descriptions-item label="申请人">{{ selectedApproval.applicantName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="当前审批人">{{ selectedApproval.currentApproverName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="申请时间">{{ selectedApproval.applyTime || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="申请时间">{{ formatDateTime(selectedApproval.applyTime) }}</el-descriptions-item>
           <el-descriptions-item label="关联案件">{{ selectedApproval.caseName || selectedApproval.caseId || '-' }}</el-descriptions-item>
         </el-descriptions>
 
@@ -47,12 +47,34 @@
           <pre>{{ selectedApproval.content || '-' }}</pre>
         </div>
 
+        <div v-if="selectedApproval.approvalNotes" class="approval-content">
+          <h3>处理意见</h3>
+          <pre>{{ selectedApproval.approvalNotes }}</pre>
+        </div>
+
         <div v-if="isCaseFilingApproval(selectedApproval)" class="approval-path">
           <h3>立案审批路径</h3>
           <div class="path-step done">发起人提交立案申请</div>
           <div class="path-step active">行政管理利冲审查并审批</div>
           <div class="path-step">如为免费代理，进入主任终审</div>
           <div class="path-step">审批通过后建立案件档案</div>
+        </div>
+
+        <div class="approval-flow">
+          <h3>审批记录</h3>
+          <el-timeline v-if="approvalFlows.length > 0">
+            <el-timeline-item
+              v-for="flow in approvalFlows"
+              :key="flow.id"
+              :timestamp="formatDateTime(flow.actionTime)"
+              :type="getFlowType(flow.action)"
+              placement="top"
+            >
+              <strong>{{ flow.approverName || '未知人员' }} · {{ formatFlowAction(flow.action) }}</strong>
+              <p v-if="flow.comments">{{ flow.comments }}</p>
+            </el-timeline-item>
+          </el-timeline>
+          <el-empty v-else description="暂无流转记录" :image-size="64" />
         </div>
 
         <div v-if="canHandleSelectedApproval" class="approval-actions">
@@ -71,7 +93,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getApprovalList, getApprovalDetail, approveApproval, rejectApproval } from '@/api/approval'
+import { getApprovalList, getApprovalDetail, getApprovalFlow, approveApproval, rejectApproval } from '@/api/approval'
 import { useUserStore } from '@/stores/user'
 
 const props = defineProps({
@@ -104,6 +126,7 @@ const visible = computed({
 const loading = ref(false)
 const approvalList = ref([])
 const selectedApproval = ref(null)
+const approvalFlows = ref([])
 
 const currentUserId = computed(() => Number(userStore.userInfo?.id || userStore.userId || 0))
 const isSuperAdmin = computed(() => userStore.userInfo?.username === 'admin')
@@ -146,6 +169,47 @@ const getApprovalStatusType = (status) => {
   return map[status] || ''
 }
 
+const flowActionMap = {
+  SUBMIT: '提交审批',
+  APPROVE: '审批通过',
+  REJECT: '驳回审批',
+  TRANSFER: '转交审批',
+  WITHDRAW: '撤回审批',
+  URGE: '催办'
+}
+
+const formatFlowAction = (action) => flowActionMap[action] || action || '-'
+const getFlowType = (action) => ({
+  APPROVE: 'success',
+  REJECT: 'danger',
+  TRANSFER: 'warning',
+  WITHDRAW: 'info',
+  SUBMIT: 'primary'
+}[action] || 'primary')
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  if (Array.isArray(value)) {
+    const [year, month, day, hour = 0, minute = 0, second = 0] = value
+    const pad = number => String(number).padStart(2, '0')
+    return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(minute)}:${pad(second)}`
+  }
+  return String(value).replace('T', ' ')
+}
+
+const loadApprovalFlow = async (approvalId) => {
+  if (!approvalId) {
+    approvalFlows.value = []
+    return
+  }
+  try {
+    const response = await getApprovalFlow(approvalId)
+    approvalFlows.value = response.data || []
+  } catch (error) {
+    console.error('获取审批记录失败:', error)
+    approvalFlows.value = []
+  }
+}
+
 const loadApprovals = async () => {
   if (!visible.value) return
   try {
@@ -179,6 +243,8 @@ const handleApprove = async (approval) => {
         confirmButtonText: getApproveActionText(approval),
         cancelButtonText: '取消',
         inputPlaceholder: '请输入审批意见',
+        inputPattern: isCaseFilingApproval(approval) ? /\S+/ : undefined,
+        inputErrorMessage: isCaseFilingApproval(approval) ? '立案审批意见不能为空' : undefined,
         type: 'success'
       }
     )
@@ -233,6 +299,12 @@ watch(
   () => {
     if (visible.value) loadApprovals()
   },
+  { immediate: true }
+)
+
+watch(
+  () => selectedApproval.value?.id,
+  (approvalId) => loadApprovalFlow(approvalId),
   { immediate: true }
 )
 </script>
@@ -292,13 +364,29 @@ watch(
 }
 
 .approval-content,
-.approval-path {
+.approval-path,
+.approval-flow {
   margin-top: 18px;
 
   h3 {
     margin: 0 0 10px;
     color: #1f2937;
     font-size: 15px;
+  }
+}
+
+.approval-flow {
+  margin-top: 18px;
+
+  :deep(.el-timeline) {
+    padding-left: 4px;
+  }
+
+  p {
+    margin: 6px 0 0;
+    color: #606266;
+    line-height: 1.6;
+    white-space: pre-wrap;
   }
 }
 

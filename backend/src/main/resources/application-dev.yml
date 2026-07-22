@@ -26,13 +26,13 @@ spring:
   # H2控制台配置（可选）
   h2:
     console:
-      enabled: true
+      enabled: ${H2_CONSOLE_ENABLED:false}
       path: /h2-console
 
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.H2Dialect
@@ -60,17 +60,18 @@ spring:
 
 # JWT配置
 jwt:
-  secret: lawfirm-secret-key-2024-spring-boot-jwt-authentication
+  secret: ${JWT_SECRET:}
   expiration: 86400000  # 24小时 (毫秒)
   header: Authorization
   prefix: Bearer
 
 # MinIO配置（开发环境可以注释）
 minio:
-  endpoint: http://localhost:9000
-  accessKey: minioadmin
-  secretKey: minioadmin
-  bucketName: lawfirm
+  enabled: ${MINIO_ENABLED:false}
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  accessKey: ${MINIO_ACCESS_KEY:}
+  secretKey: ${MINIO_SECRET_KEY:}
+  bucketName: ${MINIO_BUCKET:lawfirm}
   connectTimeout: 10000
   writeTimeout: 60000
   readTimeout: 10000
@@ -115,8 +116,8 @@ logging:
     root: INFO
     com.lawfirm: DEBUG
     org.springframework.security: DEBUG
-    org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: OFF
   pattern:
     console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n'
     file: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n'

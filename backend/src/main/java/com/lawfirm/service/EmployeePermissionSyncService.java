@@ -25,6 +25,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -50,7 +51,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class EmployeePermissionSyncService {
 
-    private static final Path WORKBOOK_PATH = Path.of("/Volumes/曾进朗/员工档案_20260716.xlsx");
     private static final String ROOT_DEPARTMENT = "广东至高律师事务所";
 
     private final DepartmentRepository departmentRepository;
@@ -61,26 +61,48 @@ public class EmployeePermissionSyncService {
     private final RolePermissionRepository rolePermissionRepository;
     private final PasswordEncoder passwordEncoder;
 
+    @Value("${employee-sync.enabled:false}")
+    private boolean syncEnabled;
+
+    @Value("${employee-sync.workbook-path:}")
+    private String workbookPath;
+
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void syncFromEmployeeWorkbook() {
-        if (!Files.exists(WORKBOOK_PATH)) {
-            log.info("员工权限同步文件不存在，跳过：{}", WORKBOOK_PATH);
+        Map<String, Role> roles;
+        try {
+            roles = syncRolesAndPermissions();
+            log.info("系统角色权限基线已校准");
+        } catch (Exception e) {
+            log.error("系统角色权限基线校准失败：{}", e.getMessage(), e);
+            return;
+        }
+        if (!syncEnabled) {
+            log.info("员工档案自动同步未启用");
+            return;
+        }
+        if (!StringUtils.hasText(workbookPath)) {
+            log.warn("员工档案自动同步已启用，但未设置 EMPLOYEE_SYNC_WORKBOOK");
+            return;
+        }
+        Path sourcePath = Path.of(workbookPath);
+        if (!Files.exists(sourcePath)) {
+            log.info("员工权限同步文件不存在，跳过：{}", sourcePath);
             return;
         }
 
-        try (InputStream inputStream = Files.newInputStream(WORKBOOK_PATH);
+        try (InputStream inputStream = Files.newInputStream(sourcePath);
              Workbook workbook = WorkbookFactory.create(inputStream)) {
             DataFormatter formatter = new DataFormatter();
             Map<String, OrgRow> orgRows = readOrgRows(workbook, formatter);
             List<EmployeeRow> employees = readEmployeeRows(workbook, formatter);
 
             Map<String, Department> departments = syncDepartments(orgRows, employees);
-            Map<String, Role> roles = syncRolesAndPermissions();
             int userCount = syncUsers(employees, departments, roles);
             syncDepartmentLeaders(orgRows, departments);
 
-            log.info("员工权限同步完成：部门 {} 个，员工 {} 人，来源 {}", departments.size(), userCount, WORKBOOK_PATH);
+            log.info("员工权限同步完成：部门 {} 个，员工 {} 人，来源 {}", departments.size(), userCount, sourcePath);
         } catch (Exception e) {
             log.error("员工权限同步失败：{}", e.getMessage(), e);
         }
@@ -190,9 +212,9 @@ public class EmployeePermissionSyncService {
         assignPermissions(roles.get("TRAINEE"), permissions, employeePermissions());
         assignPermissions(roles.get("FINANCE"), permissions, concat(employeePermissions(),
                 "FINANCE_VIEW", "FINANCE_EDIT", "CLIENT_IMPORT", "CLIENT_EXPORT", "CASE_IMPORT", "CASE_EXPORT"));
-        assignPermissions(roles.get("ADMINISTRATIVE"), permissions, concat(allPermissions(), "WORK_REPORT_REVIEW"));
-        assignPermissions(roles.get("ADMINISTRATIVE1"), permissions, concat(allPermissions(), "WORK_REPORT_REVIEW"));
-        assignPermissions(roles.get("ADMINISTRATIVE2"), permissions, concat(allPermissions(), "WORK_REPORT_REVIEW"));
+        assignPermissions(roles.get("ADMINISTRATIVE"), permissions, administrativePermissions());
+        assignPermissions(roles.get("ADMINISTRATIVE1"), permissions, administrativePermissions());
+        assignPermissions(roles.get("ADMINISTRATIVE2"), permissions, administrativePermissions());
 
         return roles;
     }
@@ -227,6 +249,8 @@ public class EmployeePermissionSyncService {
         definitions.put("USER_EDIT", "编辑用户");
         definitions.put("ROLE_VIEW", "查看角色");
         definitions.put("ROLE_EDIT", "编辑角色");
+        definitions.put("AI_CONFIG", "配置AI服务");
+        definitions.put("SYSTEM_CONFIG", "系统配置");
         definitions.put("WORK_REPORT_REVIEW", "审核工作报告");
         definitions.put("KNOWLEDGE_DELETE", "删除知识库");
         definitions.put("STATISTICS_VIEW", "查看统计");
@@ -339,33 +363,39 @@ public class EmployeePermissionSyncService {
         }
     }
 
-    private List<String> roleCodesForPosition(String position) {
-        if ("主任".equals(position)) {
+    List<String> roleCodesForPosition(String position) {
+        String normalizedPosition = position == null ? "" : position.trim();
+        if ("主任".equals(normalizedPosition)) {
             return Arrays.asList("MANAGER", "LAWYER");
         }
-        if ("主管".equals(position)) {
+        if ("主管".equals(normalizedPosition) || "部门主管".equals(normalizedPosition)) {
             return Arrays.asList("DEPT_HEAD", "LAWYER");
         }
-        if ("律师".equals(position)) {
+        if ("律师".equals(normalizedPosition)) {
             return Collections.singletonList("LAWYER");
         }
-        if ("律师助理".equals(position)) {
+        if ("律师助理".equals(normalizedPosition)) {
             return Arrays.asList("LAWYER_ASSISTANT", "ASSISTANT");
         }
-        if ("实习律师".equals(position)) {
+        if ("实习律师".equals(normalizedPosition)) {
             return Arrays.asList("TRAINEE", "ASSISTANT");
         }
-        if ("助理".equals(position)) {
+        if ("助理".equals(normalizedPosition)) {
             return Collections.singletonList("ASSISTANT");
         }
-        if ("财务管理".equals(position)) {
+        if ("财务管理".equals(normalizedPosition)
+                || "财务".equals(normalizedPosition)
+                || "出纳".equals(normalizedPosition)) {
             return Collections.singletonList("FINANCE");
         }
-        if ("行政管理1".equals(position)) {
+        if ("行政管理1".equals(normalizedPosition)) {
             return Arrays.asList("ADMINISTRATIVE", "ADMINISTRATIVE1");
         }
-        if ("行政管理2".equals(position)) {
+        if ("行政管理2".equals(normalizedPosition)) {
             return Arrays.asList("ADMINISTRATIVE", "ADMINISTRATIVE2");
+        }
+        if ("行政管理".equals(normalizedPosition) || "行政".equals(normalizedPosition)) {
+            return Collections.singletonList("ADMINISTRATIVE");
         }
         return Collections.singletonList("ASSISTANT");
     }
@@ -428,7 +458,7 @@ public class EmployeePermissionSyncService {
         return "123456";
     }
 
-    private List<String> employeePermissions() {
+    List<String> employeePermissions() {
         return Arrays.asList(
                 "CASE_CREATE", "CASE_VIEW", "CASE_EDIT", "CASE_ARCHIVE",
                 "CLIENT_CREATE", "CLIENT_VIEW", "CLIENT_EDIT",
@@ -439,7 +469,18 @@ public class EmployeePermissionSyncService {
         );
     }
 
-    private List<String> allPermissions() {
+    List<String> administrativePermissions() {
+        return Arrays.asList(
+                "CASE_CREATE", "CASE_VIEW",
+                "CLIENT_CREATE", "CLIENT_VIEW", "CLIENT_EDIT",
+                "DOCUMENT_VIEW",
+                "APPROVAL_VIEW", "APPROVAL_EDIT",
+                "TODO_VIEW", "TODO_EDIT",
+                "USER_VIEW", "STATISTICS_VIEW", "WORK_REPORT_REVIEW"
+        );
+    }
+
+    List<String> allPermissions() {
         return new ArrayList<>(permissionDefinitions().keySet());
     }
 

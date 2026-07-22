@@ -16,12 +16,16 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.*;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 /**
@@ -55,6 +59,10 @@ public class UserService {
         user.setPassword(passwordEncoder.encode(request.getPassword()));
 
         user = userRepository.save(user);
+
+        if (request.getRoleIds() != null) {
+            assignRoles(user.getId(), request.getRoleIds());
+        }
 
         return toDTO(user);
     }
@@ -91,6 +99,10 @@ public class UserService {
 
         user = userRepository.save(user);
 
+        if (request.getRoleIds() != null) {
+            assignRoles(user.getId(), request.getRoleIds());
+        }
+
         return toDTO(user);
     }
 
@@ -102,6 +114,8 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("用户", userId));
 
+        requireMutableAccount(user);
+
         user.setDeleted(true);
         userRepository.save(user);
     }
@@ -111,9 +125,33 @@ public class UserService {
      */
     @Transactional(readOnly = true)
     public Page<UserDTO> getUserList(int page, int size, String keyword, Long departmentId, Integer status) {
-        Pageable pageable = PageRequest.of(Math.max(0, page - 1), size, Sort.by(Sort.Direction.DESC, "id"));
+        int safeSize = Math.max(1, Math.min(size, 300));
+        Pageable pageable = PageRequest.of(Math.max(0, page), safeSize,
+                Sort.by(Sort.Direction.ASC, "realName").and(Sort.by(Sort.Direction.ASC, "id")));
+        String normalizedKeyword = StringUtils.hasText(keyword)
+                ? keyword.trim().toLowerCase(Locale.ROOT)
+                : null;
 
-        Page<User> userPage = userRepository.findByDeletedFalse(pageable);
+        Specification<User> specification = (root, query, cb) -> {
+            List<javax.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get("deleted")));
+            if (normalizedKeyword != null) {
+                String likeKeyword = "%" + normalizedKeyword + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("username")), likeKeyword),
+                        cb.like(cb.lower(root.get("realName")), likeKeyword)
+                ));
+            }
+            if (departmentId != null) {
+                predicates.add(cb.equal(root.get("departmentId"), departmentId));
+            }
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            return cb.and(predicates.toArray(new javax.persistence.criteria.Predicate[0]));
+        };
+
+        Page<User> userPage = userRepository.findAll(specification, pageable);
 
         return userPage.map(this::toDTO);
     }
@@ -134,8 +172,13 @@ public class UserService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void toggleUserStatus(Long userId, Integer status) {
+        if (status == null || (status != 0 && status != 1)) {
+            throw new InvalidParameterException("status", "用户状态只能是启用或禁用");
+        }
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("用户", userId));
+
+        requireMutableAccount(user);
 
         user.setStatus(status);
         userRepository.save(user);
@@ -188,12 +231,24 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("用户", userId));
 
+        requireMutableAccount(user);
+
+        List<Long> normalizedRoleIds = roleIds == null
+                ? java.util.Collections.emptyList()
+                : roleIds.stream().filter(java.util.Objects::nonNull).distinct().collect(Collectors.toList());
+        long validRoleCount = roleRepository.findAllById(normalizedRoleIds).stream()
+                .filter(role -> !Boolean.TRUE.equals(role.getDeleted()))
+                .count();
+        if (validRoleCount != normalizedRoleIds.size()) {
+            throw new InvalidParameterException("roleIds", "角色列表包含不存在或已停用的角色");
+        }
+
         // 删除现有角色
         userRoleRepository.deleteByUserId(userId);
 
         // 分配新角色
-        if (roleIds != null && !roleIds.isEmpty()) {
-            List<UserRole> userRoles = roleIds.stream()
+        if (!normalizedRoleIds.isEmpty()) {
+            List<UserRole> userRoles = normalizedRoleIds.stream()
                     .map(roleId -> {
                         UserRole userRole = new UserRole();
                         userRole.setUserId(userId);
@@ -233,6 +288,7 @@ public class UserService {
 
         // 设置角色列表
         List<UserRole> userRoles = userRoleRepository.findByUserId(user.getId());
+        dto.setRoleIds(userRoles.stream().map(UserRole::getRoleId).collect(Collectors.toList()));
         List<String> roles = userRoles.stream()
                 .map(ur -> roleRepository.findById(ur.getRoleId())
                         .map(role -> role.getRoleName())
@@ -241,5 +297,12 @@ public class UserService {
         dto.setRoles(roles);
 
         return dto;
+    }
+
+    private void requireMutableAccount(User user) {
+        String username = user.getUsername();
+        if ("admin".equalsIgnoreCase(username) || "amin".equalsIgnoreCase(username)) {
+            throw new InvalidParameterException("userId", "开发管理员账号不能被停用、删除或调整角色");
+        }
     }
 }

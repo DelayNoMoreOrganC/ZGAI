@@ -1,263 +1,180 @@
-# 律所智能案件管理系统 v2.0.0
+# ZGAI 至高律所管理系统
 
-> **智能案件全流程管理平台** - 面向60人律所的生产级系统
+ZGAI 是面向律所内部真实使用的案件、客户、审批、案卷、财务与知识管理系统。当前研发原则是先稳定核心业务闭环和数据权限，再接入生产数据库、外部工具与本地 AI。
 
-## 🎉 2.0版本发布 - 案件管理完整可用
+当前交接基线：2026-07-22。
 
-**发布日期**: 2026-04-19
+## 权威文档
 
-**核心里程碑**: 案件管理全链路打通，系统具备生产环境部署能力
+仓库只使用以下三份主项目文档：
 
----
+- [README.md](README.md)：开发环境、启动、配置和验证方式。
+- [PRD.md](PRD.md)：产品范围、业务规则、功能状态和验收标准。
+- [handoff.md](handoff.md)：每周进度、当前风险、并行 Agent 分工和交接规则。
 
-## ⚡ 快速开始
+`ac-calc/` 下的文档属于独立算法子项目；`backend/maven-maven-3.8.6/` 下的文档属于第三方工具，不是 ZGAI 项目状态依据。
 
-### 环境要求
+## 当前能力
 
-- **Java**: JDK 11+
-- **Node.js**: v16+
-- **数据库**: H2 (开发) / MySQL 8.0 (生产)
-- **缓存**: Redis (可选)
+- 律师、行政管理、主任/部门主管、财务四类工作台。
+- 按部门隔离案件与客户数据，主任和授权人员按规则查看全所数据。
+- 客户档案、案源人、承办人、部门归属和全库利冲检查。
+- 承办人发起立案，行政先审、主任终审，支持同意、驳回理由和转审。
+- 审批通过后建立一案一档，案件文件存入本机或 NAS，数据库保存元数据和版本。
+- 发票申请、申请人修改/删除、财务反馈文件和完成锁定。
+- 法规、律所制度、公共模板和经授权参考资料知识库；未配置向量服务时降级为关键词检索。
+- 基于当前有权查看案件要素的旧资料检索和受控下载。
+- PostgreSQL 初始化脚本、备份接口、存储健康检查和核心审计日志。
+- 省时宝独立入口；深度融合暂缓。
 
-### 启动步骤
+完整状态和待优化项见 [PRD.md](PRD.md)。
 
-#### 1. 启动后端
+## 技术栈
+
+| 层级 | 技术 |
+|---|---|
+| 前端 | Vue 3、Vite 5、Element Plus、Pinia、Vue Router、Axios |
+| 后端 | Java 11、Spring Boot 2.7.18、Spring Security、JPA、MyBatis |
+| 开发数据库 | H2 文件库 |
+| 多人试用/生产目标 | PostgreSQL 16 |
+| 案件与知识文件 | 本机或 SMB/NAS 挂载目录 |
+| 向量检索 | Qdrant，可选；未配置时使用关键词检索 |
+| AI 接口 | OpenAI 兼容接口、DeepSeek 或 Ollama；未配置时不伪装为 AI 回答 |
+
+## 目录结构
+
+```text
+ZGAI/
+├── backend/                 Spring Boot API、数据模型与测试
+├── frontend/                Vue 3 管理端
+├── scripts/                 PostgreSQL、冒烟测试和 RAG 评价脚本
+├── ac-calc/                 AC 精算独立子项目
+├── ssb/                     省时宝代理（存在时由启动脚本启动）
+├── ssb-repo/                省时宝独立项目（存在时由启动脚本启动）
+├── start.sh                 一键启动
+├── stop.sh                  停止服务
+├── PRD.md                   产品与验收基线
+└── handoff.md               并行开发交接基线
+```
+
+## 环境要求
+
+- macOS 或兼容的类 Unix 环境。
+- JDK 11。
+- Maven 3.8+。
+- Node.js 18+ 与 npm。
+- PostgreSQL 16：仅在 `ZGAI_DB=postgres` 时需要。
+- NAS：需要案件文件持久化时挂载；开发测试可使用本地目录。
+
+## 快速启动
+
+### H2 开发模式
+
+```bash
+./start.sh
+```
+
+首次启动会在已被 Git 忽略的 `backend/data/.dev-secrets` 生成并持久化开发密钥。不要删除该文件后继续读取原 H2 数据，否则既有加密字段将无法解密。
+
+### PostgreSQL 模式
+
+```bash
+brew install postgresql@16
+./scripts/setup-postgres.sh
+ZGAI_DB=postgres ./start.sh
+```
+
+PostgreSQL 连接示例见 `.env.postgres.example`。不要把真实密码、AI 密钥或 NAS 凭据提交到 Git。
+
+### 停止服务
+
+```bash
+./stop.sh
+```
+
+## 访问地址
+
+| 服务 | 默认地址 |
+|---|---|
+| ZGAI 前端 | `http://localhost:3017` |
+| ZGAI 后端 | `http://localhost:8080/api` |
+| 健康检查 | `http://localhost:8080/api/health` |
+| Swagger | `http://localhost:8080/api/swagger-ui/index.html` |
+| 省时宝独立前端 | `http://localhost:3000`（可选） |
+
+局域网测试使用运行主机的局域网 IP 替换 `localhost`。
+
+## 关键环境变量
+
+| 变量 | 用途 |
+|---|---|
+| `ZGAI_DB` | `h2` 或 `postgres` |
+| `POSTGRES_URL` | PostgreSQL JDBC 地址 |
+| `POSTGRES_USER` | PostgreSQL 用户 |
+| `POSTGRES_PASSWORD` | PostgreSQL 密码 |
+| `INITIAL_ADMIN_PASSWORD` | 首次初始化开发管理员密码 |
+| `CASE_FILE_LIBRARY_ROOT` | 案件文件库根目录 |
+| `KNOWLEDGE_LIBRARY_ROOT` | 知识文档原件根目录 |
+| `BACKUP_ROOT_PATH` | 数据库备份目录 |
+| `LEGACY_CASE_ARCHIVE_ROOT_PATH` | 旧案资料只读根目录 |
+| `QDRANT_HOST` / `QDRANT_PORT` | Qdrant 地址 |
+| `MINIO_ENABLED` | 是否启用可选 MinIO；启用时同时配置 endpoint/access key/secret key |
+| `PG_DUMP_PATH` | PostgreSQL 备份工具路径 |
+
+详细默认值以 `backend/src/main/resources/application.yml`、`application-dev.yml` 和 `application-postgres.yml` 为准。
+
+## 验证命令
+
+### 后端
 
 ```bash
 cd backend
-mvn spring-boot:run
+JAVA_HOME=/opt/homebrew/opt/openjdk@11 /opt/homebrew/opt/maven/bin/mvn test
 ```
 
-后端服务启动在: `http://localhost:8080`
+当前基线：101 项测试通过。
 
-#### 2. 启动前端
+### 前端
 
 ```bash
 cd frontend
-npm install  # 首次启动需要安装依赖
-npm run dev
+npm run build
 ```
 
-前端服务启动在: `http://localhost:3017`
+当前构建通过，存在 Dart Sass legacy API 和大分块警告，不影响本阶段运行，后续应专项优化。
 
-#### 3. 登录系统
+### 冒烟测试
 
-- **访问地址**: http://localhost:3017
-- **默认账号**: `admin`
-- **默认密码**: `admin123`
-
----
-
-## ✨ 核心功能
-
-### 📊 工作台
-- 统计卡片（本月案件/进行中/待办数/收费）
-- 日历视图（开庭/审限/立案可视化）
-- 待办事项（按优先级排序）
-- 快捷入口
-
-### ⚖️ 案件管理
-- **案件列表** - 多维度筛选、搜索、分页
-- **案件详情** - 5个Tab完整呈现
-  - 基本案情（案件信息/当事人/代理费）
-  - 办案记录（工时记录/文档附件）
-  - 受理单位（保全/执行/庭审/承办人）
-  - 案件文档（树形目录/AI识别）
-  - 案件动态（操作日志/评论）
-- **归档库** - 已归档案件独立管理
-- **回收站** - 软删除机制，支持恢复/永久删除
-- **生命周期流转** - 正向/回退流转，自动创建待办
-
-### 🤖 AI智能辅助
-- **AI OCR** - 法院文书智能识别
-- **AI文书生成** - 起诉状/答辩状/代理词
-- **AI问答** - RAG知识库检索
-- **使用日志** - Token计费/使用统计
-
-### 📅 日程管理
-- 日程安排（开庭/审限/提醒）
-- 待办管理（优先级/截止时间）
-- 逾期预警（3天红/7天橙）
-
-### 👥 客户管理
-- 客户档案（基本信息/关联案件）
-- 沟通记录（跟进历史）
-- 利益冲突检索
-
-### 💰 财务管理
-- 费用记录（诉讼费/保全费/差旅费）
-- 律师费管理（已收/待收）
-- 收款记录/开票管理
-
-### ✅ 审批管理
-- 6种预置模板（用印/报销/开票/请假/采购/证照）
-- 审批流转（同意/驳回/转审/撤回）
-
-### 📚 知识库
-- RAG知识库（3篇文档）
-- 文章管理（分类/标签/搜索）
-
----
-
-## 🛠️ 技术栈
-
-### 后端
-- **框架**: Spring Boot 2.7.18
-- **语言**: Java 11
-- **数据库**: H2 (开发) / MySQL 8.0 (生产)
-- **ORM**: Spring Data JPA
-- **认证**: JWT (JJWT 0.11.5)
-- **文档**: MinIO 8.5.7
-- **缓存**: Redis (可选)
-
-### 前端
-- **框架**: Vue 3
-- **UI**: Element Plus
-- **构建**: Vite
-- **状态**: Pinia
-- **路由**: Vue Router
-- **HTTP**: Axios
-- **图表**: ECharts
-
----
-
-## 📁 项目结构
-
-```
-ZGAI/
-├── backend/                    # 后端项目
-│   ├── src/main/java/
-│   │   └── com/lawfirm/
-│   │       ├── controller/     # 控制器层
-│   │       ├── service/        # 服务层
-│   │       ├── repository/     # 数据访问层
-│   │       ├── entity/         # 实体类
-│   │       ├── dto/            # 数据传输对象
-│   │       └── config/         # 配置类
-│   ├── src/main/resources/
-│   │   ├── application.yml     # 应用配置
-│   │   └── schema.sql          # 数据库初始化
-│   └── pom.xml                 # Maven配置
-│
-├── frontend/                   # 前端项目
-│   ├── src/
-│   │   ├── api/                # API接口
-│   │   ├── components/         # 组件
-│   │   ├── layouts/            # 布局
-│   │   ├── views/              # 页面
-│   │   ├── stores/             # 状态管理
-│   │   ├── router/             # 路由
-│   │   └── utils/              # 工具函数
-│   ├── package.json            # NPM配置
-│   └── vite.config.js          # Vite配置
-│
-├── PRD.md                      # 产品需求文档
-├── PRD功能清单.md              # 功能实现清单
-├── CHANGELOG.md                # 版本历史
-└── README.md                   # 本文件
+```bash
+./scripts/smoke-test-core.sh
+./scripts/smoke-test-roles.sh
+./scripts/evaluate-knowledge-rag.sh
 ```
 
----
+角色冒烟测试需要通过环境变量提供普通律师、行政、主任和财务测试账号。不要在脚本或文档中写入密码。
 
-## 🔧 配置说明
+## 数据与安全边界
 
-### 后端配置
+- 普通账号只能读取其部门范围内案件；客户按案源人或承办人的部门关系过滤。
+- 利冲检查覆盖全客户主体库，但命中不代表可以读取无权访问的客户详情。
+- 行政可查看审批所需案件整体信息；主任具有全局权限；部门主管仅管理本部门。
+- 案件私密文件默认禁止进入共享知识库与 RAG。
+- 已废止法规、未确认授权的外部参考资料、非公开文章禁止进入 RAG。
+- API 不向浏览器暴露 NAS 绝对路径、备份绝对路径、AI 密钥或内部异常堆栈。
+- 高风险写操作必须具备后端权限校验和审计记录，前端隐藏按钮不构成权限控制。
 
-**文件**: `backend/src/main/resources/application.yml`
+## 并行开发
 
-```yaml
-spring:
-  datasource:
-    # 开发环境使用H2
-    url: jdbc:h2:mem:lawfirm
-    # 生产环境切换为MySQL
-    # url: jdbc:mysql://localhost:3306/lawfirm?useUnicode=true&characterEncoding=utf8
+所有 Agent 开始前先阅读 [handoff.md](handoff.md)，认领单一模块和文件边界。推荐每个 Agent 使用独立 `codex/*` 分支或独立 worktree，禁止多个 Agent 同时修改共享布局、权限矩阵、核心实体或同一数据库脚本。
 
-server:
-  port: 8080
+提交前必须：
 
-# AI配置（可选）
-ai:
-  deepseek:
-    api-key: your-api-key
-    base-url: https://api.deepseek.com
-```
+1. 与最新基线同步。
+2. 运行受影响模块测试。
+3. 运行后端全量测试和前端构建。
+4. 更新 `handoff.md` 的变更记录与已知风险。
+5. 确认没有提交账号、密码、密钥、真实客户隐私或 NAS 凭据。
 
-### 前端配置
+## 当前部署定位
 
-**文件**: `frontend/vite.config.js`
-
-```javascript
-export default {
-  server: {
-    port: 3017,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8080',
-        changeOrigin: true
-      }
-    }
-  }
-}
-```
-
----
-
-## 📊 系统数据状态
-
-| 实体 | 数量 | 说明 |
-|------|------|------|
-| 案件 | 6个 | 包括2个归档、1个回收站 |
-| 日程 | 2条 | 开庭日期提醒 |
-| 知识库 | 3篇 | RAG检索文档 |
-| 工作汇报 | 3条 | 周报/月报 |
-| 审批 | 1条 | 用印申请 |
-| 卷宗 | 1个 | 案件文档 |
-
----
-
-## ⚠️ 重要提示
-
-### AI功能配置
-
-AI文书生成功能需要配置API Key:
-
-1. 获取DeepSeek API Key
-2. 修改`application.yml`中的`ai.deepseek.api-key`
-3. 或在系统设置中在线配置
-
-### 生产环境部署
-
-1. **切换数据库** - H2 → MySQL 8.0
-2. **配置MinIO** - 对象存储服务
-3. **配置Redis** - 缓存和会话管理
-4. **HTTPS配置** - 生产环境必须启用
-5. **备份策略** - 每日自动备份，保留180天
-
----
-
-## 🐛 Bug反馈
-
-- **问题反馈**: 请在GitHub Issues提交
-- **功能建议**: 欢迎提交Feature Request
-- **安全漏洞**: 请私密提交至security@
-
----
-
-## 📄 开源协议
-
-本项目采用私有协议，未经授权不得用于商业用途。
-
----
-
-## 👥 开发团队
-
-- **产品经理**: [Your Name]
-- **技术负责人**: [Your Name]
-- **开发团队**: [Your Team]
-
----
-
-**律所智能案件管理系统 v2.0.0** | 让法律工作更智能
-
-*最后更新: 2026-04-19*
+当前系统适合局域网开发与受控试用，尚未完成正式生产上线所需的 PostgreSQL 数据迁移演练、HTTPS、灾备恢复演练、安全评估和真实角色全流程验收。不得把“可以启动”解释为“已经达到生产上线标准”。

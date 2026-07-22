@@ -98,7 +98,82 @@
       </div>
     </template>
 
+    <template v-else-if="isFinanceUser">
+      <div class="finance-workbench">
+        <div class="workbench-heading">
+          <div>
+            <span class="workbench-kicker">财务工作台</span>
+            <h2>开票处理</h2>
+          </div>
+          <div class="heading-actions">
+            <el-button :loading="financeLoading" @click="fetchFinanceWorkbench">刷新</el-button>
+            <el-button type="primary" @click="router.push('/finance/invoices')">进入发票申请</el-button>
+          </div>
+        </div>
+
+        <div class="finance-summary">
+          <div class="finance-metric pending">
+            <span>待开票</span>
+            <strong>{{ financeInvoiceCounts.pending }}</strong>
+          </div>
+          <div class="finance-metric feedback">
+            <span>已反馈待完成</span>
+            <strong>{{ financeInvoiceCounts.feedback }}</strong>
+          </div>
+          <div class="finance-metric complete">
+            <span>已完成</span>
+            <strong>{{ financeInvoiceCounts.completed }}</strong>
+          </div>
+          <div class="finance-metric amount">
+            <span>待处理金额</span>
+            <strong>¥{{ formatMoney(financeInvoiceCounts.pendingAmount) }}</strong>
+          </div>
+        </div>
+
+        <section class="finance-list-section">
+          <div class="section-header compact">
+            <h3>待处理申请</h3>
+            <span>按申请时间倒序</span>
+          </div>
+          <el-table :data="financePendingInvoices" size="default" @row-click="goToInvoiceCenter">
+            <el-table-column prop="title" label="顾客名称" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="executionDepartment" label="执行部门" width="150" />
+            <el-table-column prop="sourceUserName" label="案源人" width="110" />
+            <el-table-column prop="amount" label="开票金额" width="140">
+              <template #default="{ row }">¥{{ formatMoney(row.amount) }}</template>
+            </el-table-column>
+            <el-table-column prop="status" label="状态" width="130">
+              <template #default="{ row }">
+                <el-tag :type="invoiceStatusType(row.status)">{{ invoiceStatusText(row.status) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="createdAt" label="申请时间" width="150">
+              <template #default="{ row }">{{ formatShortDate(row.createdAt) }}</template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-if="!financeLoading && financePendingInvoices.length === 0" description="暂无待处理开票申请" />
+        </section>
+      </div>
+    </template>
+
     <template v-else>
+    <section v-if="isManagementUser" class="management-overview">
+      <div>
+        <span class="workbench-kicker">{{ isDirectorUser ? '主任工作台' : '部门管理工作台' }}</span>
+        <h2>{{ userStore.userName }}，今日管理事项</h2>
+      </div>
+      <div class="management-actions">
+        <button type="button" @click="router.push('/approval')">
+          <span>待审批</span>
+          <strong>{{ adminPendingApprovals.length }}</strong>
+        </button>
+        <button type="button" @click="router.push('/case/list')">
+          <span>待立案</span>
+          <strong>{{ adminCaseApplications.length }}</strong>
+        </button>
+        <el-button @click="router.push('/client/list')">客户管理</el-button>
+      </div>
+    </section>
     <!-- 统计卡片区 -->
     <div class="stats-cards">
       <div v-for="stat in stats" :key="stat.key" class="stat-card" :class="`stat-${stat.type}`">
@@ -405,7 +480,9 @@ import { getApprovalList } from '@/api/approval'
 import { getNotificationList, markAsRead } from '@/api/notification'
 import { getCaseList } from '@/api/case'
 import { getClientList } from '@/api/client'
+import { getInvoices } from '@/api/finance'
 import { useUserStore } from '@/stores'
+import { resolveExternalAppUrl } from '@/utils/external-app-url'
 import AIAssistant from '@/views/ai/assistant.vue'
 import ApprovalDetailDrawer from '@/components/ApprovalDetailDrawer.vue'
 const userStore = useUserStore()
@@ -414,8 +491,27 @@ const router = useRouter()
 const isSuccessResponse = (response) => response?.success || response?.code === 200
 const isAdministrativeUser = computed(() => {
   const position = userStore.userInfo?.position || ''
-  const roles = userStore.userInfo?.roles || []
+  const roles = userStore.roles || []
   return position.startsWith('行政管理') || roles.some(role => String(role).includes('ADMINISTRATIVE'))
+})
+const isFinanceUser = computed(() => {
+  const position = userStore.userInfo?.position || ''
+  const roles = userStore.roles || []
+  return position.includes('财务') || position === '出纳' || roles.includes('FINANCE')
+})
+const isDirectorUser = computed(() => {
+  const position = userStore.userInfo?.position || ''
+  const roles = userStore.roles || []
+  return position === '主任' || roles.includes('MANAGER')
+})
+const isManagementUser = computed(() => {
+  const position = userStore.userInfo?.position || ''
+  const roles = userStore.roles || []
+  return isDirectorUser.value || position === '主管' || position === '部门主管' || roles.includes('DEPT_HEAD')
+})
+const currentUserId = computed(() => Number(userStore.userInfo?.id || userStore.userId || 0))
+const canViewAllApprovals = computed(() => {
+  return userStore.userInfo?.username === 'admin' || userStore.userInfo?.position === '主任'
 })
 
 // AI助手控制
@@ -456,6 +552,24 @@ const adminPendingApprovals = ref([])
 const adminNotifications = ref([])
 const adminCaseApplications = ref([])
 const adminClients = ref([])
+const financeInvoices = ref([])
+const financeLoading = ref(false)
+
+const financeInvoiceCounts = computed(() => financeInvoices.value.reduce((counts, invoice) => {
+  if (invoice.status === 'PENDING') {
+    counts.pending += 1
+    counts.pendingAmount += Number(invoice.amount || 0)
+  } else if (['ISSUED', 'FEEDBACK_UPLOADED'].includes(invoice.status)) {
+    counts.feedback += 1
+  } else if (invoice.status === 'COMPLETED') {
+    counts.completed += 1
+  }
+  return counts
+}, { pending: 0, feedback: 0, completed: 0, pendingAmount: 0 }))
+
+const financePendingInvoices = computed(() => financeInvoices.value
+  .filter(invoice => invoice.status !== 'COMPLETED')
+  .slice(0, 12))
 
 // AI智能上传相关
 const uploadRef = ref(null)
@@ -501,13 +615,8 @@ const handleCustomUpload = async (options) => {
         judgmentDate: data.judgmentDate,
         hearingDate: data.hearingDate,
         processingTime: data.processingTime,
-        // 业务逻辑执行结果（如果有）
-        businessLogic: {
-          caseCreated: !!data.caseNumber, // 案件是否创建
-          todoCreated: true, // 待办是否创建
-          calendarCreated: true, // 日程是否创建
-          workReportCreated: true // 工作日志是否创建
-        }
+        // 只展示后端明确返回的执行结果，不根据识别字段推断业务已创建。
+        businessLogic: data.businessLogic || null
       }
 
       ElMessage.success(`AI识别成功！文书类型：${data.documentType || '未知'}\n案号：${data.caseNumber || '无'}\n处理时间：${data.processingTime || 0}ms`)
@@ -732,9 +841,49 @@ const fetchAdminWorkbench = async () => {
   ])
 }
 
+const fetchFinanceWorkbench = async () => {
+  financeLoading.value = true
+  try {
+    const response = await getInvoices({ page: 1, size: 100 })
+    financeInvoices.value = response.data?.records || []
+  } catch (error) {
+    console.error('获取财务工作台失败:', error)
+    ElMessage.error('获取开票待办失败')
+  } finally {
+    financeLoading.value = false
+  }
+}
+
+const formatMoney = (value) => Number(value || 0).toLocaleString('zh-CN', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+})
+
+const invoiceStatusText = (status) => ({
+  PENDING: '待开票',
+  ISSUED: '已反馈待完成',
+  FEEDBACK_UPLOADED: '已反馈待完成',
+  COMPLETED: '已完成'
+}[status] || status || '-')
+
+const invoiceStatusType = (status) => ({
+  PENDING: 'warning',
+  ISSUED: 'primary',
+  FEEDBACK_UPLOADED: 'primary',
+  COMPLETED: 'success'
+}[status] || 'info')
+
+const goToInvoiceCenter = () => {
+  router.push('/finance/invoices')
+}
+
 const fetchAdminApprovals = async () => {
   try {
-    const response = await getApprovalList({ status: 'PENDING', page: 1, size: 20 })
+    const params = { status: 'PENDING', page: 1, size: 20 }
+    if (!canViewAllApprovals.value) {
+      params.currentApproverId = currentUserId.value
+    }
+    const response = await getApprovalList(params)
     adminPendingApprovals.value = response.data?.records || []
   } catch (error) {
     console.error('获取行政审批待办失败:', error)
@@ -848,33 +997,174 @@ const handleQuickAction = (action) => {
 
 // 打开省时宝独立应用（新标签页）
 const openSsbApp = () => {
-  const ssbUrl = import.meta.env.VITE_SSB_APP_URL || 'http://localhost:3000'
+  const ssbUrl = resolveExternalAppUrl(import.meta.env.VITE_SSB_APP_URL, 3000)
   window.open(ssbUrl, '_blank')
 }
 
 // 打开AC精算独立应用（新标签页）
 const openAcApp = () => {
-  const acUrl = import.meta.env.VITE_AC_APP_URL || 'http://localhost:8501'
+  const acUrl = resolveExternalAppUrl(import.meta.env.VITE_AC_APP_URL, 8501)
   window.open(acUrl, '_blank')
 }
 
 onMounted(() => {
   if (isAdministrativeUser.value) {
     fetchAdminWorkbench()
+  } else if (isFinanceUser.value) {
+    fetchFinanceWorkbench()
   } else {
     fetchStats()
     fetchCalendarEvents()
     fetchTodos()
+    if (isManagementUser.value) {
+      fetchAdminApprovals()
+      fetchAdminCases()
+    }
   }
 })
 </script>
 
 <style scoped lang="scss">
 .dashboard {
+  .workbench-kicker {
+    display: block;
+    margin-bottom: 4px;
+    color: #6b7280;
+    font-size: 13px;
+  }
+
+  .workbench-heading,
+  .management-overview {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 18px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #e5e7eb;
+
+    h2 {
+      margin: 0;
+      color: #111827;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+  }
+
+  .heading-actions,
+  .management-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .management-actions button:not(.el-button) {
+    width: 112px;
+    min-height: 56px;
+    padding: 8px 12px;
+    border: 1px solid #dfe3e8;
+    border-radius: 6px;
+    background: #fff;
+    color: #4b5563;
+    cursor: pointer;
+    text-align: left;
+
+    span,
+    strong {
+      display: block;
+    }
+
+    strong {
+      margin-top: 3px;
+      color: #111827;
+      font-size: 20px;
+    }
+  }
+
+  .finance-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  .finance-metric {
+    min-height: 92px;
+    padding: 18px 20px;
+    border-right: 1px solid #e5e7eb;
+
+    &:last-child {
+      border-right: 0;
+    }
+
+    span,
+    strong {
+      display: block;
+    }
+
+    span {
+      color: #6b7280;
+      font-size: 13px;
+    }
+
+    strong {
+      margin-top: 8px;
+      color: #111827;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    &.pending strong { color: #b45309; }
+    &.feedback strong { color: #1d4ed8; }
+    &.complete strong { color: #047857; }
+  }
+
+  .finance-list-section {
+    margin-top: 18px;
+    padding: 0;
+    border-top: 1px solid #e5e7eb;
+
+    :deep(.el-table__row) {
+      cursor: pointer;
+    }
+  }
+
+  .section-header.compact {
+    margin: 0;
+    padding: 16px 0 12px;
+
+    span {
+      color: #9ca3af;
+      font-size: 13px;
+    }
+  }
+
   .admin-workbench {
     display: flex;
     flex-direction: column;
     gap: 10px;
+  }
+
+  @media (max-width: 900px) {
+    .workbench-heading,
+    .management-overview {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .finance-summary {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .finance-metric:nth-child(2) {
+      border-right: 0;
+    }
+
+    .finance-metric:nth-child(-n + 2) {
+      border-bottom: 1px solid #e5e7eb;
+    }
   }
 
   .admin-top-grid {

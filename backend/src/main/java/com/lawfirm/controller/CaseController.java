@@ -1,5 +1,6 @@
 package com.lawfirm.controller;
 
+import com.lawfirm.annotation.AuditLog;
 import com.lawfirm.dto.*;
 import com.lawfirm.entity.CaseRecord;
 import com.lawfirm.entity.CaseTimeline;
@@ -47,7 +48,8 @@ public class CaseController {
      * 创建案件
      */
     @PostMapping
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('CASE_CREATE')")
+    @AuditLog(value = "创建案件", operationType = "CREATE", logParams = false)
     public Result<CaseDetailVO> createCase(
             @Valid @RequestBody CaseCreateRequest request) {
         try {
@@ -87,6 +89,7 @@ public class CaseController {
      */
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "更新案件", operationType = "UPDATE", logParams = false)
     public Result<CaseDetailVO> updateCase(
             @PathVariable Long id,
             @Valid @RequestBody CaseUpdateRequest request) {
@@ -102,6 +105,7 @@ public class CaseController {
      */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('CASE_DELETE')")
+    @AuditLog(value = "删除案件", operationType = "DELETE", logParams = false)
     public Result<Void> deleteCase(@PathVariable Long id) {
         Long currentUserId = securityUtils.getCurrentUserId();
         caseService.assertCaseVisible(id, currentUserId);
@@ -114,6 +118,7 @@ public class CaseController {
      */
     @PutMapping("/{id}/restore")
     @PreAuthorize("hasAuthority('CASE_DELETE')")
+    @AuditLog(value = "恢复案件", operationType = "RESTORE", logParams = false)
     public Result<String> restoreCase(@PathVariable Long id) {
         Long currentUserId = securityUtils.getCurrentUserId();
         caseService.assertCaseVisible(id, currentUserId);
@@ -126,12 +131,13 @@ public class CaseController {
      */
     @PutMapping("/{id}/status")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "变更案件状态", operationType = "UPDATE", logParams = false)
     public Result<Void> changeStatus(
             @PathVariable Long id,
             @Valid @RequestBody StatusChangeRequest request) {
         try {
             Long currentUserId = securityUtils.getCurrentUserId();
-            caseService.assertCaseVisible(id, currentUserId);
+            caseService.assertCaseEditable(id, currentUserId);
             caseStageService.changeStatus(id, request.getTargetStage(), request.getReason(), currentUserId);
             return Result.success();
         } catch (RuntimeException e) {
@@ -157,12 +163,13 @@ public class CaseController {
      */
     @PutMapping("/{id}/status/rollback")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "回退案件状态", operationType = "ROLLBACK", logParams = false)
     public Result<Void> rollbackStatus(
             @PathVariable Long id,
             @Valid @RequestBody StatusChangeRequest request,
             @AuthenticationPrincipal UserDetails userDetails) {
         Long currentUserId = securityUtils.getCurrentUserId();
-        caseService.assertCaseVisible(id, currentUserId);
+        caseService.assertCaseEditable(id, currentUserId);
         caseStageService.rollbackStatus(id, request.getTargetStage(), request.getReason(), currentUserId);
         return Result.success();
     }
@@ -172,6 +179,7 @@ public class CaseController {
      */
     @PutMapping("/{id}/archive")
     @PreAuthorize("hasAuthority('CASE_ARCHIVE')")
+    @AuditLog(value = "归档案件", operationType = "ARCHIVE", logParams = false)
     public Result<Void> archiveCase(
             @PathVariable Long id,
             @Valid @RequestBody ArchiveRequest request) {
@@ -226,10 +234,11 @@ public class CaseController {
      */
     @PostMapping("/{id}/parties")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "新增案件当事人", operationType = "CREATE", logParams = false)
     public Result<PartyVO> addParty(
             @PathVariable Long id,
             @Valid @RequestBody PartyDTO dto) {
-        assertCaseVisible(id);
+        assertCaseEditable(id);
         var party = partyService.create(dto, id);
         return Result.success("当事人添加成功", partyService.getById(party.getId()));
     }
@@ -239,11 +248,12 @@ public class CaseController {
      */
     @PutMapping("/{caseId}/parties/{partyId}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "更新案件当事人", operationType = "UPDATE", logParams = false)
     public Result<PartyVO> updateParty(
             @PathVariable Long caseId,
             @PathVariable Long partyId,
             @Valid @RequestBody PartyDTO dto) {
-        assertCaseVisible(caseId);
+        assertCaseEditable(caseId);
         partyService.update(partyId, dto);
         return Result.success("当事人更新成功", partyService.getById(partyId));
     }
@@ -253,8 +263,9 @@ public class CaseController {
      */
     @DeleteMapping("/{caseId}/parties/{partyId}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "删除案件当事人", operationType = "DELETE", logParams = false)
     public Result<Void> deleteParty(@PathVariable Long caseId, @PathVariable Long partyId) {
-        assertCaseVisible(caseId);
+        assertCaseEditable(caseId);
         partyService.delete(partyId);
         return Result.success();
     }
@@ -277,10 +288,11 @@ public class CaseController {
      */
     @PostMapping("/{id}/procedures")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "新增案件程序", operationType = "CREATE", logParams = false)
     public Result<CaseProcedureVO> addProcedure(
             @PathVariable Long id,
             @Valid @RequestBody CaseProcedureDTO dto) {
-        assertCaseVisible(id);
+        assertCaseEditable(id);
         var procedure = caseProcedureService.create(dto, id);
         return Result.success("案件程序添加成功", caseProcedureService.getById(procedure.getId()));
     }
@@ -290,11 +302,12 @@ public class CaseController {
      */
     @PutMapping("/{caseId}/procedures/{procedureId}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "更新案件程序", operationType = "UPDATE", logParams = false)
     public Result<CaseProcedureVO> updateProcedure(
             @PathVariable Long caseId,
             @PathVariable Long procedureId,
             @Valid @RequestBody CaseProcedureDTO dto) {
-        assertCaseVisible(caseId);
+        assertCaseEditable(caseId);
         caseProcedureService.update(procedureId, dto);
         return Result.success("案件程序更新成功", caseProcedureService.getById(procedureId));
     }
@@ -304,8 +317,9 @@ public class CaseController {
      */
     @DeleteMapping("/{caseId}/procedures/{procedureId}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "删除案件程序", operationType = "DELETE", logParams = false)
     public Result<Void> deleteProcedure(@PathVariable Long caseId, @PathVariable Long procedureId) {
-        assertCaseVisible(caseId);
+        assertCaseEditable(caseId);
         caseProcedureService.delete(procedureId);
         return Result.success();
     }
@@ -329,12 +343,13 @@ public class CaseController {
      */
     @PostMapping("/{id}/records")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "新增办案记录", operationType = "CREATE", logParams = false)
     public Result<com.lawfirm.vo.CaseRecordVO> addRecord(
             @PathVariable Long id,
             @Valid @RequestBody CaseRecordDTO dto,
             @AuthenticationPrincipal UserDetails userDetails) {
         Long currentUserId = securityUtils.getCurrentUserId();
-        caseService.assertCaseVisible(id, currentUserId);
+        caseService.assertCaseEditable(id, currentUserId);
         CaseRecord record = caseRecordService.create(dto, id, currentUserId);
         com.lawfirm.vo.CaseRecordVO vo = caseRecordService.toVO(record);
         return Result.success("办案记录添加成功", vo);
@@ -345,11 +360,12 @@ public class CaseController {
      */
     @PutMapping("/{caseId}/records/{recordId}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "更新办案记录", operationType = "UPDATE", logParams = false)
     public Result<com.lawfirm.vo.CaseRecordVO> updateRecord(
             @PathVariable Long caseId,
             @PathVariable Long recordId,
             @Valid @RequestBody CaseRecordDTO dto) {
-        assertCaseVisible(caseId);
+        assertCaseEditable(caseId);
         CaseRecord record = caseRecordService.update(recordId, dto);
         com.lawfirm.vo.CaseRecordVO vo = caseRecordService.toVO(record);
         return Result.success("办案记录更新成功", vo);
@@ -360,8 +376,9 @@ public class CaseController {
      */
     @DeleteMapping("/{caseId}/records/{recordId}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "删除办案记录", operationType = "DELETE", logParams = false)
     public Result<Void> deleteRecord(@PathVariable Long caseId, @PathVariable Long recordId) {
-        assertCaseVisible(caseId);
+        assertCaseEditable(caseId);
         caseRecordService.delete(recordId);
         return Result.success();
     }
@@ -374,6 +391,7 @@ public class CaseController {
      */
     @PostMapping("/{id}/records/export")
     @PreAuthorize("hasAuthority('CASE_VIEW')")
+    @AuditLog(value = "导出办案记录", operationType = "EXPORT", logParams = false)
     public void exportRecords(
             @PathVariable Long id,
             String stage,
@@ -406,6 +424,7 @@ public class CaseController {
      */
     @PostMapping("/{id}/records/export/word")
     @PreAuthorize("hasAuthority('CASE_VIEW')")
+    @AuditLog(value = "导出办案记录Word", operationType = "EXPORT", logParams = false)
     public void exportRecordsWord(
             @PathVariable Long id,
             String stage,
@@ -450,12 +469,13 @@ public class CaseController {
      */
     @PostMapping("/{id}/timeline")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "新增案件动态", operationType = "CREATE", logParams = false)
     public Result<CaseTimeline> addComment(
             @PathVariable Long id,
             @Valid @RequestBody CommentRequest request,
             @AuthenticationPrincipal UserDetails userDetails) {
         Long currentUserId = securityUtils.getCurrentUserId();
-        caseService.assertCaseVisible(id, currentUserId);
+        caseService.assertCaseEditable(id, currentUserId);
         CaseTimeline timeline = caseTimelineService.addComment(id, request.getContent(), currentUserId, request.getParentId());
         return Result.success("评论添加成功", timeline);
     }
@@ -465,8 +485,9 @@ public class CaseController {
      */
     @DeleteMapping("/{caseId}/timeline/{timelineId}")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
+    @AuditLog(value = "删除案件动态", operationType = "DELETE", logParams = false)
     public Result<Void> deleteTimeline(@PathVariable Long caseId, @PathVariable Long timelineId) {
-        assertCaseVisible(caseId);
+        assertCaseEditable(caseId);
         caseTimelineService.delete(timelineId);
         return Result.success();
     }
@@ -476,6 +497,7 @@ public class CaseController {
      */
     @PostMapping("/{id}/archive-pdf")
     @PreAuthorize("hasAuthority('CASE_VIEW')")
+    @AuditLog(value = "生成归档PDF", operationType = "EXPORT", logParams = false)
     public Result<String> generateArchivePdf(@PathVariable Long id) {
         assertCaseVisible(id);
         String pdfUrl = archivePdfService.generateArchivePdf(id);
@@ -520,6 +542,11 @@ public class CaseController {
     private void assertCaseVisible(Long caseId) {
         Long currentUserId = securityUtils.getCurrentUserId();
         caseService.assertCaseVisible(caseId, currentUserId);
+    }
+
+    private void assertCaseEditable(Long caseId) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        caseService.assertCaseEditable(caseId, currentUserId);
     }
 
     private Long getCurrentUserId(UserDetails userDetails) {

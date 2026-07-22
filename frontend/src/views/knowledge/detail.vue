@@ -19,6 +19,12 @@
           <el-tag v-if="article.knowledgeEligible === false" type="info">
             不进入AI知识库
           </el-tag>
+          <el-tag
+            v-if="article.knowledgeSource === 'LAW_REGULATION'"
+            :type="getValidityStatusType(article.validityStatus)"
+          >
+            {{ formatValidityStatus(article.validityStatus) }}
+          </el-tag>
           <span class="category" v-if="article.category">
             <el-icon><FolderOpened /></el-icon>
             {{ article.category }}
@@ -48,6 +54,17 @@
         </div>
       </div>
 
+      <div class="source-metadata" v-if="hasSourceMetadata">
+        <div v-if="article.issuingAuthority"><span>发布机关</span><strong>{{ article.issuingAuthority }}</strong></div>
+        <div v-if="article.documentNumber"><span>文号/编号</span><strong>{{ article.documentNumber }}</strong></div>
+        <div v-if="article.effectiveDate"><span>生效日期</span><strong>{{ formatDateOnly(article.effectiveDate) }}</strong></div>
+        <div v-if="article.sourceReference"><span>来源依据</span><strong>{{ article.sourceReference }}</strong></div>
+        <div v-if="article.knowledgeSource === 'REFERENCE_MATERIAL'">
+          <span>授权状态</span>
+          <strong>{{ article.authorizationConfirmed ? '已确认内部使用授权' : '尚未确认' }}</strong>
+        </div>
+      </div>
+
       <!-- 操作按钮 -->
       <div class="article-actions">
         <el-button type="primary" @click="handleLike">
@@ -57,6 +74,10 @@
         <el-button @click="handleEdit" v-if="canEdit">
           <el-icon><Edit /></el-icon>
           编辑
+        </el-button>
+        <el-button @click="handleReindex" v-if="canEdit && article.knowledgeEligible" :loading="reindexing">
+          <el-icon><Refresh /></el-icon>
+          重新索引
         </el-button>
         <el-button @click="handleBack">
           <el-icon><Back /></el-icon>
@@ -70,7 +91,7 @@
           <h3>摘要</h3>
           <p>{{ article.summary }}</p>
         </div>
-        <div class="content" v-html="article.content"></div>
+        <div class="content" v-text="articlePlainText"></div>
       </div>
 
       <!-- 附件 -->
@@ -79,9 +100,9 @@
           <el-icon><Paperclip /></el-icon>
           附件
         </h3>
-        <el-link :href="article.attachmentPath" target="_blank" type="primary">
-          下载附件
-        </el-link>
+        <el-button link type="primary" :loading="attachmentDownloading" @click="handleDownloadAttachment">
+          {{ article.attachmentName || '下载原始文档' }}
+        </el-button>
       </div>
     </div>
   </div>
@@ -93,10 +114,11 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   FolderOpened, PriceTag, User, Calendar, View, Star,
-  Edit, Back, Paperclip
+  Edit, Back, Paperclip, Refresh
 } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import request from '@/utils/request'
+import { downloadKnowledgeAttachment } from '@/api/knowledge'
 import { useUserStore } from '@/stores'
 
 const router = useRouter()
@@ -104,14 +126,30 @@ const route = useRoute()
 
 const loading = ref(false)
 const article = ref(null)
+const userStore = useUserStore()
+const attachmentDownloading = ref(false)
+const reindexing = ref(false)
 
 // 权限检查：只有创建者或管理员可以编辑
 const canEdit = computed(() => {
-  const userStore = useUserStore()
-  if (!userStore || !userStore.user) return false
-  if (userStore.user.role === 'ADMIN') return true
   if (!article.value) return false
-  return article.value.createdBy === userStore.user.id
+  const user = userStore.userInfo || {}
+  if (user.username === 'admin' || user.position === '主任') return true
+  return Number(article.value.authorId) === Number(user.id)
+})
+
+const articlePlainText = computed(() => {
+  const content = article.value?.content || ''
+  if (!content.includes('<')) return content
+  return new DOMParser().parseFromString(content, 'text/html').body.textContent || ''
+})
+
+const hasSourceMetadata = computed(() => {
+  const value = article.value
+  return Boolean(value && (
+    value.issuingAuthority || value.documentNumber || value.effectiveDate ||
+    value.sourceReference || value.knowledgeSource === 'REFERENCE_MATERIAL'
+  ))
 })
 
 // 加载文章详情
@@ -157,11 +195,51 @@ const handleBack = () => {
   router.push('/knowledge/list')
 }
 
+const handleDownloadAttachment = async () => {
+  attachmentDownloading.value = true
+  try {
+    const response = await downloadKnowledgeAttachment(route.params.id)
+    const url = URL.createObjectURL(response.data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = article.value.attachmentName || '知识文档'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('下载知识文档失败:', error)
+    ElMessage.error('下载知识文档失败')
+  } finally {
+    attachmentDownloading.value = false
+  }
+}
+
+const handleReindex = async () => {
+  reindexing.value = true
+  try {
+    const { data } = await request({
+      url: `/knowledge/${route.params.id}/reindex`,
+      method: 'post'
+    })
+    article.value = data
+    const message = data.indexStatus === 'INDEXED'
+      ? '知识文档已完成语义索引'
+      : '当前未配置向量服务，已保留关键词检索'
+    ElMessage.success(message)
+  } catch (error) {
+    console.error('重新索引失败:', error)
+  } finally {
+    reindexing.value = false
+  }
+}
+
 // 格式化类型
 const formatType = (type) => {
   const map = {
-    'TEMPLATE': '文档模板',
-    'CASE': '类案检索',
+    'DOCUMENT': '知识文档',
+    'TEMPLATE': '公共模板',
+    'CASE': '案件沉淀',
     'GUIDE': '办案指南',
     'EXPERIENCE': '经验分享'
   }
@@ -212,9 +290,43 @@ const getIndexStatusType = (status) => {
   return map[status] || 'info'
 }
 
+const formatValidityStatus = (status) => {
+  const map = {
+    EFFECTIVE: '现行有效',
+    AMENDED: '已修订',
+    REPEALED: '已废止',
+    UNKNOWN: '待核验'
+  }
+  return map[status] || '待核验'
+}
+
+const getValidityStatusType = (status) => {
+  const map = {
+    EFFECTIVE: 'success',
+    AMENDED: 'warning',
+    REPEALED: 'danger',
+    UNKNOWN: 'info'
+  }
+  return map[status] || 'info'
+}
+
+const formatDateOnly = (date) => {
+  if (!date) return ''
+  if (Array.isArray(date)) {
+    const [year, month, day] = date
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  }
+  return String(date).substring(0, 10)
+}
+
 // 格式化日期
 const formatDate = (date) => {
   if (!date) return ''
+  if (Array.isArray(date)) {
+    const [year, month, day, hour = 0, minute = 0] = date
+    const pad = number => String(number).padStart(2, '0')
+    return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(minute)}`
+  }
   return new Date(date).toLocaleString('zh-CN')
 }
 
@@ -278,6 +390,34 @@ onMounted(() => {
       gap: 10px;
     }
 
+    .source-metadata {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px 24px;
+      margin-bottom: 24px;
+      padding: 16px 0;
+      border-bottom: 1px solid #e4e7ed;
+
+      div {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      span {
+        color: #909399;
+        font-size: 12px;
+      }
+
+      strong {
+        color: #303133;
+        font-size: 14px;
+        font-weight: 500;
+        overflow-wrap: anywhere;
+      }
+    }
+
     .article-content {
       .summary {
         padding: 15px;
@@ -301,6 +441,8 @@ onMounted(() => {
         font-size: 15px;
         line-height: 1.8;
         color: #303133;
+        white-space: pre-wrap;
+        word-break: break-word;
 
         :deep(h2) {
           margin: 30px 0 15px;

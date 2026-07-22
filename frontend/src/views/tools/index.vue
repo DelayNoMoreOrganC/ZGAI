@@ -246,17 +246,29 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Money, TrendCharts, Calendar, Loading } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { getSsbTemplates, getSsbTemplateFields, generateSsbDocument, getSsbHealth } from '@/api/external'
 import { calculateAcDebt, getExternalHealth } from '@/api/external'
+import { resolveExternalAppUrl } from '@/utils/external-app-url'
 
 // ============================================================
 // Tab 控制
 // ============================================================
-const activeTab = ref('common')
+const route = useRoute()
+const tabForRoute = () => {
+  if (route.name === 'ToolsSsb') return 'ssb'
+  if (route.name === 'ToolsAc') return 'ac'
+  return 'common'
+}
+const activeTab = ref(tabForRoute())
+
+watch(() => route.name, () => {
+  activeTab.value = tabForRoute()
+})
 
 // ============================================================
 // 诉讼费计算器
@@ -312,7 +324,7 @@ const templateFields = ref([])
 const fieldsLoading = ref(false)
 const ssbGenerating = ref(false)
 const ssbForm = reactive({})
-const ssbAppUrl = import.meta.env.VITE_SSB_APP_URL || 'http://localhost:3000'
+const ssbAppUrl = resolveExternalAppUrl(import.meta.env.VITE_SSB_APP_URL, 3000)
 
 const openSsbApp = () => {
   window.open(ssbAppUrl, '_blank')

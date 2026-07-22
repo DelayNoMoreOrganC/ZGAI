@@ -1,5 +1,6 @@
 package com.lawfirm.controller;
 
+import com.lawfirm.annotation.AuditLog;
 import com.lawfirm.dto.*;
 import com.lawfirm.entity.ApprovalFlow;
 import com.lawfirm.service.ApprovalService;
@@ -10,6 +11,7 @@ import javax.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
 import java.util.Map;
@@ -31,6 +33,8 @@ public class ApprovalController {
      * POST /api/approval
      */
     @PostMapping
+    @PreAuthorize("hasAuthority('APPROVAL_EDIT')")
+    @AuditLog(value = "发起审批", operationType = "CREATE", logParams = false)
     public Result<ApprovalDTO> createApproval(@Valid @RequestBody ApprovalCreateRequest request) {
         try {
             Long userId = securityUtils.getCurrentUserId();
@@ -47,6 +51,8 @@ public class ApprovalController {
      * PUT /api/approval/{id}/approve
      */
     @PutMapping("/{id}/approve")
+    @PreAuthorize("hasAuthority('APPROVAL_EDIT')")
+    @AuditLog(value = "同意审批", operationType = "APPROVE", logParams = false)
     public Result<Void> approveApproval(@PathVariable Long id,
                                        @RequestBody Map<String, String> params) {
         try {
@@ -65,6 +71,8 @@ public class ApprovalController {
      * PUT /api/approval/{id}/reject
      */
     @PutMapping("/{id}/reject")
+    @PreAuthorize("hasAuthority('APPROVAL_EDIT')")
+    @AuditLog(value = "驳回审批", operationType = "REJECT", logParams = false)
     public Result<Void> rejectApproval(@PathVariable Long id,
                                       @RequestBody Map<String, String> params) {
         try {
@@ -83,6 +91,8 @@ public class ApprovalController {
      * PUT /api/approval/{id}/transfer
      */
     @PutMapping("/{id}/transfer")
+    @PreAuthorize("hasAuthority('APPROVAL_EDIT')")
+    @AuditLog(value = "转交审批", operationType = "TRANSFER", logParams = false)
     public Result<Void> transferApproval(@PathVariable Long id,
                                         @RequestBody Map<String, Object> params) {
         try {
@@ -102,6 +112,8 @@ public class ApprovalController {
      * PUT /api/approval/{id}/withdraw
      */
     @PutMapping("/{id}/withdraw")
+    @PreAuthorize("hasAuthority('APPROVAL_EDIT')")
+    @AuditLog(value = "撤回审批", operationType = "WITHDRAW", logParams = false)
     public Result<Void> withdrawApproval(@PathVariable Long id) {
         try {
             Long userId = securityUtils.getCurrentUserId();
@@ -118,6 +130,8 @@ public class ApprovalController {
      * PUT /api/approval/{id}/urge
      */
     @PutMapping("/{id}/urge")
+    @PreAuthorize("hasAuthority('APPROVAL_VIEW')")
+    @AuditLog(value = "催办审批", operationType = "URGE", logParams = false)
     public Result<Void> urgeApproval(@PathVariable Long id) {
         try {
             Long userId = securityUtils.getCurrentUserId();
@@ -134,6 +148,7 @@ public class ApprovalController {
      * GET /api/approval
      */
     @GetMapping
+    @PreAuthorize("hasAuthority('APPROVAL_VIEW')")
     public Result<PageResult<ApprovalDTO>> getApprovalList(ApprovalQueryRequest request) {
         try {
             Long userId = securityUtils.getCurrentUserId();
@@ -150,6 +165,7 @@ public class ApprovalController {
      * GET /api/approval/{id}
      */
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('APPROVAL_VIEW')")
     public Result<ApprovalDTO> getApprovalDetail(@PathVariable Long id) {
         try {
             Long userId = securityUtils.getCurrentUserId();
@@ -166,6 +182,7 @@ public class ApprovalController {
      * GET /api/approval/{id}/flow
      */
     @GetMapping("/{id}/flow")
+    @PreAuthorize("hasAuthority('APPROVAL_VIEW')")
     public Result<List<ApprovalFlow>> getApprovalFlow(@PathVariable Long id) {
         try {
             Long userId = securityUtils.getCurrentUserId();
@@ -182,6 +199,7 @@ public class ApprovalController {
      * GET /api/approval/types
      */
     @GetMapping("/types")
+    @PreAuthorize("hasAuthority('APPROVAL_VIEW')")
     public Result<List<Map<String, String>>> getApprovalTypes() {
         try {
             List<Map<String, String>> result = approvalService.getApprovalTypes();
