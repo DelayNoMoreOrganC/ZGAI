@@ -29,7 +29,7 @@ ZGAI 是面向律所内部真实使用的案件、客户、审批、案卷、财
 - 元典法规/案例语义检索、法律引证核验和逐条导入知识库；需要单独配置开放平台 API Key。
 - LM Studio 局域网模型接入；可由 Qwen 等 OpenAI 兼容模型完成问答、RAG 回答和文书草稿生成。
 - 案件 AI 助手可把律师的明确指令转换为日程、待办和案件进展，支持常用中文相对日期并拒绝写入过去时间；高风险阶段变化必须确认，所有动作留痕且幂等。
-- 智能归案支持文字型文档、本地中文 OCR、候选案件匹配和人工确认后写入案件 NAS 目录；识别到的开庭与期限可在律师校正确认后同步为日程或待办。
+- 智能归案支持文字型文档、本地中文 OCR、标准法院案号/期限提取、权限内候选案件匹配和人工确认后写入案件 NAS 目录；案件材料固定使用本地 LM Studio 或本地规则降级，不自动发送云端，识别到的开庭与期限可在律师校正确认后同步为日程或待办。
 - 民事智能一键归档支持律师材料/字段核对、补传、行政复核、同源 PDF 预览、本地 OCR/Qwen、固定版式表格、书签、可搜索文本层、页数守恒、来源清单和 NAS 版本锁定；旧直接归档入口已停用。
 - 基于当前有权查看案件要素的旧资料检索和受控下载。
 - PostgreSQL 初始化脚本、可校验备份、离线恢复演练脚本、存储健康检查和核心审计日志。
@@ -200,7 +200,7 @@ cd backend
 JAVA_HOME=/opt/homebrew/opt/openjdk@11 /opt/homebrew/opt/maven/bin/mvn test
 ```
 
-当前基线：295 项测试通过（2026-07-24 全量复验）。
+当前基线：300 项测试通过（2026-07-24 全量复验）。
 
 完整员工档案接口 `GET /api/users`、`GET /api/users/{id}` 需要 `USER_VIEW`。案件主办、案源人、审批人和日程参与人等业务选择器统一调用 `GET /api/users/options`，只返回在职人员的 ID、姓名、部门和身份类别，不返回账号、电话、邮箱、角色或登录信息。
 
@@ -239,7 +239,7 @@ ZGAI_FINANCE_USERNAME="$FINANCE_USER" ZGAI_FINANCE_PASSWORD="$FINANCE_PASSWORD" 
 npm run test:e2e:roles
 ```
 
-客户、立案两级审批、案件文件、快速用印和发票反馈锁定闭环会写入数据，只能在隔离库中运行，并必须显式设置 `ZGAI_E2E_CONFIRM=RUN_BROWSER_WRITE_E2E`：
+客户、立案两级审批、智能归案、案件文件、快速用印和发票反馈锁定闭环会写入数据，只能在隔离库中运行，并必须显式设置 `ZGAI_E2E_CONFIRM=RUN_BROWSER_WRITE_E2E`：
 
 ```bash
 cd frontend
@@ -253,7 +253,7 @@ ZGAI_FINANCE_USERNAME="$FINANCE_USER" ZGAI_FINANCE_PASSWORD="$FINANCE_PASSWORD" 
 npm run test:e2e:filing -- --project=desktop-chrome
 ```
 
-`scripts/setup-e2e-personas.sh` 可在全新隔离库中幂等创建/校准四类虚构账号，要求 `ZGAI_E2E_ENVIRONMENT=ISOLATED` 和显式确认值 `PROVISION_PERSONAS`。当前基线为四角色桌面/手机共 8 项与“客户 → 立案 → 文件 → 快速用印 → 发票申请/修订 → 财务反馈 → 申请人下载 → 完成锁定”写入闭环 1 项通过；用印和发票下载均校验 SHA-256，流程同时验证反馈后的申请人编辑/删除限制及完成锁定。安装 Playwright 后 `npm audit` 仍报告 4 个中等和 5 个高危依赖问题，需单独评估升级，不应在业务回归提交中盲目执行破坏性 `npm audit fix --force`。
+`scripts/setup-e2e-personas.sh` 可在全新隔离库中幂等创建/校准四类虚构账号，要求 `ZGAI_E2E_ENVIRONMENT=ISOLATED` 和显式确认值 `PROVISION_PERSONAS`。当前基线为四角色桌面/手机共 8 项与“客户 → 立案 → 中文图片 OCR → 候选案件 → 确认归案 → 快速用印 → 发票申请/修订 → 财务反馈 → 申请人下载 → 完成锁定”写入闭环 1 项通过；智能归案同时验证模型离线本地降级、暂存件所有权和财务写入拒绝，用印和发票下载均校验 SHA-256。安装 Playwright 后 `npm audit` 仍报告 4 个中等和 5 个高危依赖问题，需单独评估升级，不应在业务回归提交中盲目执行破坏性 `npm audit fix --force`。
 
 ### 归档 Worker
 

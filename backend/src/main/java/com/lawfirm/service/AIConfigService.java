@@ -125,6 +125,14 @@ public class AIConfigService {
         }
     }
 
+    public AIConfig getUsableLocalDocumentConfigOrNull() {
+        try {
+            return resolveGenerationConfig(AIProviderType.LM_STUDIO.name());
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
     /**
      * Empty selection always means the local LM Studio provider. Cloud providers
      * are resolved only when the caller explicitly names one for this request.

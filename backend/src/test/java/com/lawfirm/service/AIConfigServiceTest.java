@@ -70,6 +70,21 @@ class AIConfigServiceTest {
     }
 
     @Test
+    void documentAnalysisAlwaysResolvesLmStudio() {
+        AIConfigRepository repository = mock(AIConfigRepository.class);
+        AIConfigService service = new AIConfigService(repository, mock(YuandianLegalService.class),
+                mock(OpenAICompatibleClient.class));
+        AIConfig local = config("");
+        local.setProviderType("LM_STUDIO");
+        local.setApiUrl("http://192.168.1.200:1234/v1");
+        local.setIsEnabled(true);
+        when(repository.findFirstByProviderTypeAndIsEnabledTrueAndDeletedFalseOrderByIsDefaultDescIdAsc("LM_STUDIO"))
+                .thenReturn(Optional.of(local));
+
+        assertEquals(local, service.getUsableLocalDocumentConfigOrNull());
+    }
+
+    @Test
     void unavailableCloudProviderIsListedWithoutExposingSecret() {
         AIConfigRepository repository = mock(AIConfigRepository.class);
         AIConfigService service = new AIConfigService(repository, mock(YuandianLegalService.class),

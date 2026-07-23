@@ -39,6 +39,7 @@ class EmployeePermissionMatrixTest {
     void keepsOperationalPermissionBoundariesDistinct() {
         List<String> employee = service.employeePermissions();
         List<String> administrative = service.administrativePermissions();
+        List<String> finance = service.financePermissions();
         List<String> director = service.allPermissions();
 
         assertTrue(employee.contains("CASE_EDIT"));
@@ -52,6 +53,12 @@ class EmployeePermissionMatrixTest {
         assertTrue(administrative.contains("CLIENT_VIEW_ALL"));
         assertFalse(employee.contains("SYSTEM_CONFIG"));
         assertFalse(administrative.contains("SYSTEM_CONFIG"));
+        assertTrue(finance.contains("FINANCE_EDIT"));
+        assertTrue(finance.contains("CASE_VIEW"));
+        assertFalse(finance.contains("CASE_EDIT"));
+        assertFalse(finance.contains("CASE_ARCHIVE"));
+        assertFalse(finance.contains("CLIENT_EDIT"));
+        assertFalse(finance.contains("APPROVAL_EDIT"));
         assertTrue(director.contains("SYSTEM_CONFIG"));
         assertTrue(director.contains("AI_CONFIG"));
         assertTrue(director.contains("CASE_FILING_FINAL_APPROVE"));

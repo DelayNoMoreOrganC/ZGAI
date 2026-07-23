@@ -11,6 +11,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -118,6 +120,38 @@ class CaseDocumentServiceTest {
 
         Path targetFolder = tempDir.resolve("02_证据材料");
         assertTrue(Files.notExists(targetFolder) || isEmptyDirectory(targetFolder));
+    }
+
+    @Test
+    void removesCopiedFileWhenOuterTransactionRollsBack(@TempDir Path tempDir) throws Exception {
+        Case caseEntity = caseWithStatus("ACTIVE");
+        DocumentFolder folder = standardFolder();
+        when(caseRepository.findById(1L)).thenReturn(Optional.of(caseEntity));
+        when(fileLibraryService.ensureCaseFolder(caseEntity)).thenReturn(tempDir);
+        when(fileLibraryService.sanitizeFolderPath("02_证据材料")).thenReturn("02_证据材料");
+        when(fileLibraryService.findCaseFolder(1L, "02_证据材料")).thenReturn(Optional.of(folder));
+        when(documentRepository.findByCaseIdAndDeletedFalseOrderByCreatedAtDesc(1L))
+                .thenReturn(Collections.emptyList());
+        when(documentRepository.save(any(CaseDocument.class))).thenAnswer(call -> call.getArgument(0));
+        when(userRepository.findById(9L)).thenReturn(Optional.empty());
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            CaseDocumentDTO result = service.uploadDocument(
+                    1L,
+                    new MockMultipartFile("file", "证据.docx", "application/octet-stream", new byte[]{1, 2, 3}),
+                    "证据材料", "02_证据材料", 9L);
+            Path copied = Path.of(result.getFilePath());
+            assertTrue(Files.exists(copied));
+
+            for (TransactionSynchronization synchronization
+                    : TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+            }
+            assertTrue(Files.notExists(copied));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test

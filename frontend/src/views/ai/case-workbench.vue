@@ -76,8 +76,9 @@
       </el-tab-pane>
 
       <el-tab-pane label="智能归案" name="intake">
-        <section class="intake-layout">
+        <section class="intake-layout" data-testid="ai-intake-panel">
           <el-upload
+            data-testid="ai-intake-upload"
             drag
             action="#"
             :auto-upload="false"
@@ -90,12 +91,12 @@
             <el-icon class="upload-icon"><UploadFilled /></el-icon>
             <div class="el-upload__text">拖入案件文书，或点击选择</div>
           </el-upload>
-          <el-button type="primary" :loading="intakeLoading" :disabled="!selectedFile" @click="analyzeFile">
+          <el-button data-testid="ai-intake-analyze" type="primary" :loading="intakeLoading" :disabled="!selectedFile" @click="analyzeFile">
             <el-icon><Search /></el-icon>
             识别文书
           </el-button>
 
-          <div v-if="intakeResult" class="intake-result">
+          <div v-if="intakeResult" class="intake-result" data-testid="ai-intake-result">
             <el-alert
               v-if="intakeResult.status === 'FAILED'"
               :title="intakeResult.message || '文书识别失败'"
@@ -115,7 +116,7 @@
 
               <el-form label-position="top" class="confirm-form">
                 <el-form-item label="归属案件">
-                  <el-select v-model="intakeForm.caseId" filterable class="full-width">
+                  <el-select data-testid="ai-intake-case" v-model="intakeForm.caseId" filterable class="full-width">
                     <el-option
                       v-for="candidate in candidateOptions"
                       :key="candidate.caseId"
@@ -125,12 +126,12 @@
                   </el-select>
                 </el-form-item>
                 <el-form-item label="案件目录">
-                  <el-select v-model="intakeForm.folderPath" class="full-width">
+                  <el-select data-testid="ai-intake-folder" v-model="intakeForm.folderPath" class="full-width">
                     <el-option v-for="folder in folders" :key="folder" :label="folder" :value="folder" />
                   </el-select>
                 </el-form-item>
                 <el-form-item label="文书类型">
-                  <el-input v-model="intakeForm.documentType" />
+                  <el-input data-testid="ai-intake-document-type" v-model="intakeForm.documentType" />
                 </el-form-item>
                 <el-form-item>
                   <el-checkbox v-model="intakeForm.registerActivity">同步登记案件进展</el-checkbox>
@@ -170,7 +171,7 @@
                   </div>
                 </div>
               </el-form>
-              <el-button type="primary" :loading="filing" :disabled="!canFile" @click="confirmFiling">
+              <el-button data-testid="ai-intake-confirm" type="primary" :loading="filing" :disabled="!canFile" @click="confirmFiling">
                 <el-icon><FolderChecked /></el-icon>
                 确认归案
               </el-button>

@@ -13,9 +13,11 @@ public class AIDocumentIntakeConfirmRequest {
     private Long caseId;
 
     @NotBlank(message = "请选择案件目录")
+    @Size(max = 100, message = "案件目录不能超过100个字符")
     private String folderPath;
 
     @NotBlank(message = "请选择文件类型")
+    @Size(max = 20, message = "文件类型不能超过20个字符")
     private String documentType;
 
     private Boolean registerActivity = true;

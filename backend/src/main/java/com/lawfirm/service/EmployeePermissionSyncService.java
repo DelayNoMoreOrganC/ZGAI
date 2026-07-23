@@ -221,9 +221,7 @@ public class EmployeePermissionSyncService {
         assignPermissions(roles.get("ASSISTANT"), permissions, employeePermissions());
         assignPermissions(roles.get("LAWYER_ASSISTANT"), permissions, employeePermissions());
         assignPermissions(roles.get("TRAINEE"), permissions, employeePermissions());
-        assignPermissions(roles.get("FINANCE"), permissions, concat(employeePermissions(),
-                "FINANCE_VIEW", "FINANCE_EDIT", "INVOICE_PROCESS", "CLIENT_VIEW_ALL",
-                "CLIENT_IMPORT", "CLIENT_EXPORT", "CASE_IMPORT", "CASE_EXPORT"));
+        assignPermissions(roles.get("FINANCE"), permissions, financePermissions());
         assignPermissions(roles.get("ADMINISTRATIVE"), permissions, administrativePermissions());
         assignPermissions(roles.get("ADMINISTRATIVE1"), permissions,
                 concat(administrativePermissions(), "CASE_FILING_MANAGE"));
@@ -535,6 +533,17 @@ public class EmployeePermissionSyncService {
                 "CASE_FILING_REVIEW", "CASE_ARCHIVE_REVIEW", "CLIENT_VIEW_ALL",
                 "TODO_VIEW", "TODO_EDIT",
                 "USER_VIEW", "STATISTICS_VIEW", "WORK_REPORT_REVIEW"
+        );
+    }
+
+    List<String> financePermissions() {
+        return Arrays.asList(
+                "CASE_VIEW",
+                "CLIENT_VIEW", "CLIENT_VIEW_ALL",
+                "DOCUMENT_VIEW",
+                "TODO_VIEW", "TODO_EDIT",
+                "FINANCE_VIEW", "FINANCE_EDIT", "INVOICE_PROCESS",
+                "STATISTICS_VIEW"
         );
     }
 

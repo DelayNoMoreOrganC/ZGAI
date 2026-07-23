@@ -8,6 +8,7 @@ import com.lawfirm.dto.CaseDocumentDTO;
 import com.lawfirm.dto.TodoDTO;
 import com.lawfirm.entity.AIDocumentIntake;
 import com.lawfirm.entity.Case;
+import com.lawfirm.entity.Party;
 import com.lawfirm.exception.DocumentIntakeExpiredException;
 import com.lawfirm.repository.AIDocumentIntakeRepository;
 import com.lawfirm.repository.CaseRepository;
@@ -15,6 +16,8 @@ import com.lawfirm.repository.PartyRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -32,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -40,6 +44,7 @@ class AIDocumentIntakeServiceTest {
 
     private AIDocumentIntakeRepository intakeRepository;
     private CaseRepository caseRepository;
+    private PartyRepository partyRepository;
     private CaseService caseService;
     private CaseDocumentService caseDocumentService;
     private CalendarService calendarService;
@@ -47,12 +52,15 @@ class AIDocumentIntakeServiceTest {
     private TodoService todoService;
     private CaseActivityService activityService;
     private CaseTimelineService timelineService;
+    private LocalDocumentTextService textService;
+    private AIConfigService aiConfigService;
     private AIDocumentIntakeService service;
 
     @BeforeEach
     void setUp() {
         intakeRepository = mock(AIDocumentIntakeRepository.class);
         caseRepository = mock(CaseRepository.class);
+        partyRepository = mock(PartyRepository.class);
         caseService = mock(CaseService.class);
         caseDocumentService = mock(CaseDocumentService.class);
         calendarService = mock(CalendarService.class);
@@ -60,11 +68,13 @@ class AIDocumentIntakeServiceTest {
         todoService = mock(TodoService.class);
         activityService = mock(CaseActivityService.class);
         timelineService = mock(CaseTimelineService.class);
+        textService = mock(LocalDocumentTextService.class);
+        aiConfigService = mock(AIConfigService.class);
 
         service = new AIDocumentIntakeService(
                 intakeRepository,
                 caseRepository,
-                mock(PartyRepository.class),
+                partyRepository,
                 caseService,
                 caseDocumentService,
                 calendarService,
@@ -72,10 +82,77 @@ class AIDocumentIntakeServiceTest {
                 todoService,
                 activityService,
                 timelineService,
-                mock(LocalDocumentTextService.class),
-                mock(AIConfigService.class),
+                textService,
+                aiConfigService,
                 mock(OpenAICompatibleClient.class),
                 new ObjectMapper());
+    }
+
+    @Test
+    void localRulesExtractDigitalCourtCodeDeadlineAndAccessibleCandidate(@TempDir Path tempDir) throws Exception {
+        ReflectionTestUtils.setField(service, "tempDir", tempDir.toString());
+        String text = "佛 山 市 南 海 区 人 民 法 院 民 事 传 票\n"
+                + "案 号 ：（2026）粤 0605 民 初 12345 号\n"
+                + "甲 公 司 与 乙 公 司 买 卖 合 同 纠 纷\n"
+                + "开 庭 时 间 ：2026 年 8 月 10 日 9 时 30 分\n"
+                + "举 证 期 限 截 至 2026 年 8 月 5 日。";
+        when(textService.extract(any(Path.class), eq("民事传票.png"), eq("image/png"))).thenReturn(text);
+        when(aiConfigService.getUsableLocalDocumentConfigOrNull()).thenReturn(null);
+        when(intakeRepository.save(any(AIDocumentIntake.class))).thenAnswer(call -> {
+            AIDocumentIntake value = call.getArgument(0);
+            if (value.getId() == null) value.setId(10L);
+            return value;
+        });
+        Case target = new Case();
+        target.setId(7L);
+        target.setCaseName("甲公司与乙公司买卖合同纠纷");
+        target.setCaseNumber("[2026]粤至高民字第001号");
+        target.setCourtCaseNumber("(2026)粤0605民初12345号");
+        target.setCourt("佛山市南海区人民法院");
+        target.setDeleted(false);
+        when(caseRepository.findByDeletedFalse()).thenReturn(java.util.List.of(target));
+        when(caseService.canAccessCase(7L, 3L)).thenReturn(true);
+        Party plaintiff = new Party();
+        plaintiff.setName("甲公司");
+        Party defendant = new Party();
+        defendant.setName("乙公司");
+        when(partyRepository.findByCaseIdAndDeletedFalse(7L))
+                .thenReturn(java.util.List.of(plaintiff, defendant));
+
+        AIDocumentIntakeDTO result = service.create(new MockMultipartFile(
+                "file", "民事传票.png", "image/png", new byte[]{1, 2, 3}), 3L);
+
+        assertEquals("ANALYZED", result.getStatus());
+        assertEquals("（2026）粤0605民初12345号", result.getAnalysis().get("courtCaseNumber"));
+        assertEquals("2026-08-10T09:30", result.getAnalysis().get("hearingDate"));
+        assertEquals("2026-08-05", result.getAnalysis().get("deadline"));
+        assertEquals(1, result.getCandidates().size());
+        assertEquals(7L, result.getCandidates().get(0).getCaseId());
+        assertEquals(100, result.getCandidates().get(0).getScore());
+        verify(aiConfigService).getUsableLocalDocumentConfigOrNull();
+    }
+
+    @Test
+    void anotherUserCannotReadStagedDocument(@TempDir Path tempDir) throws Exception {
+        Path staged = tempDir.resolve("private.pdf");
+        Files.write(staged, new byte[]{1});
+        when(intakeRepository.findById(10L)).thenReturn(Optional.of(analyzedIntake(staged)));
+
+        assertThrows(AccessDeniedException.class, () -> service.get(10L, 4L));
+    }
+
+    @Test
+    void inaccessibleCaseIsRejectedBeforeDocumentUpload(@TempDir Path tempDir) throws Exception {
+        Path staged = tempDir.resolve("cross-department.pdf");
+        Files.write(staged, new byte[]{1});
+        when(intakeRepository.findById(10L)).thenReturn(Optional.of(analyzedIntake(staged)));
+        doThrow(new AccessDeniedException("无权修改非本人或非本部门案件"))
+                .when(caseService).assertCaseEditable(7L, 3L);
+
+        assertThrows(AccessDeniedException.class, () -> service.confirm(10L, baseRequest(), 3L));
+
+        assertTrue(Files.exists(staged));
+        verifyNoInteractions(caseDocumentService, calendarService, reminderService, todoService);
     }
 
     @Test

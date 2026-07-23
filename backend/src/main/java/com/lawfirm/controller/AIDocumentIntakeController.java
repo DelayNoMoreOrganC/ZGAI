@@ -22,6 +22,7 @@ public class AIDocumentIntakeController {
     private final SecurityUtils securityUtils;
 
     @PostMapping
+    @PreAuthorize("hasAuthority('CASE_EDIT')")
     @AuditLog(value = "AI接收待归案文件", operationType = "AI_DOCUMENT", logParams = false)
     public Result<AIDocumentIntakeDTO> create(@RequestParam("file") MultipartFile file) {
         return Result.success(service.create(file, securityUtils.getCurrentUserId()));
