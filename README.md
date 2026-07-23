@@ -200,7 +200,7 @@ cd backend
 JAVA_HOME=/opt/homebrew/opt/openjdk@11 /opt/homebrew/opt/maven/bin/mvn test
 ```
 
-当前基线：304 项测试通过（2026-07-24 全量复验）。必须使用 JDK 11；本机默认较新 JDK 可能在 Lombok 测试编译阶段失败。
+当前基线：305 项测试通过（2026-07-24 全量复验）。必须使用 JDK 11；本机默认较新 JDK 可能在 Lombok 测试编译阶段失败。
 
 完整员工档案接口 `GET /api/users`、`GET /api/users/{id}` 需要 `USER_VIEW`。案件主办、案源人、审批人和日程参与人等业务选择器统一调用 `GET /api/users/options`，只返回在职人员的 ID、姓名、部门和身份类别，不返回账号、电话、邮箱、角色或登录信息。
 
@@ -259,7 +259,7 @@ npm run test:e2e:filing -- --project=desktop-chrome
 npm run test:e2e:consultant
 ```
 
-`scripts/setup-e2e-personas.sh` 可在全新隔离库中幂等创建/校准四类虚构账号，要求 `ZGAI_E2E_ENVIRONMENT=ISOLATED` 和显式确认值 `PROVISION_PERSONAS`。当前基线为四角色桌面/手机共 8 项、民事“客户 → 立案 → 中文图片 OCR → 确认归案 → 快速用印 → 发票闭环 → 结案 → 律师归档核对 → 行政复核 → 电子卷宗下载”写入闭环 1 项，以及“顾问单位 → 顾问立案 → 两级审批 → 法律意见书 → 快速用印”写入闭环 1 项通过；同时验证财务无案件文件写入及归档审批权限、模型离线本地降级、暂存件所有权、文件 SHA-256、页守恒和成功后案件锁定。安装 Playwright 后 `npm audit` 仍报告 4 个中等和 5 个高危依赖问题，需单独评估升级，不应在业务回归提交中盲目执行破坏性 `npm audit fix --force`。
+`scripts/setup-e2e-personas.sh` 可在全新隔离库中幂等创建/校准四类虚构账号，要求 `ZGAI_E2E_ENVIRONMENT=ISOLATED` 和显式确认值 `PROVISION_PERSONAS`。当前基线为四角色桌面/手机共 8 项、民事“客户 → 立案 → AI 开庭日程/待办/动态 → 中文图片 OCR → 确认归案 → 快速用印 → 发票闭环 → 结案 → 律师归档核对 → 行政复核 → 电子卷宗下载”写入闭环 1 项，以及“顾问单位 → 顾问立案 → 两级审批 → 法律意见书 → 快速用印”写入闭环 1 项通过；同时验证缺失字段只澄清不落库、财务 AI/案件文件/归档写入拒绝、模型离线本地降级、暂存件所有权、文件 SHA-256、页守恒和成功后案件锁定。安装 Playwright 后 `npm audit` 仍报告 4 个中等和 5 个高危依赖问题，需单独评估升级，不应在业务回归提交中盲目执行破坏性 `npm audit fix --force`。
 
 ### 归档 Worker
 

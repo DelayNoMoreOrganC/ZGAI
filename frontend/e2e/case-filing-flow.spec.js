@@ -100,6 +100,37 @@ const assertNoPageOverflow = async (page) => {
   )).toBe(true)
 }
 
+const authenticatedApi = async (page, url, { method = 'GET', body } = {}) => page.evaluate(
+  async ({ requestUrl, requestMethod, requestBody }) => {
+    const token = localStorage.getItem('token')
+    const response = await fetch(requestUrl, {
+      method: requestMethod,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(requestBody ? { 'Content-Type': 'application/json' } : {})
+      },
+      body: requestBody ? JSON.stringify(requestBody) : undefined
+    })
+    let payload = null
+    try {
+      payload = await response.json()
+    } catch {
+      // Status-only responses are valid for access-control assertions.
+    }
+    return { status: response.status, payload }
+  },
+  { requestUrl: url, requestMethod: method, requestBody: body }
+)
+
+const futureDate = (daysAhead, hour, minute) => {
+  const value = new Date()
+  value.setDate(value.getDate() + daysAhead)
+  value.setHours(hour, minute, 0, 0)
+  return value
+}
+
+const chineseDateTime = value => `${value.getFullYear()}年${value.getMonth() + 1}月${value.getDate()}日${value.getHours()}:${String(value.getMinutes()).padStart(2, '0')}`
+
 const approveFiling = async (page, caseName, comments) => {
   await page.goto('/approval')
   const card = page.locator('.filing-card').filter({ hasText: caseName }).first()
@@ -229,6 +260,80 @@ test('律师建客户立案并完成文件、用印、发票和电子卷宗归�
   expect(caseId).toBeTruthy()
   const lawFirmCaseNumber = (await lawyerPage.getByTestId('case-number').textContent())?.trim()
   expect(lawFirmCaseNumber).toBeTruthy()
+
+  const hearingAt = futureDate(35, 9, 30)
+  const todoAt = futureDate(30, 10, 0)
+  const hearingLocation = `E2E第三审判庭-${suffix}`
+  const todoTitle = `E2E提交庭前提纲-${suffix}`
+
+  await lawyerPage.goto(`/ai/case-workbench?caseId=${caseId}`)
+  await expect(lawyerPage.getByTestId('ai-case-workbench')).toBeVisible()
+  await expect(lawyerPage.getByTestId('ai-command-case')).toContainText(caseName)
+  await textareaFor(lawyerPage, 'ai-command-instruction').fill(`本案${chineseDateTime(hearingAt)}开庭`)
+  await lawyerPage.getByTestId('ai-command-submit').click()
+  await expect(lawyerPage.getByTestId('ai-command-clarification')).toContainText('请补充开庭或听证地点')
+  const calendarsBeforeCompleteCommand = await authenticatedApi(lawyerPage, `/api/calendar/case/${caseId}`)
+  expect(calendarsBeforeCompleteCommand.status).toBe(200)
+  const calendarCountBefore = calendarsBeforeCompleteCommand.payload.data.length
+  expect(calendarsBeforeCompleteCommand.payload.data.some(item => item.location === hearingLocation)).toBe(false)
+
+  await textareaFor(lawyerPage, 'ai-command-instruction')
+    .fill(`本案${chineseDateTime(hearingAt)}开庭，地点${hearingLocation}`)
+  const hearingResponsePromise = lawyerPage.waitForResponse(response =>
+    response.url().includes('/api/ai/case-commands') && response.request().method() === 'POST')
+  await lawyerPage.getByTestId('ai-command-submit').click()
+  const hearingResponse = await hearingResponsePromise
+  const hearingPayload = await hearingResponse.json()
+  expect(hearingResponse.status()).toBe(200)
+  expect(hearingPayload.data.status).toBe('AUTO_EXECUTED')
+  await expect(lawyerPage.getByTestId('ai-command-action-CREATE_CALENDAR')).toContainText(hearingLocation)
+  await expect(lawyerPage.getByTestId('ai-command-view-calendar')).toBeVisible()
+  await expect(lawyerPage.getByTestId('ai-command-view-timeline')).toBeVisible()
+
+  const calendars = await authenticatedApi(lawyerPage, `/api/calendar/case/${caseId}`)
+  expect(calendars.status).toBe(200)
+  expect(calendars.payload.data).toHaveLength(calendarCountBefore + 1)
+  expect(calendars.payload.data).toEqual(expect.arrayContaining([
+    expect.objectContaining({ caseId: Number(caseId), location: hearingLocation, calendarType: 'HEARING' })
+  ]))
+
+  await lawyerPage.getByTestId('ai-command-view-timeline').click()
+  await expect(lawyerPage).toHaveURL(new RegExp(`/case/${caseId}/timeline$`))
+  await expect(lawyerPage.getByText(/已登记开庭：/).first()).toBeVisible()
+  await expect(lawyerPage.getByText(new RegExp(hearingLocation)).first()).toBeVisible()
+
+  await lawyerPage.goto(`/ai/case-workbench?caseId=${caseId}`)
+  await textareaFor(lawyerPage, 'ai-command-instruction')
+    .fill(`${chineseDateTime(todoAt)}提醒我${todoTitle}`)
+  await lawyerPage.getByTestId('ai-command-submit').click()
+  await expect(lawyerPage.getByTestId('ai-command-action-CREATE_TODO')).toContainText(todoTitle)
+  await lawyerPage.getByTestId('ai-command-view-calendar').click()
+  await expect(lawyerPage).toHaveURL(/\/calendar$/)
+  await expect(lawyerPage.getByText(new RegExp(todoTitle)).first()).toBeVisible()
+
+  const todos = await authenticatedApi(lawyerPage, `/api/todos/case/${caseId}`)
+  expect(todos.status).toBe(200)
+  expect(todos.payload.data).toEqual(expect.arrayContaining([
+    expect.objectContaining({ caseId: Number(caseId), status: 'PENDING' })
+  ]))
+
+  const financeWriteContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  const financeWritePage = await financeWriteContext.newPage()
+  await login(financeWritePage, credentials.finance())
+  await financeWritePage.goto(`/ai/case-workbench?caseId=${caseId}`)
+  await expect(financeWritePage.getByTestId('ai-command-readonly-alert')).toBeVisible()
+  await expect(textareaFor(financeWritePage, 'ai-command-instruction')).toBeDisabled()
+  await expect(financeWritePage.getByTestId('ai-command-submit')).toBeDisabled()
+  const financeCommand = await authenticatedApi(financeWritePage, '/api/ai/case-commands', {
+    method: 'POST',
+    body: {
+      caseId: Number(caseId),
+      instruction: `记录进展：${todoTitle}`,
+      idempotencyKey: `finance-denied-${suffix}`
+    }
+  })
+  expect(financeCommand.status).toBe(403)
+  await financeWriteContext.close()
 
   const intakeFileName = `E2E民事传票-${suffix}.png`
   const fixturePage = await lawyerContext.newPage()

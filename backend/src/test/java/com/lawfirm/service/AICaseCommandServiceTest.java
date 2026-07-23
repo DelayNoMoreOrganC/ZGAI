@@ -85,7 +85,8 @@ class AICaseCommandServiceTest {
                         && calendar.getStartTime().getMinute() == 30
                         && "三号法庭".equals(calendar.getLocation())), eq(3L));
         verify(calendarReminderService).scheduleUpcomingHearingReminders(eq(20L), any());
-        verify(timelineService).createSystemTimeline(eq(7L), eq("AI_CALENDAR_CREATED"), anyString());
+        verify(timelineService).createSystemTimeline(eq(7L), eq("AI_CALENDAR_CREATED"),
+                eq("已登记开庭：2099-08-10T09:30，地点：三号法庭"));
         verify(activityService).create(eq(7L), eq("HEARING"), anyString(), anyString(),
                 any(), eq("AI_COMMAND"), anyLong(), eq(3L), isNull(), anyString());
     }

@@ -8,19 +8,37 @@
       <div class="header-selects">
         <el-tag type="info" effect="plain">规则引擎 / 本地识别</el-tag>
         <el-select
+          data-testid="ai-command-case"
           v-model="selectedCaseId" filterable remote :remote-method="loadCases"
           :loading="caseLoading" placeholder="选择案件" class="case-select"
         >
-          <el-option v-for="item in caseOptions" :key="item.id" :label="formatCase(item)" :value="item.id" />
+          <el-option
+            v-for="item in caseOptions"
+            :key="item.id"
+            :label="formatCase(item)"
+            :value="item.id"
+            :disabled="item.canEdit !== true"
+          />
         </el-select>
       </div>
     </header>
+
+    <el-alert
+      v-if="readOnlyMessage"
+      data-testid="ai-command-readonly-alert"
+      :title="readOnlyMessage"
+      type="warning"
+      show-icon
+      :closable="false"
+      class="permission-alert"
+    />
 
     <el-tabs v-model="activeTab" class="work-tabs">
       <el-tab-pane label="案件操作" name="command">
         <section class="command-layout">
           <div class="command-panel">
             <el-input
+              data-testid="ai-command-instruction"
               v-model="instruction"
               type="textarea"
               :rows="6"
@@ -28,7 +46,7 @@
               show-word-limit
               resize="none"
               placeholder="输入案件操作指令"
-              :disabled="commandLoading"
+              :disabled="commandLoading || !canOperateCase"
             />
             <div class="command-actions">
               <div class="examples">
@@ -36,14 +54,20 @@
                 <el-button text @click="useExample('本案明天下午3点开庭，地点第二审判庭')">相对日期</el-button>
                 <el-button text @click="useExample('记录进展：今日已向法院提交补充证据')">案件进展</el-button>
               </div>
-              <el-button type="primary" :loading="commandLoading" :disabled="!canSubmit" @click="submitCommand">
+              <el-button
+                data-testid="ai-command-submit"
+                type="primary"
+                :loading="commandLoading"
+                :disabled="!canSubmit"
+                @click="submitCommand"
+              >
                 <el-icon><Promotion /></el-icon>
                 执行
               </el-button>
             </div>
           </div>
 
-          <div class="result-panel" aria-live="polite">
+          <div class="result-panel" data-testid="ai-command-result" aria-live="polite">
             <el-empty v-if="!commandResult" description="暂无操作结果" :image-size="72" />
             <template v-else>
               <div class="result-heading">
@@ -52,8 +76,15 @@
                 </el-tag>
                 <span>{{ commandResult.caseName || selectedCaseLabel }}</span>
               </div>
-              <p v-if="commandResult.clarification" class="clarification">{{ commandResult.clarification }}</p>
-              <div v-for="action in commandResult.actions" :key="action.actionType" class="action-row">
+              <p v-if="commandResult.clarification" data-testid="ai-command-clarification" class="clarification">
+                {{ commandResult.clarification }}
+              </p>
+              <div
+                v-for="(action, index) in commandResult.actions"
+                :key="`${action.actionType}-${index}`"
+                :data-testid="`ai-command-action-${action.actionType}`"
+                class="action-row"
+              >
                 <el-icon><CircleCheck v-if="!action.requiresConfirmation" /><Warning v-else /></el-icon>
                 <div>
                   <strong>{{ actionLabel(action.actionType) }}</strong>
@@ -63,6 +94,7 @@
               </div>
               <el-button
                 v-if="commandResult.status === 'PROPOSED'"
+                data-testid="ai-command-confirm"
                 type="warning"
                 :loading="confirmingCommand"
                 @click="confirmCommand"
@@ -70,6 +102,14 @@
                 <el-icon><Select /></el-icon>
                 确认执行
               </el-button>
+              <div v-if="commandExecuted" class="result-links">
+                <el-button v-if="hasWorkspaceAction" data-testid="ai-command-view-calendar" @click="router.push('/calendar')">
+                  查看日程与待办
+                </el-button>
+                <el-button v-if="hasTimelineAction" data-testid="ai-command-view-timeline" @click="openCaseTimeline">
+                  查看案件动态
+                </el-button>
+              </div>
             </template>
           </div>
         </section>
@@ -85,13 +125,14 @@
             :limit="1"
             :on-change="handleFileChange"
             :on-remove="handleFileRemove"
+            :disabled="!canOperateCase"
             accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg"
             class="intake-upload"
           >
             <el-icon class="upload-icon"><UploadFilled /></el-icon>
             <div class="el-upload__text">拖入案件文书，或点击选择</div>
           </el-upload>
-          <el-button data-testid="ai-intake-analyze" type="primary" :loading="intakeLoading" :disabled="!selectedFile" @click="analyzeFile">
+          <el-button data-testid="ai-intake-analyze" type="primary" :loading="intakeLoading" :disabled="!selectedFile || !canOperateCase" @click="analyzeFile">
             <el-icon><Search /></el-icon>
             识别文书
           </el-button>
@@ -185,10 +226,11 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, FolderChecked, Promotion, Search, Select, UploadFilled, Warning } from '@element-plus/icons-vue'
 import { getCaseList } from '@/api/case'
+import { useUserStore } from '@/stores'
 import {
   confirmCaseCommand,
   confirmDocumentIntake,
@@ -197,6 +239,8 @@ import {
 } from '@/api/ai'
 
 const route = useRoute()
+const router = useRouter()
+const userStore = useUserStore()
 const activeTab = ref(route.query.tab === 'intake' ? 'intake' : 'command')
 const selectedCaseId = ref(route.query.caseId ? Number(route.query.caseId) : null)
 const caseOptions = ref([])
@@ -227,7 +271,22 @@ const selectedCaseLabel = computed(() => {
   const item = caseOptions.value.find(caseItem => caseItem.id === selectedCaseId.value)
   return item ? formatCase(item) : '请选择有权访问的案件'
 })
-const canSubmit = computed(() => instruction.value.trim())
+const selectedCase = computed(() => caseOptions.value.find(caseItem => caseItem.id === selectedCaseId.value))
+const hasCaseEditPermission = computed(() => userStore.hasPermission('CASE_EDIT'))
+const canOperateCase = computed(() => hasCaseEditPermission.value && selectedCase.value?.canEdit === true)
+const readOnlyMessage = computed(() => {
+  if (!hasCaseEditPermission.value) return '当前账号仅可查看案件，AI 日程、待办、进展和智能归案需要案件编辑权限。'
+  if (selectedCaseId.value && !canOperateCase.value) return '当前案件仅可查看，不能通过 AI 写入案件数据。'
+  return ''
+})
+const canSubmit = computed(() => Boolean(selectedCaseId.value && canOperateCase.value && instruction.value.trim()))
+const commandExecuted = computed(() => ['AUTO_EXECUTED', 'CONFIRMED'].includes(commandResult.value?.status))
+const hasWorkspaceAction = computed(() => commandResult.value?.actions?.some(action =>
+  ['CREATE_CALENDAR', 'CREATE_TODO'].includes(action.actionType)
+))
+const hasTimelineAction = computed(() => commandResult.value?.actions?.some(action =>
+  ['CREATE_CALENDAR', 'ADD_ACTIVITY', 'CHANGE_STAGE'].includes(action.actionType)
+))
 const hasHearingSuggestion = computed(() => Boolean(
   intakeResult.value?.analysis?.hearingDate || intakeResult.value?.analysis?.hearingPlace
 ))
@@ -311,6 +370,10 @@ const actionSummary = action => {
   if (action.actionType === 'CHANGE_STAGE') return payload.targetStage || ''
   return ''
 }
+const openCaseTimeline = () => {
+  const caseId = commandResult.value?.caseId || selectedCaseId.value
+  if (caseId) router.push(`/case/${caseId}/timeline`)
+}
 
 const resetLinkedActions = () => {
   intakeForm.createHearingCalendar = false
@@ -378,6 +441,8 @@ onMounted(async () => {
 .ai-workbench { width: 100%; max-width: 1180px; min-width: 0; margin: 0 auto; }
 .page-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
 .page-header h1 { margin: 0 0 6px; font-size: 24px; letter-spacing: 0; color: #1d1d1f; }
+.permission-alert { margin-bottom: 16px; }
+.result-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .page-header p { margin: 0; color: #6e6e73; font-size: 14px; }
 .case-select { width: min(420px, 44vw); }
 .header-selects { display: flex; gap: 10px; align-items: center; }

@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import javax.validation.Valid;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
  * 待办管理控制器
@@ -227,22 +228,24 @@ public class TodoController {
     @GetMapping("/search")
     @PreAuthorize("hasAuthority('TODO_VIEW')")
     public Result<List<TodoDTO>> getTodosByFilter(
-            @RequestParam Long assignee,
+            @RequestParam(required = false) Long assignee,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String sort) {
-        assertUserVisible(assignee);
+        Long requestedAssignee = assignee == null ? securityUtils.getCurrentUserId() : assignee;
+        assertUserVisible(requestedAssignee);
         try {
             List<TodoDTO> result;
+            String normalizedStatus = status == null ? null : status.trim().toLowerCase(Locale.ROOT);
 
             // 根据状态筛选
-            if ("pending".equals(status)) {
-                result = todoService.getPendingTodos(assignee);
-            } else if ("completed".equals(status)) {
-                result = todoService.getCompletedTodos(assignee);
-            } else if ("overdue".equals(status)) {
-                result = todoService.getOverdueTodos(assignee);
+            if ("pending".equals(normalizedStatus)) {
+                result = todoService.getPendingTodos(requestedAssignee);
+            } else if ("completed".equals(normalizedStatus)) {
+                result = todoService.getCompletedTodos(requestedAssignee);
+            } else if ("overdue".equals(normalizedStatus)) {
+                result = todoService.getOverdueTodos(requestedAssignee);
             } else {
-                result = todoService.getTodosByAssignee(assignee);
+                result = todoService.getTodosByAssignee(requestedAssignee);
             }
 
             // 根据排序要求排序

@@ -239,7 +239,8 @@ public class AICaseCommandService {
         dto.setReminderMinutes(120);
         CalendarDTO saved = calendarService.createCalendar(dto, userId);
         calendarReminderService.scheduleUpcomingHearingReminders(saved.getId(), dto.getStartTime());
-        String content = "已登记" + dto.getCalendarType() + "：" + dto.getStartTime() + "，地点：" + dto.getLocation();
+        String eventLabel = "HEARING".equals(dto.getCalendarType()) ? "开庭" : "听证";
+        String content = "已登记" + eventLabel + "：" + dto.getStartTime() + "，地点：" + dto.getLocation();
         timelineService.createSystemTimeline(command.getCaseId(), "AI_CALENDAR_CREATED", content);
         activityService.create(command.getCaseId(), "HEARING", dto.getTitle(), content,
                 dto.getStartTime(), "AI_COMMAND", command.getId(), userId, null, write(action.getPayload()));

@@ -45,6 +45,16 @@ class PersonalWorkspaceControllerAccessTest {
     }
 
     @Test
+    void todoSearchDefaultsToCurrentUserAndNormalizesStatus() {
+        when(todoService.getPendingTodos(7L)).thenReturn(java.util.Collections.emptyList());
+
+        todoController.getTodosByFilter(null, "PENDING", "urgency");
+
+        verify(todoService).getPendingTodos(7L);
+        verify(todoService).sortByUrgency(java.util.Collections.emptyList());
+    }
+
+    @Test
     void ordinaryUserCannotModifyAnotherUsersTodo() {
         TodoDTO todo = new TodoDTO();
         todo.setId(10L);
