@@ -5,7 +5,9 @@ import com.lawfirm.dto.CaseCreateRequest;
 import com.lawfirm.dto.CaseQueryRequest;
 import com.lawfirm.entity.Case;
 import com.lawfirm.entity.Client;
+import com.lawfirm.entity.Role;
 import com.lawfirm.entity.User;
+import com.lawfirm.entity.UserRole;
 import com.lawfirm.exception.InvalidParameterException;
 import com.lawfirm.repository.CaseFlowTemplateRepository;
 import com.lawfirm.repository.CaseMemberRepository;
@@ -134,6 +136,26 @@ class CaseAccessPolicyTest {
 
         assertDoesNotThrow(() -> caseService.assertCaseEditable(101L, 11L));
         assertDoesNotThrow(() -> caseService.assertCaseEditable(101L, 12L));
+    }
+
+    @Test
+    void managerRoleWithDepartmentHeadPositionHasFirmWideCaseAccess() {
+        Case caseEntity = activeCase(108L, 20L);
+        User director = user(13L, "主任乙", "部门负责人", 8L);
+        UserRole assignment = new UserRole();
+        assignment.setUserId(13L);
+        assignment.setRoleId(6L);
+        Role managerRole = new Role();
+        managerRole.setId(6L);
+        managerRole.setRoleCode("MANAGER");
+        managerRole.setRoleName("主任");
+        when(caseRepository.findById(108L)).thenReturn(Optional.of(caseEntity));
+        when(userRepository.findById(13L)).thenReturn(Optional.of(director));
+        when(userRoleRepository.findByUserId(13L)).thenReturn(List.of(assignment));
+        when(roleRepository.findById(6L)).thenReturn(Optional.of(managerRole));
+
+        assertTrue(caseService.canAccessCase(108L, 13L));
+        assertDoesNotThrow(() -> caseService.assertCaseEditable(108L, 13L));
     }
 
     @Test

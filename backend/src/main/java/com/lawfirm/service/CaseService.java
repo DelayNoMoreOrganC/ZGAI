@@ -750,8 +750,7 @@ public class CaseService {
         if (isDevelopmentAdmin(user)) {
             return true;
         }
-        String position = user == null ? null : user.getPosition();
-        return "主任".equals(position) || isAdministrativeUser(user);
+        return isFirmDirector(user) || isAdministrativeUser(user);
     }
 
     private boolean isAdministrativeUser(User user) {
@@ -810,6 +809,9 @@ public class CaseService {
      * 判断用户是否有管理员角色
      */
     private boolean hasAdminRole(User user) {
+        if (user == null || user.getId() == null) {
+            return false;
+        }
         List<UserRole> userRoles = userRoleRepository.findByUserId(user.getId());
         return userRoles.stream()
                 .anyMatch(ur -> {
@@ -821,6 +823,11 @@ public class CaseService {
                             || "管理员".equals(role.getRoleName())
                             || "主任".equals(role.getRoleName());
                 });
+    }
+
+    private boolean isFirmDirector(User user) {
+        return user != null
+                && ("主任".equals(user.getPosition()) || hasAdminRole(user));
     }
 
     /**
@@ -937,7 +944,7 @@ public class CaseService {
     }
 
     private boolean isCaseManageableByUser(Case caseEntity, User currentUser) {
-        if (isDevelopmentAdmin(currentUser) || "主任".equals(currentUser.getPosition())) {
+        if (isDevelopmentAdmin(currentUser) || isFirmDirector(currentUser)) {
             return true;
         }
         return isCaseManageableByUser(caseEntity, currentUser, isCaseFilingAdministrator(currentUser));
@@ -945,7 +952,7 @@ public class CaseService {
 
     private boolean isCaseManageableByUser(
             Case caseEntity, User currentUser, boolean caseFilingAdministrator) {
-        if (isDevelopmentAdmin(currentUser) || "主任".equals(currentUser.getPosition())
+        if (isDevelopmentAdmin(currentUser) || isFirmDirector(currentUser)
                 || caseFilingAdministrator) {
             return true;
         }

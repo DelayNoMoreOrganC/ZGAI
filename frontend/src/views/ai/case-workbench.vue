@@ -1,6 +1,6 @@
 <template>
-  <div class="ai-workbench">
-    <header class="page-header">
+  <div class="ai-workbench" data-testid="ai-case-workbench">
+    <header class="page-header" data-testid="ai-workbench-header">
       <div>
         <h1>案件 AI 助手</h1>
         <p>{{ selectedCaseLabel }}</p>
@@ -374,15 +374,15 @@ onMounted(async () => {
 </script>
 
 <style scoped lang="scss">
-.ai-workbench { max-width: 1180px; margin: 0 auto; }
+.ai-workbench { width: 100%; max-width: 1180px; min-width: 0; margin: 0 auto; }
 .page-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
 .page-header h1 { margin: 0 0 6px; font-size: 24px; letter-spacing: 0; color: #1d1d1f; }
 .page-header p { margin: 0; color: #6e6e73; font-size: 14px; }
 .case-select { width: min(420px, 44vw); }
 .header-selects { display: flex; gap: 10px; align-items: center; }
-.work-tabs { background: #fff; border: 1px solid #e5e5e7; border-radius: 8px; padding: 0 24px 24px; }
+.work-tabs { min-width: 0; background: #fff; border: 1px solid #e5e5e7; border-radius: 8px; padding: 0 24px 24px; }
 .command-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr); gap: 24px; min-height: 430px; }
-.command-panel, .result-panel { padding-top: 18px; }
+.command-panel, .result-panel { min-width: 0; padding-top: 18px; }
 .result-panel { border-left: 1px solid #e5e5e7; padding-left: 24px; }
 .command-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 14px; }
 .examples { display: flex; flex-wrap: wrap; }
@@ -405,11 +405,18 @@ onMounted(async () => {
 .linked-action-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; margin-top: 12px; }
 .full-width { width: 100%; }
 @media (max-width: 800px) {
+  .work-tabs { padding: 0 12px 16px; }
   .page-header { align-items: stretch; flex-direction: column; }
   .case-select { width: 100%; }
   .header-selects { flex-direction: column; align-items: stretch; }
   .command-layout { grid-template-columns: 1fr; }
+  .command-actions { align-items: stretch; flex-direction: column; }
+  .command-actions > .el-button { width: 100%; margin-left: 0; }
+  .examples { display: grid; grid-template-columns: 1fr; }
+  .examples .el-button { justify-content: flex-start; width: 100%; margin-left: 0; white-space: normal; }
   .result-panel { border-left: 0; border-top: 1px solid #e5e5e7; padding-left: 0; }
   .analysis-grid, .confirm-form, .linked-action-fields { grid-template-columns: 1fr; }
+  :deep(.intake-upload .el-upload),
+  :deep(.intake-upload .el-upload-dragger) { width: 100%; }
 }
 </style>

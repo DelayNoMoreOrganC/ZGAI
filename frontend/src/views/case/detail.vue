@@ -1,5 +1,5 @@
 <template>
-  <div class="case-detail" v-loading="loading">
+  <div class="case-detail" data-testid="case-detail" v-loading="loading">
     <el-result v-if="loadError" icon="error" title="案件详情加载失败" :sub-title="loadError">
       <template #extra>
         <el-button @click="$router.push('/case/list')">返回案件列表</el-button>
@@ -9,7 +9,7 @@
 
     <template v-else>
     <!-- 顶部固定区域 -->
-    <div class="detail-header">
+    <div class="detail-header" data-testid="case-detail-header">
       <div class="header-left">
         <el-button circle @click="$router.back()">
           <el-icon><ArrowLeft /></el-icon>
@@ -24,7 +24,7 @@
         </div>
       </div>
 
-      <div class="header-right">
+      <div class="header-right" data-testid="case-detail-actions">
         <el-button v-if="canEdit" @click="handleEdit">
           <el-icon><Edit /></el-icon>
           编辑
@@ -55,7 +55,7 @@
     </div>
 
     <!-- 进度条 -->
-    <div class="progress-section">
+    <div class="progress-section" data-testid="case-stage-progress">
       <div class="progress-bar">
         <div
           v-for="(stage, index) in caseStages"
@@ -96,6 +96,7 @@
         :key="tab.name"
         type="button"
         class="detail-tab"
+        :data-testid="`case-tab-${tab.name}`"
         :class="{ active: activeTab === tab.name }"
         :aria-current="activeTab === tab.name ? 'page' : undefined"
         @click="navigateTab(tab.name)"
@@ -105,7 +106,7 @@
     </nav>
 
     <!-- Tab内容 -->
-    <div class="tab-content">
+    <div class="tab-content" data-testid="case-tab-content">
       <router-view :case-data="caseDetail" @refresh="fetchCaseDetail" />
     </div>
 
@@ -513,6 +514,7 @@ watch(() => route.params.id, fetchCaseDetail, { immediate: true })
 <style scoped lang="scss">
 .case-detail {
   min-height: 320px;
+  min-width: 0;
 
   .detail-header {
     display: flex;
@@ -717,6 +719,8 @@ watch(() => route.params.id, fetchCaseDetail, { immediate: true })
   }
 
   .tab-content {
+    min-width: 0;
+    overflow: hidden;
     background-color: #fff;
     border: 1px solid #e5e7eb;
     border-radius: 8px;
@@ -738,11 +742,16 @@ watch(() => route.params.id, fetchCaseDetail, { immediate: true })
 
       .header-right {
         justify-content: flex-start;
+
+        .el-button {
+          margin-left: 0;
+        }
       }
     }
 
     .progress-section {
       padding: 18px 14px;
+      max-width: 100%;
 
       .progress-bar {
         justify-content: flex-start;
@@ -755,6 +764,7 @@ watch(() => route.params.id, fetchCaseDetail, { immediate: true })
     }
 
     .detail-tabs {
+      max-width: 100%;
       margin-bottom: 14px;
       padding: 0 4px;
 

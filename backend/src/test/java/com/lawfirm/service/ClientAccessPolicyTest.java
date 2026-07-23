@@ -86,6 +86,17 @@ class ClientAccessPolicyTest {
     }
 
     @Test
+    void managerRoleWithDepartmentHeadPositionCanEditClient() {
+        Client client = client(206L, 41L);
+        User director = user(43L, "主任乙", "部门负责人");
+        when(clientRepository.findById(206L)).thenReturn(Optional.of(client));
+        when(userRepository.findById(43L)).thenReturn(Optional.of(director));
+        when(userPermissionService.hasRole(director, "MANAGER")).thenReturn(true);
+
+        assertDoesNotThrow(() -> service.assertClientEditable(206L, 43L));
+    }
+
+    @Test
     void departmentMemberCanViewColleaguesClientButCannotEditIt() {
         Client client = client(202L, 51L);
         User colleague = user(51L, "律师甲", "律师");

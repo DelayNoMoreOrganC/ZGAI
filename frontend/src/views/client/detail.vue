@@ -1,5 +1,5 @@
 <template>
-  <div class="client-detail" v-loading="loading">
+  <div class="client-detail" data-testid="client-detail" v-loading="loading">
     <el-result v-if="loadError" icon="error" title="客户详情加载失败" :sub-title="loadError">
       <template #extra>
         <el-button @click="router.push('/client/list')">返回客户列表</el-button>
@@ -799,6 +799,7 @@ watch(clientId, loadClientPage, { immediate: true })
 <style scoped lang="scss">
 .client-detail {
   min-height: 320px;
+  min-width: 0;
 
   .detail-tabs {
     margin-top: 20px;
@@ -929,6 +930,7 @@ watch(clientId, loadClientPage, { immediate: true })
 @media (max-width: 760px) {
   .client-detail {
     .detail-tabs {
+      max-width: 100%;
       margin-top: 14px;
       padding: 0 12px;
 
@@ -941,6 +943,8 @@ watch(clientId, loadClientPage, { immediate: true })
       }
 
       .tab-content {
+        min-width: 0;
+        overflow: hidden;
         min-height: 300px;
         padding-top: 14px;
       }

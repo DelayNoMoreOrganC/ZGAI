@@ -67,6 +67,12 @@ const invoiceRowFor = (page, title) => page
   .first()
   .locator('xpath=ancestor::tr')
 
+const assertNoPageOverflow = async (page) => {
+  await expect.poll(async () => page.evaluate(() =>
+    document.documentElement.scrollWidth <= window.innerWidth
+  )).toBe(true)
+}
+
 const approveFiling = async (page, caseName, comments) => {
   await page.goto('/approval')
   const card = page.locator('.filing-card').filter({ hasText: caseName }).first()
@@ -122,6 +128,8 @@ test('律师建客户立案并完成案件文件、快速用印和发票反馈�
   await expect(clientRow).toBeVisible()
   await clientRow.getByRole('button', { name: '详情', exact: true }).click()
   await expect(lawyerPage.getByRole('heading', { name: clientName })).toBeVisible()
+  const clientId = lawyerPage.url().match(/\/client\/(\d+)/)?.[1]
+  expect(clientId).toBeTruthy()
   await lawyerPage.getByTestId('client-create-case').click()
   await expect(lawyerPage).toHaveURL(/\/case\/create\?clientId=/)
 
@@ -344,6 +352,45 @@ test('律师建客户立案并完成案件文件、快速用印和发票反馈�
   await expect(invoiceRow.getByRole('button', { name: '反馈文件', exact: true })).toBeVisible()
   await expect(invoiceRow.getByRole('button', { name: '修改', exact: true })).toHaveCount(0)
   await expect(invoiceRow.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
+
+  const mobileConsoleErrors = []
+  for (const page of [lawyerPage, administrativePage, directorPage]) {
+    page.on('console', message => {
+      if (message.type() === 'error') mobileConsoleErrors.push(message.text())
+    })
+    page.on('pageerror', error => mobileConsoleErrors.push(error.message))
+  }
+
+  await lawyerPage.setViewportSize({ width: 390, height: 844 })
+  await lawyerPage.goto(`/client/${clientId}`)
+  await expect(lawyerPage.getByTestId('client-detail')).toBeVisible()
+  await expect(lawyerPage.getByRole('heading', { name: clientName })).toBeVisible()
+  await expect(lawyerPage.getByTestId('client-create-case')).toBeVisible()
+  await assertNoPageOverflow(lawyerPage)
+
+  await lawyerPage.goto(`/case/${caseId}/basic`)
+  await expect(lawyerPage.getByTestId('case-detail')).toBeVisible()
+  await expect(lawyerPage.getByTestId('case-detail-header')).toContainText(caseName)
+  await expect(lawyerPage.getByTestId('case-tab-doc')).toBeVisible()
+  await assertNoPageOverflow(lawyerPage)
+
+  await lawyerPage.goto(`/ai/case-workbench?caseId=${caseId}`)
+  await expect(lawyerPage.getByTestId('ai-case-workbench')).toBeVisible()
+  await expect(lawyerPage.getByTestId('ai-workbench-header')).toContainText(caseName)
+  await assertNoPageOverflow(lawyerPage)
+
+  await administrativePage.setViewportSize({ width: 390, height: 844 })
+  await administrativePage.goto(`/case/${caseId}/basic`)
+  await expect(administrativePage.getByTestId('case-detail')).toBeVisible()
+  await expect(administrativePage.getByTestId('case-detail-header')).toContainText(caseName)
+  await assertNoPageOverflow(administrativePage)
+
+  await directorPage.setViewportSize({ width: 390, height: 844 })
+  await directorPage.goto(`/case/${caseId}/basic`)
+  await expect(directorPage.getByTestId('case-detail')).toBeVisible()
+  await expect(directorPage.getByTestId('case-detail-header')).toContainText(caseName)
+  await assertNoPageOverflow(directorPage)
+  expect(mobileConsoleErrors, `核心移动端页面控制台错误：${mobileConsoleErrors.join('\n')}`).toEqual([])
 
   await financeContext.close()
   await directorContext.close()

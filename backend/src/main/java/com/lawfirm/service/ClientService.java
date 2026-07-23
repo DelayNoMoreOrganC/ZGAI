@@ -321,7 +321,7 @@ public class ClientService {
         if (client == null || Boolean.TRUE.equals(client.getDeleted())) {
             return false;
         }
-        if (isDevelopmentAdmin(currentUser) || "主任".equals(currentUser.getPosition())) {
+        if (isDevelopmentAdmin(currentUser) || isFirmDirector(currentUser)) {
             return true;
         }
         List<Long> relatedUserIds = new ArrayList<>();
@@ -389,6 +389,11 @@ public class ClientService {
 
     private boolean isDevelopmentAdmin(User user) {
         return user != null && "admin".equals(user.getUsername());
+    }
+
+    private boolean isFirmDirector(User user) {
+        return user != null && ("主任".equals(user.getPosition())
+                || userPermissionService.hasRole(user, "MANAGER"));
     }
 
     private boolean hasAllClientViewAccess(User user) {
@@ -1135,7 +1140,7 @@ public class ClientService {
         if (caseEntity == null || Boolean.TRUE.equals(caseEntity.getDeleted())) {
             return false;
         }
-        if (isDevelopmentAdmin(currentUser) || "主任".equals(currentUser.getPosition())
+        if (isDevelopmentAdmin(currentUser) || isFirmDirector(currentUser)
                 || (currentUser.getPosition() != null && currentUser.getPosition().startsWith("行政管理"))) {
             return true;
         }
