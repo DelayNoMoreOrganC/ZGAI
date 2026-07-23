@@ -241,7 +241,7 @@
     </el-tabs>
 
     <!-- 添加费用对话框 -->
-    <el-dialog v-model="expenseDialogVisible" title="添加费用" width="600px">
+    <el-dialog v-model="expenseDialogVisible" title="添加费用" width="min(600px, calc(100vw - 24px))">
       <el-form :model="expenseForm" label-width="100px">
         <el-form-item label="日期" required>
           <el-date-picker
@@ -306,7 +306,7 @@
     </el-dialog>
 
     <!-- 添加收款对话框 -->
-    <el-dialog v-model="paymentDialogVisible" title="添加收款" width="600px">
+    <el-dialog v-model="paymentDialogVisible" title="添加收款" width="min(600px, calc(100vw - 24px))">
       <el-form :model="paymentForm" label-width="100px">
         <el-form-item label="收款日期" required>
           <el-date-picker
@@ -374,7 +374,7 @@
     </el-dialog>
 
     <!-- 发票申请对话框 -->
-    <el-dialog v-model="invoiceDialogVisible" :title="editingInvoiceId ? '修改发票申请' : '发起发票申请'" width="760px">
+    <el-dialog v-model="invoiceDialogVisible" :title="editingInvoiceId ? '修改发票申请' : '发起发票申请'" width="min(760px, calc(100vw - 24px))">
       <el-form :model="invoiceForm" label-width="120px">
         <el-form-item label="合同号">
           <el-input v-model="invoiceForm.contractNo" placeholder="如：2026民001" />
@@ -450,7 +450,7 @@
     </el-dialog>
 
     <!-- 出纳开票反馈对话框 -->
-    <el-dialog v-model="issueDialogVisible" title="开票反馈" width="620px">
+    <el-dialog v-model="issueDialogVisible" title="开票反馈" width="min(620px, calc(100vw - 24px))">
       <el-form :model="issueForm" label-width="110px">
         <el-form-item label="顾客名称">
           <el-input v-model="issueForm.title" disabled />
@@ -497,7 +497,7 @@
     </el-dialog>
 
     <!-- 发票申请详情 -->
-    <el-dialog v-model="invoiceDetailVisible" title="发票申请信息" width="720px">
+    <el-dialog v-model="invoiceDetailVisible" title="发票申请信息" width="min(720px, calc(100vw - 24px))">
       <el-descriptions :column="2" border>
         <el-descriptions-item label="合同号">{{ selectedInvoice.contractNo || '-' }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{ formatInvoiceStatus(selectedInvoice.status) }}</el-descriptions-item>
@@ -1096,13 +1096,13 @@ const tableRowClassName = ({ rowIndex }) => {
     margin-top: 20px;
     background: #fff;
     padding: 24px;
-    border-radius: 12px;
-    box-shadow: 0 2px 12px rgba(24, 144, 255, 0.08);
-    border: 1px solid #e6f7ff;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+    border: 1px solid #e5e7eb;
 
     :deep(.el-tabs__header) {
       margin-bottom: 24px;
-      border-bottom: 2px solid #e6f7ff;
+      border-bottom: 1px solid #e5e7eb;
     }
 
     :deep(.el-tabs__item) {
@@ -1115,45 +1115,42 @@ const tableRowClassName = ({ rowIndex }) => {
       transition: all 0.3s;
 
       &:hover {
-        color: #1890ff;
-        background: #f0f5ff;
+        color: #007aff;
+        background: #f5f5f7;
       }
 
       &.is-active {
-        color: #1890ff;
-        background: linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 100%);
-        border-bottom: 2px solid #1890ff;
+        color: #007aff;
+        background: #f5f5f7;
+        border-bottom: 2px solid #007aff;
         font-weight: 600;
       }
     }
   }
 
   .add-btn {
-    background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+    background: #007aff;
     border: none;
     border-radius: 8px;
     padding: 10px 20px;
-    box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3);
-    transition: all 0.3s;
+    box-shadow: none;
 
     &:hover {
-      background: linear-gradient(135deg, #40a9ff 0%, #1890ff 100%);
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
+      background: #0068d9;
     }
   }
 
   .finance-table {
-    border-radius: 12px;
+    border-radius: 8px;
     overflow: hidden;
-    box-shadow: 0 2px 12px rgba(24, 144, 255, 0.08);
+    box-shadow: none;
 
     :deep(.el-table__header-wrapper) {
       th {
-        background: #f0f5ff !important;
+        background: #f5f5f7 !important;
         color: #333 !important;
         font-weight: 600;
-        border-bottom: 2px solid #1890ff;
+        border-bottom: 1px solid #d1d5db;
       }
     }
 
@@ -1165,7 +1162,7 @@ const tableRowClassName = ({ rowIndex }) => {
           background: #ffffff;
 
           &:hover {
-            background: #f0f5ff !important;
+            background: #f5f5f7 !important;
           }
         }
 
@@ -1173,7 +1170,7 @@ const tableRowClassName = ({ rowIndex }) => {
           background: #fafcfe;
 
           &:hover {
-            background: #f0f5ff !important;
+            background: #f5f5f7 !important;
           }
         }
 
@@ -1184,7 +1181,7 @@ const tableRowClassName = ({ rowIndex }) => {
     }
 
     :deep(.el-table__border) {
-      border: 1px solid #e6f7ff;
+      border: 1px solid #e5e7eb;
     }
   }
 
@@ -1203,12 +1200,12 @@ const tableRowClassName = ({ rowIndex }) => {
           transition: all 0.3s;
 
           &:hover {
-            border-color: #1890ff;
+            border-color: #007aff;
           }
 
           &.is-focus {
-            border-color: #1890ff;
-            box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+            border-color: #007aff;
+            box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1);
           }
         }
       }
@@ -1220,12 +1217,12 @@ const tableRowClassName = ({ rowIndex }) => {
           transition: all 0.3s;
 
           &:hover {
-            border-color: #1890ff;
+            border-color: #007aff;
           }
 
           &.is-focus {
-            border-color: #1890ff;
-            box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+            border-color: #007aff;
+            box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1);
           }
         }
       }
@@ -1238,20 +1235,14 @@ const tableRowClassName = ({ rowIndex }) => {
 
       .summary-card {
         flex: 1;
-        background: linear-gradient(135deg, #f0f5ff 0%, #ffffff 100%);
+        background: #fff;
         padding: 24px;
-        border-radius: 12px;
+        border-radius: 8px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        border: 1px solid #e6f7ff;
-        box-shadow: 0 2px 8px rgba(24, 144, 255, 0.1);
-        transition: all 0.3s;
-
-        &:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 16px rgba(24, 144, 255, 0.15);
-        }
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 
         .label {
           font-size: 15px;
@@ -1262,7 +1253,7 @@ const tableRowClassName = ({ rowIndex }) => {
         .value {
           font-size: 24px;
           font-weight: bold;
-          color: #1890ff;
+          color: #007aff;
 
           &.received {
             color: #52c41a;
@@ -1279,6 +1270,36 @@ const tableRowClassName = ({ rowIndex }) => {
       color: #52c41a;
       font-weight: 600;
       font-size: 15px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    min-width: 0;
+
+    .finance-tabs {
+      margin-top: 12px;
+      padding: 14px 12px;
+
+      :deep(.el-tabs__nav-wrap) {
+        overflow-x: auto;
+      }
+
+      :deep(.el-tabs__item) {
+        padding: 0 14px;
+      }
+    }
+
+    .tab-content .toolbar .add-btn {
+      width: 100%;
+    }
+
+    .tab-content .fee-summary {
+      flex-direction: column;
+      gap: 10px;
+
+      .summary-card {
+        padding: 16px;
+      }
     }
   }
 }

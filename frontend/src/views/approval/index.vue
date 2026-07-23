@@ -247,7 +247,7 @@
     </div>
 
     <!-- 发起审批对话框 -->
-    <el-dialog v-model="approvalDialogVisible" title="发起审批" width="700px">
+    <el-dialog v-model="approvalDialogVisible" title="发起审批" width="min(700px, calc(100vw - 24px))">
       <el-form :model="approvalForm" label-width="100px">
         <el-form-item label="审批标题" required>
           <el-input v-model="approvalForm.title" placeholder="请输入审批标题" />
@@ -339,7 +339,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="transferDialogVisible" title="转交审批" width="480px">
+    <el-dialog v-model="transferDialogVisible" title="转交审批" width="min(480px, calc(100vw - 24px))">
       <el-form label-width="90px">
         <el-form-item label="新审批人" required>
           <el-select
@@ -1150,6 +1150,53 @@ const tableRowClassName = ({ rowIndex }) => {
 
   .approve-main-btn {
     font-weight: 700;
+  }
+
+  @media (max-width: 768px) {
+    min-width: 0;
+
+    .role-workbench,
+    .approval-tabs {
+      padding: 14px 12px;
+    }
+
+    .workbench-title,
+    .filing-card {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .workbench-title > :last-child,
+    .filing-card-actions {
+      width: 100%;
+    }
+
+    .filing-card-main p {
+      white-space: normal;
+    }
+
+    .filing-card-actions {
+      flex-wrap: wrap;
+    }
+
+    .lawyer-steps {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .approval-tabs {
+      :deep(.el-tabs__nav-wrap) {
+        overflow-x: auto;
+      }
+
+      :deep(.el-tabs__item) {
+        padding: 0 14px;
+      }
+    }
+
+    .approval-pagination {
+      justify-content: flex-start;
+      overflow-x: auto;
+    }
   }
 }
 </style>

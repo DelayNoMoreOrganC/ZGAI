@@ -102,4 +102,27 @@ const handleReset = () => {
 .filter-form {
   margin: 0;
 }
+
+@media (max-width: 768px) {
+  .approval-filter {
+    padding: 12px;
+  }
+
+  .filter-form :deep(.el-form-item) {
+    display: flex;
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .filter-form :deep(.el-form-item__content) {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .filter-form :deep(.el-select),
+  .filter-form :deep(.el-input),
+  .filter-form :deep(.el-date-editor) {
+    width: 100% !important;
+  }
+}
 </style>

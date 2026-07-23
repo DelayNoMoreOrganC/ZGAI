@@ -270,6 +270,25 @@ NAS 容器部署的 PostgreSQL 备份与离线恢复演练：
 
 角色冒烟测试需要通过环境变量提供普通律师、行政、主任和财务测试账号。不要在脚本或文档中写入密码。
 
+用印审批与开票反馈的四角色写流程可通过以下脚本复验。脚本会真实创建并完成测试记录，因此仅可在隔离环境或已明确授权的测试库运行；缺少固定确认值时会拒绝执行。
+
+```bash
+ZGAI_BASE_URL=http://127.0.0.1:8080/api \
+ZGAI_E2E_CONFIRM=RUN_WRITE_E2E \
+ZGAI_E2E_FIXTURE_FILE=/absolute/path/to/test.pdf \
+ZGAI_LAWYER_USERNAME="$LAWYER_USER" \
+ZGAI_LAWYER_PASSWORD="$LAWYER_PASSWORD" \
+ZGAI_ADMINISTRATIVE_USERNAME="$ADMINISTRATIVE_USER" \
+ZGAI_ADMINISTRATIVE_PASSWORD="$ADMINISTRATIVE_PASSWORD" \
+ZGAI_DIRECTOR_USERNAME="$DIRECTOR_USER" \
+ZGAI_DIRECTOR_PASSWORD="$DIRECTOR_PASSWORD" \
+ZGAI_FINANCE_USERNAME="$FINANCE_USER" \
+ZGAI_FINANCE_PASSWORD="$FINANCE_PASSWORD" \
+./scripts/e2e-approval-finance.sh
+```
+
+该脚本校验律师发起、本人及无权账号越权拒绝、主任全局只读、行政用印审批、财务反馈与完成锁定，以及申请人下载文件的 SHA-256 一致性。脚本不会输出 Token 或密码，临时响应在退出时自动清理。
+
 2026-07-24 已在独立端口、独立 H2 和临时文件根目录中使用五类虚构账号完成客户、立案利冲、两级审批、建档、文件、快速用印和发票闭环。律师、行政、主任和财务还分别完成桌面浏览器工作台及审批/开票页面验收；该结果验证代码基线，但不替代真实员工账号、PostgreSQL、移动端或目标 NAS 的上线验收。
 
 ## 数据与安全边界
