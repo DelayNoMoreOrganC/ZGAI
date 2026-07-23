@@ -9,6 +9,8 @@ backend/mvnw.cmd
 # === 前端依赖 ===
 frontend/node_modules/
 frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
 frontend/.vite/
 
 # === IDE配置 ===

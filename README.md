@@ -225,6 +225,35 @@ npm run build
 
 当前构建通过，存在 Dart Sass legacy API 和大分块警告，不影响本阶段运行，后续应专项优化。
 
+### Playwright 浏览器回归
+
+Playwright 使用本机 Chrome，不在仓库保存密码、登录态、截图或 trace。角色工作台回归需通过环境变量提供四类测试账号：
+
+```bash
+cd frontend
+ZGAI_E2E_FRONTEND_URL=http://127.0.0.1:3018 \
+ZGAI_LAWYER_USERNAME="$LAWYER_USER" ZGAI_LAWYER_PASSWORD="$LAWYER_PASSWORD" \
+ZGAI_ADMINISTRATIVE_USERNAME="$ADMIN_USER" ZGAI_ADMINISTRATIVE_PASSWORD="$ADMIN_PASSWORD" \
+ZGAI_DIRECTOR_USERNAME="$DIRECTOR_USER" ZGAI_DIRECTOR_PASSWORD="$DIRECTOR_PASSWORD" \
+ZGAI_FINANCE_USERNAME="$FINANCE_USER" ZGAI_FINANCE_PASSWORD="$FINANCE_PASSWORD" \
+npm run test:e2e:roles
+```
+
+客户到立案两级审批会写入数据，只能在隔离库中运行，并必须显式设置 `ZGAI_E2E_CONFIRM=RUN_BROWSER_WRITE_E2E`：
+
+```bash
+cd frontend
+ZGAI_E2E_CONFIRM=RUN_BROWSER_WRITE_E2E \
+ZGAI_E2E_ENVIRONMENT=ISOLATED \
+ZGAI_E2E_FRONTEND_URL=http://127.0.0.1:3018 \
+ZGAI_LAWYER_USERNAME="$LAWYER_USER" ZGAI_LAWYER_PASSWORD="$LAWYER_PASSWORD" \
+ZGAI_ADMINISTRATIVE_USERNAME="$ADMIN_USER" ZGAI_ADMINISTRATIVE_PASSWORD="$ADMIN_PASSWORD" \
+ZGAI_DIRECTOR_USERNAME="$DIRECTOR_USER" ZGAI_DIRECTOR_PASSWORD="$DIRECTOR_PASSWORD" \
+npm run test:e2e:filing -- --project=desktop-chrome
+```
+
+`scripts/setup-e2e-personas.sh` 可在全新隔离库中幂等创建/校准四类虚构账号，要求 `ZGAI_E2E_ENVIRONMENT=ISOLATED` 和显式确认值 `PROVISION_PERSONAS`。当前基线为四角色桌面/手机共 8 项与立案写入闭环 1 项通过。安装 Playwright 后 `npm audit` 仍报告 4 个中等和 5 个高危依赖问题，需单独评估升级，不应在业务回归提交中盲目执行破坏性 `npm audit fix --force`。
+
 ### 归档 Worker
 
 ```bash
@@ -289,7 +318,7 @@ ZGAI_FINANCE_PASSWORD="$FINANCE_PASSWORD" \
 
 该脚本校验律师发起、本人及无权账号越权拒绝、主任全局只读、行政用印审批、财务反馈与完成锁定，以及申请人下载文件的 SHA-256 一致性。脚本不会输出 Token 或密码，临时响应在退出时自动清理。
 
-2026-07-24 已在独立端口、独立 H2 和临时文件根目录中使用五类虚构账号完成客户、立案利冲、两级审批、建档、文件、快速用印和发票闭环。律师、行政、主任和财务还分别完成桌面浏览器工作台及审批/开票页面验收；该结果验证代码基线，但不替代真实员工账号、PostgreSQL、移动端或目标 NAS 的上线验收。
+2026-07-24 已在独立端口、独立 H2 和临时文件根目录中使用五类虚构账号完成客户、立案利冲、两级审批、建档、文件、快速用印和发票 API 闭环。Playwright 另外完成四角色桌面/手机工作台、行政/主任审批页、财务开票页以及“客户 → 立案 → 行政初审 → 主任终审 → 正式案号/立案日”写入闭环。该结果验证代码基线，但不替代真实员工账号、PostgreSQL、目标 NAS 或尚未覆盖页面的上线验收。
 
 ## 数据与安全边界
 

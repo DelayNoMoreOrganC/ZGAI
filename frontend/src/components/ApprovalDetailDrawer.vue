@@ -135,6 +135,7 @@
               <el-tag v-if="record.archivedAt" type="success" size="small">已随案件归档</el-tag>
             </div>
             <el-button
+              :data-testid="`conflict-review-${record.id}`"
               v-else-if="canReviewConflict"
               link
               type="primary"
@@ -153,6 +154,7 @@
               </el-form-item>
               <el-form-item label="审查意见" required>
                 <el-input
+                  data-testid="conflict-review-conclusion"
                   v-model="conflictReviewForm.conclusion"
                   type="textarea"
                   :rows="3"
@@ -207,7 +209,7 @@
               </el-form-item>
               <div class="inline-review-actions">
                 <el-button @click="cancelConflictReview">取消</el-button>
-                <el-button type="primary" :loading="reviewSubmitting" @click="submitConflictReview">
+                <el-button data-testid="conflict-review-submit" type="primary" :loading="reviewSubmitting" @click="submitConflictReview">
                   提交并锁定
                 </el-button>
               </div>
@@ -244,7 +246,7 @@
           <el-button type="warning" @click="handleReject(selectedApproval)">
             {{ isCaseFilingApproval(selectedApproval) ? '驳回立案' : '驳回' }}
           </el-button>
-          <el-button type="success" @click="handleApprove(selectedApproval)">
+          <el-button data-testid="approval-approve" type="success" @click="handleApprove(selectedApproval)">
             {{ getApproveActionText(selectedApproval) }}
           </el-button>
         </div>

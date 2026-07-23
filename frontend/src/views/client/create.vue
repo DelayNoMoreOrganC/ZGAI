@@ -3,7 +3,7 @@
     <PageHeader :title="isEdit ? '编辑客户' : '新建客户'" :show-back="true" @back="$router.back()">
       <template #extra>
         <el-button @click="handleCancel">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">
+        <el-button data-testid="client-submit" type="primary" :loading="submitting" @click="handleSubmit">
           提交
         </el-button>
       </template>
@@ -25,7 +25,7 @@
           <el-row :gutter="20">
             <el-col :span="8">
               <el-form-item label="客户类型" prop="clientType">
-                <el-select v-model="formData.clientType" placeholder="请选择客户类型" style="width: 100%" @change="handleTypeChange">
+                <el-select data-testid="client-type" v-model="formData.clientType" placeholder="请选择客户类型" style="width: 100%" @change="handleTypeChange">
                   <el-option v-for="item in clientTypeOptions" :key="item" :label="item" :value="item" />
                 </el-select>
               </el-form-item>
@@ -41,7 +41,7 @@
 
             <el-col :span="8">
               <el-form-item label="客户角色" prop="clientRole">
-                <el-select v-model="formData.clientRole" placeholder="请选择客户角色" style="width: 100%">
+                <el-select data-testid="client-role" v-model="formData.clientRole" placeholder="请选择客户角色" style="width: 100%">
                   <el-option v-for="item in clientRoleOptions" :key="item" :label="item" :value="item" />
                 </el-select>
               </el-form-item>
@@ -50,6 +50,7 @@
 
           <el-form-item label="客户名称" prop="clientName">
             <el-input
+              data-testid="client-name"
               v-model="formData.clientName"
               placeholder="请输入客户名称"
               maxlength="100"
@@ -144,6 +145,7 @@
             <el-col :span="8">
               <el-form-item label="客户所属部门" prop="departmentId">
                 <el-select
+                  data-testid="client-department"
                   v-model="formData.departmentId"
                   placeholder="请选择所属部门"
                   clearable
@@ -163,6 +165,7 @@
             <el-col :span="8">
               <el-form-item label="案源人" prop="sourceUserIds">
                 <el-select
+                  data-testid="client-source-users"
                   v-model="formData.sourceUserIds"
                   multiple
                   filterable
@@ -178,6 +181,7 @@
             <el-col :span="8">
               <el-form-item label="客户所属人" prop="clientOwnerIds">
                 <el-select
+                  data-testid="client-owner-users"
                   v-model="formData.clientOwnerIds"
                   multiple
                   filterable

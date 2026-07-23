@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e:roles": "playwright test e2e/role-workbenches.spec.js",
+    "test:e2e:filing": "playwright test --project=desktop-chrome e2e/case-filing-flow.spec.js"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
@@ -22,6 +24,7 @@
     "vue-router": "^5.0.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@vitejs/plugin-vue": "^6.0.5",
     "vite": "^5.4.10"
   }

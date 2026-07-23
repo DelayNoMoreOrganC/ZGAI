@@ -22,7 +22,7 @@
             {{ caseData.caseReason }}
           </el-descriptions-item>
           <el-descriptions-item label="案件编号">
-            {{ caseData.caseNumber }}
+            <span data-testid="case-number">{{ caseData.caseNumber }}</span>
           </el-descriptions-item>
           <el-descriptions-item v-if="caseData.caseType !== 'CONSULTANT'" :label="currentCaseProfile.organizationLabel">
             {{ caseData.court }}
@@ -32,7 +32,7 @@
             <span v-else class="text-muted">未关联客户</span>
           </el-descriptions-item>
           <el-descriptions-item label="立案时间">
-            <span v-if="caseData.filingDate">{{ formatDate(caseData.filingDate) }}</span>
+            <span v-if="caseData.filingDate" data-testid="case-filing-date">{{ formatDate(caseData.filingDate) }}</span>
             <span v-else class="text-muted">审批通过后生成</span>
           </el-descriptions-item>
           <el-descriptions-item label="审限时间">

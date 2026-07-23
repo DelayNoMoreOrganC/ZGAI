@@ -5,7 +5,7 @@
         <el-button v-if="isEditMode" type="primary" :loading="submitting" @click="handleSubmit">
           保存修改
         </el-button>
-        <el-button v-else type="primary" :loading="approving" @click="handleSubmitApproval">
+        <el-button data-testid="case-submit-approval" v-else type="primary" :loading="approving" @click="handleSubmitApproval">
           提交立案申请
         </el-button>
       </template>
@@ -32,7 +32,7 @@
           <el-row :gutter="20">
             <el-col :span="12">
               <el-form-item label="案件类型" prop="caseType">
-                <el-select v-model="formData.caseType" placeholder="请选择案件类型">
+                <el-select data-testid="case-type" v-model="formData.caseType" placeholder="请选择案件类型">
                   <el-option v-for="item in CASE_TYPE_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
                 </el-select>
               </el-form-item>
@@ -68,6 +68,7 @@
             <el-col :span="12">
               <el-form-item label="案件名称" prop="caseName">
                 <el-input
+                  data-testid="case-name"
                   v-model="formData.caseName"
                   placeholder="为空时根据当事人生成"
                   maxlength="100"
@@ -102,6 +103,7 @@
             <el-col :span="12">
               <el-form-item :label="caseReasonLabel" prop="caseReason">
                 <el-input
+                  data-testid="case-reason"
                   v-model="formData.caseReason"
                   :placeholder="caseReasonPlaceholder"
                   maxlength="80"
@@ -123,7 +125,7 @@
 
             <el-col :span="12">
               <el-form-item label="业务类型" prop="businessType">
-                <el-select v-model="formData.businessType" placeholder="请选择业务类型" filterable>
+                <el-select data-testid="case-business-type" v-model="formData.businessType" placeholder="请选择业务类型" filterable>
                   <el-option
                     v-for="type in currentBusinessTypes"
                     :key="type"
@@ -145,7 +147,7 @@
 
             <el-col v-if="showTrialStages" :span="24">
               <el-form-item :label="trialStageLabel" prop="trialStages">
-                <el-select v-model="formData.trialStages" multiple placeholder="请选择审级" style="width: 100%">
+                <el-select data-testid="case-trial-stages" v-model="formData.trialStages" multiple placeholder="请选择审级" style="width: 100%">
                   <el-option
                     v-for="stage in currentTrialStages"
                     :key="stage"
@@ -159,6 +161,7 @@
             <el-col v-if="showCourtFields" :span="12">
               <el-form-item :label="trialOrganizationLabel" prop="court">
                 <el-select
+                  data-testid="case-court"
                   v-model="formData.court"
                   filterable
                   remote
@@ -340,6 +343,7 @@
             <el-col :span="12">
               <el-form-item label="案件主办" prop="ownerId">
                 <el-select
+                  data-testid="case-owner"
                   v-model="formData.ownerId"
                   filterable
                   placeholder="搜索并选择案件主办"
@@ -402,7 +406,7 @@
               <h3>B. {{ currentCaseProfile.partyTitle }}</h3>
               <p class="section-note">{{ currentCaseProfile.partyEmpty }}</p>
             </div>
-            <el-button type="primary" size="small" @click="handleAddParty">
+            <el-button data-testid="case-add-party" type="primary" size="small" @click="handleAddParty">
               <el-icon><Plus /></el-icon>
               添加主体
             </el-button>
@@ -442,7 +446,7 @@
                   :prop="`parties.${index}.type`"
                   :rules="{ required: true, message: '请选择类型', trigger: 'change' }"
                 >
-                  <el-radio-group v-model="party.type">
+                  <el-radio-group :data-testid="`party-type-${index}`" v-model="party.type">
                     <el-radio label="个人">个人</el-radio>
                     <el-radio label="单位">单位</el-radio>
                   </el-radio-group>
@@ -455,7 +459,7 @@
                   :prop="`parties.${index}.isClient`"
                   :rules="{ type: 'boolean', required: true, message: '请选择是否委托方', trigger: 'change' }"
                 >
-                  <el-switch v-model="party.isClient" />
+                  <el-switch :data-testid="`party-client-${index}`" v-model="party.isClient" />
                 </el-form-item>
               </el-col>
 
@@ -465,7 +469,7 @@
                   :prop="`parties.${index}.attribute`"
                   :rules="{ required: true, message: '请选择属性', trigger: 'change' }"
                 >
-                  <el-select v-model="party.attribute" placeholder="请选择属性">
+                  <el-select :data-testid="`party-role-${index}`" v-model="party.attribute" placeholder="请选择属性">
                     <el-option v-for="role in currentPartyRoleOptions" :key="role.value" :label="role.label" :value="role.value" />
                   </el-select>
                 </el-form-item>
@@ -481,6 +485,7 @@
                   ]"
                 >
                   <el-select
+                    :data-testid="`party-name-${index}`"
                     v-model="party.name"
                     filterable
                     allow-create
@@ -613,7 +618,7 @@
           <el-row :gutter="20">
             <el-col :span="24">
               <el-form-item label="收费方式" prop="feeMethod">
-                <el-radio-group v-model="formData.feeMethod">
+                <el-radio-group data-testid="case-fee-method" v-model="formData.feeMethod">
                   <el-radio
                     v-for="method in currentFeeMethods"
                     :key="method"
@@ -628,6 +633,7 @@
             <el-col :span="12">
               <el-form-item label="涉案标的(万元)" prop="amount">
                 <el-input-number
+                  data-testid="case-amount"
                   v-model="formData.amount"
                   :min="0"
                   :precision="2"
@@ -641,6 +647,7 @@
             <el-col :span="12">
               <el-form-item label="代理费(元)" prop="lawyerFee">
                 <el-input-number
+                  data-testid="case-lawyer-fee"
                   v-model="formData.lawyerFee"
                   :min="0"
                   :precision="2"
@@ -654,6 +661,7 @@
             <el-col v-if="isRiskFee" :span="12">
               <el-form-item label="风险费用(元)" prop="riskFee">
                 <el-input-number
+                  data-testid="case-risk-fee"
                   v-model="formData.riskFee"
                   :min="0"
                   :precision="2"
@@ -667,6 +675,7 @@
             <el-col v-if="isRiskFee" :span="12">
               <el-form-item label="风险比例(%)" prop="riskRatio">
                 <el-input-number
+                  data-testid="case-risk-ratio"
                   v-model="formData.riskRatio"
                   :min="0"
                   :max="18"
@@ -706,6 +715,7 @@
             <el-col :span="8">
               <el-form-item label="案源比例(%)" prop="allocation.sourceRatio">
                 <el-input-number
+                  data-testid="case-allocation-source"
                   v-model="formData.allocation.sourceRatio"
                   :min="0"
                   :max="100"
@@ -719,6 +729,7 @@
             <el-col :span="8">
               <el-form-item label="部门比例(%)" prop="allocation.departmentRatio">
                 <el-input-number
+                  data-testid="case-allocation-department"
                   v-model="formData.allocation.departmentRatio"
                   :min="0"
                   :max="100"
@@ -732,6 +743,7 @@
             <el-col :span="8">
               <el-form-item label="律所比例(%)" prop="allocation.firmRatio">
                 <el-input-number
+                  data-testid="case-allocation-firm"
                   v-model="formData.allocation.firmRatio"
                   :min="0"
                   :max="100"

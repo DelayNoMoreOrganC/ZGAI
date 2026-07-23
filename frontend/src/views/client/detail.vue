@@ -23,7 +23,7 @@
           <el-icon><Edit /></el-icon>
           编辑
         </el-button>
-        <el-button v-if="canCreateCase" type="primary" @click="handleCreateCase">
+        <el-button data-testid="client-create-case" v-if="canCreateCase" type="primary" @click="handleCreateCase">
           <el-icon><Plus /></el-icon>
           新建案件
         </el-button>
