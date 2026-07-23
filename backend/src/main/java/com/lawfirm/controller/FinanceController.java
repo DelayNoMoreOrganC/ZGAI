@@ -23,6 +23,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.validation.Valid;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -303,7 +304,7 @@ public class FinanceController {
      */
     @PostMapping("/invoices")
     @AuditLog(value = "发起开票申请", operationType = "CREATE", logParams = false)
-    public Result<InvoiceDTO> createInvoice(@RequestBody InvoiceDTO dto) {
+    public Result<InvoiceDTO> createInvoice(@Valid @RequestBody InvoiceDTO dto) {
         try {
             if (dto.getCaseId() != null) {
                 assertCaseVisible(dto.getCaseId());
@@ -373,7 +374,7 @@ public class FinanceController {
      */
     @PutMapping("/invoices/{id}")
     @AuditLog(value = "修改开票申请", operationType = "UPDATE", logParams = false)
-    public Result<InvoiceDTO> updateInvoice(@PathVariable Long id, @RequestBody InvoiceDTO dto) {
+    public Result<InvoiceDTO> updateInvoice(@PathVariable Long id, @Valid @RequestBody InvoiceDTO dto) {
         try {
             if (dto.getCaseId() != null) {
                 assertCaseVisible(dto.getCaseId());

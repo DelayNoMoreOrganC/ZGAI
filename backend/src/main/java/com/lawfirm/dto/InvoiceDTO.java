@@ -55,7 +55,7 @@ public class InvoiceDTO {
 
     private Long cashierId;
 
-    private String invoiceFilePath;
+    private boolean feedbackFileAvailable;
 
     private String status = "PENDING";
 

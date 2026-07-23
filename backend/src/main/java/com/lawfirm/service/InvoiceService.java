@@ -30,6 +30,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -52,6 +53,8 @@ public class InvoiceService {
     private static final String STATUS_PENDING = "PENDING";
     private static final String STATUS_FEEDBACK_UPLOADED = "FEEDBACK_UPLOADED";
     private static final String STATUS_COMPLETED = "COMPLETED";
+    private static final long MAX_FEEDBACK_FILE_SIZE = 50L * 1024 * 1024;
+    private static final Set<String> ALLOWED_FEEDBACK_EXTENSIONS = Set.of("pdf", "ofd", "jpg", "jpeg", "png");
 
     /**
      * 创建开票记录
@@ -345,7 +348,7 @@ public class InvoiceService {
         dto.setBankAccount(invoice.getBankAccount());
         dto.setApplicantId(invoice.getApplicantId());
         dto.setCashierId(invoice.getCashierId());
-        dto.setInvoiceFilePath(invoice.getInvoiceFilePath());
+        dto.setFeedbackFileAvailable(StringUtils.hasText(invoice.getInvoiceFilePath()));
         dto.setStatus(invoice.getStatus());
         dto.setCreatedAt(invoice.getCreatedAt());
         dto.setUpdatedAt(invoice.getUpdatedAt());
@@ -427,7 +430,7 @@ public class InvoiceService {
         todo.setTitle("电子发票已开具：" + invoice.getTitle());
         todo.setDescription("发票号码：" + invoice.getInvoiceNumber()
                 + "；开票日期：" + invoice.getBillingDate()
-                + "；电子发票文件：" + (StringUtils.hasText(invoice.getInvoiceFilePath()) ? invoice.getInvoiceFilePath() : "未上传"));
+                + "；电子发票文件：已上传，请进入财务管理下载");
         todo.setStatus(STATUS_PENDING);
         todo.setPriority("NORMAL");
         todo.setAssigneeId(invoice.getApplicantId());
@@ -446,8 +449,10 @@ public class InvoiceService {
     }
 
     private String saveInvoiceFile(Long invoiceId, MultipartFile file) {
+        validateFeedbackFile(file);
         try {
-            String filename = System.currentTimeMillis() + "_" + StringUtils.cleanPath(file.getOriginalFilename());
+            String originalName = StringUtils.getFilename(file.getOriginalFilename());
+            String filename = System.currentTimeMillis() + "_" + StringUtils.cleanPath(originalName);
             Path directory = Paths.get(uploadPath)
                     .toAbsolutePath()
                     .normalize()
@@ -462,6 +467,21 @@ public class InvoiceService {
             return target.toString();
         } catch (IOException e) {
             throw new IllegalArgumentException("电子发票上传失败");
+        }
+    }
+
+    private void validateFeedbackFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("请上传电子发票反馈文件");
+        }
+        if (file.getSize() > MAX_FEEDBACK_FILE_SIZE) {
+            throw new IllegalArgumentException("电子发票反馈文件不能超过50MB");
+        }
+        String originalName = StringUtils.getFilename(file.getOriginalFilename());
+        String extension = StringUtils.getFilenameExtension(originalName);
+        if (!StringUtils.hasText(extension)
+                || !ALLOWED_FEEDBACK_EXTENSIONS.contains(extension.toLowerCase())) {
+            throw new IllegalArgumentException("电子发票反馈文件仅支持PDF、OFD、JPG和PNG格式");
         }
     }
 

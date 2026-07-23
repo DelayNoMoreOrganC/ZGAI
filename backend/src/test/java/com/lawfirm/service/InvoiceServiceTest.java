@@ -2,6 +2,7 @@ package com.lawfirm.service;
 
 import com.lawfirm.dto.InvoiceDTO;
 import com.lawfirm.entity.Invoice;
+import com.lawfirm.entity.Todo;
 import com.lawfirm.entity.User;
 import com.lawfirm.repository.CaseRepository;
 import com.lawfirm.repository.InvoiceRepository;
@@ -17,6 +18,7 @@ import org.springframework.beans.MutablePropertyValues;
 import org.springframework.validation.DataBinder;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.math.BigDecimal;
@@ -27,7 +29,9 @@ import java.util.Collections;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -40,6 +44,7 @@ class InvoiceServiceTest {
 
     private InvoiceRepository invoiceRepository;
     private UserRepository userRepository;
+    private TodoRepository todoRepository;
     private UserPermissionService userPermissionService;
     private InvoiceService service;
 
@@ -47,12 +52,13 @@ class InvoiceServiceTest {
     void setUp() {
         invoiceRepository = mock(InvoiceRepository.class);
         userRepository = mock(UserRepository.class);
+        todoRepository = mock(TodoRepository.class);
         userPermissionService = mock(UserPermissionService.class);
         service = new InvoiceService(
                 invoiceRepository,
                 mock(CaseRepository.class),
                 userRepository,
-                mock(TodoRepository.class),
+                todoRepository,
                 userPermissionService);
     }
 
@@ -167,9 +173,33 @@ class InvoiceServiceTest {
         var result = service.issueInvoice(15L, dto, file, 8L);
 
         assertEquals("FEEDBACK_UPLOADED", result.getStatus());
-        Path stored = Path.of(result.getInvoiceFilePath());
+        assertTrue(result.isFeedbackFileAvailable());
+        Path stored = Path.of(pending.getInvoiceFilePath());
         assertEquals(tempDir.toAbsolutePath(), stored.getParent().getParent().getParent());
         assertEquals("%PDF-test", Files.readString(stored));
+        ArgumentCaptor<Todo> todoCaptor = ArgumentCaptor.forClass(Todo.class);
+        verify(todoRepository).save(todoCaptor.capture());
+        assertTrue(todoCaptor.getValue().getDescription().contains("进入财务管理下载"));
+        assertFalse(todoCaptor.getValue().getDescription().contains(tempDir.toString()));
+    }
+
+    @Test
+    void financeFeedbackRejectsUnsupportedExecutableFile() {
+        User finance = user(8L, "财务甲", "财务管理");
+        Invoice pending = invoice(17L, 7L);
+        InvoiceDTO dto = new InvoiceDTO();
+        dto.setInvoiceNumber("INV-2026-002");
+        dto.setBillingDate(LocalDate.of(2026, 7, 24));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "invoice.exe", "application/octet-stream", "binary".getBytes());
+        when(userRepository.findById(8L)).thenReturn(Optional.of(finance));
+        when(invoiceRepository.findById(17L)).thenReturn(Optional.of(pending));
+        when(userPermissionService.hasPermission(finance, "INVOICE_PROCESS")).thenReturn(true);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.issueInvoice(17L, dto, file, 8L));
+
+        assertEquals("电子发票反馈文件仅支持PDF、OFD、JPG和PNG格式", error.getMessage());
     }
 
     private User user(Long id, String username, String position) {

@@ -200,7 +200,7 @@ cd backend
 JAVA_HOME=/opt/homebrew/opt/openjdk@11 /opt/homebrew/opt/maven/bin/mvn test
 ```
 
-当前基线：291 项测试通过（2026-07-24 全量复验）。
+当前基线：293 项测试通过（2026-07-24 全量复验）。
 
 完整员工档案接口 `GET /api/users`、`GET /api/users/{id}` 需要 `USER_VIEW`。案件主办、案源人、审批人和日程参与人等业务选择器统一调用 `GET /api/users/options`，只返回在职人员的 ID、姓名、部门和身份类别，不返回账号、电话、邮箱、角色或登录信息。
 
@@ -239,7 +239,7 @@ ZGAI_FINANCE_USERNAME="$FINANCE_USER" ZGAI_FINANCE_PASSWORD="$FINANCE_PASSWORD" 
 npm run test:e2e:roles
 ```
 
-客户、立案两级审批、案件文件和快速用印闭环会写入数据，只能在隔离库中运行，并必须显式设置 `ZGAI_E2E_CONFIRM=RUN_BROWSER_WRITE_E2E`：
+客户、立案两级审批、案件文件、快速用印和发票反馈锁定闭环会写入数据，只能在隔离库中运行，并必须显式设置 `ZGAI_E2E_CONFIRM=RUN_BROWSER_WRITE_E2E`：
 
 ```bash
 cd frontend
@@ -249,10 +249,11 @@ ZGAI_E2E_FRONTEND_URL=http://127.0.0.1:3018 \
 ZGAI_LAWYER_USERNAME="$LAWYER_USER" ZGAI_LAWYER_PASSWORD="$LAWYER_PASSWORD" \
 ZGAI_ADMINISTRATIVE_USERNAME="$ADMIN_USER" ZGAI_ADMINISTRATIVE_PASSWORD="$ADMIN_PASSWORD" \
 ZGAI_DIRECTOR_USERNAME="$DIRECTOR_USER" ZGAI_DIRECTOR_PASSWORD="$DIRECTOR_PASSWORD" \
+ZGAI_FINANCE_USERNAME="$FINANCE_USER" ZGAI_FINANCE_PASSWORD="$FINANCE_PASSWORD" \
 npm run test:e2e:filing -- --project=desktop-chrome
 ```
 
-`scripts/setup-e2e-personas.sh` 可在全新隔离库中幂等创建/校准四类虚构账号，要求 `ZGAI_E2E_ENVIRONMENT=ISOLATED` 和显式确认值 `PROVISION_PERSONAS`。当前基线为四角色桌面/手机共 8 项与“客户 → 立案 → 文件 → 快速用印”写入闭环 1 项通过；行政下载用印文件后会校验 SHA-256，完成后还会验证申请人不能撤回。安装 Playwright 后 `npm audit` 仍报告 4 个中等和 5 个高危依赖问题，需单独评估升级，不应在业务回归提交中盲目执行破坏性 `npm audit fix --force`。
+`scripts/setup-e2e-personas.sh` 可在全新隔离库中幂等创建/校准四类虚构账号，要求 `ZGAI_E2E_ENVIRONMENT=ISOLATED` 和显式确认值 `PROVISION_PERSONAS`。当前基线为四角色桌面/手机共 8 项与“客户 → 立案 → 文件 → 快速用印 → 发票申请/修订 → 财务反馈 → 申请人下载 → 完成锁定”写入闭环 1 项通过；用印和发票下载均校验 SHA-256，流程同时验证反馈后的申请人编辑/删除限制及完成锁定。安装 Playwright 后 `npm audit` 仍报告 4 个中等和 5 个高危依赖问题，需单独评估升级，不应在业务回归提交中盲目执行破坏性 `npm audit fix --force`。
 
 ### 归档 Worker
 
@@ -318,7 +319,7 @@ ZGAI_FINANCE_PASSWORD="$FINANCE_PASSWORD" \
 
 该脚本校验律师发起、本人及无权账号越权拒绝、主任全局只读、行政用印审批、财务反馈与完成锁定，以及申请人下载文件的 SHA-256 一致性。脚本不会输出 Token 或密码，临时响应在退出时自动清理。
 
-2026-07-24 已在独立端口、独立 H2 和临时文件根目录中使用五类虚构账号完成客户、立案利冲、两级审批、建档、文件、快速用印和发票 API 闭环。Playwright 另外完成四角色桌面/手机工作台、行政/主任审批页、财务开票页以及“客户 → 立案 → 行政初审 → 主任终审 → 正式案号/立案日 → 案件文件 → 快速用印 → 行政同意 → 律师回看”写入闭环。该结果验证代码基线，但不替代真实员工账号、PostgreSQL、目标 NAS 或尚未覆盖页面的上线验收。
+2026-07-24 已在独立端口、独立 H2 和临时文件根目录中使用五类虚构账号完成客户、立案利冲、两级审批、建档、文件、快速用印和发票 API 闭环。Playwright 另外完成四角色桌面/手机工作台、行政/主任审批页、财务开票页以及“客户 → 立案 → 行政初审 → 主任终审 → 正式案号/立案日 → 案件文件 → 快速用印 → 行政同意 → 发票申请/修订 → 财务反馈 → 申请人下载 → 完成锁定”写入闭环。发票反馈接口和待办仅返回可用状态，不暴露服务器绝对路径。该结果验证代码基线，但不替代真实员工账号、PostgreSQL、目标 NAS 或尚未覆盖页面的上线验收。
 
 ## 数据与安全边界
 

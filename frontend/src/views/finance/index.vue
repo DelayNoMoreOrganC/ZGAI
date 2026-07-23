@@ -183,7 +183,7 @@
       <el-tab-pane label="发票申请" name="invoices">
         <div class="tab-content">
           <div class="toolbar">
-            <el-button type="primary" @click="handleAddInvoice" class="add-btn">
+            <el-button data-testid="invoice-create-open" type="primary" @click="handleAddInvoice" class="add-btn">
               <el-icon><Plus /></el-icon>
               发起申请
             </el-button>
@@ -193,7 +193,11 @@
             :header-cell-style="{ background: '#f0f5ff', color: '#333', fontWeight: '600' }"
             :row-class-name="tableRowClassName">
             <el-table-column prop="contractNo" label="合同号" width="130" />
-            <el-table-column prop="title" label="顾客名称" min-width="180" show-overflow-tooltip />
+            <el-table-column prop="title" label="顾客名称" min-width="180" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span :data-testid="`invoice-row-${row.id}`">{{ row.title }}</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="invoiceType" label="发票种类" width="150">
               <template #default="{ row }">
                 <el-tag>{{ formatInvoiceType(row.invoiceType) }}</el-tag>
@@ -223,14 +227,14 @@
             <el-table-column label="操作" width="190">
               <template #default="{ row }">
                 <template v-if="isFinanceUser">
-                  <el-button link type="primary" size="small" @click="handleViewInvoice(row)">查看</el-button>
-                  <el-button v-if="row.status !== 'COMPLETED'" link type="primary" size="small" @click="handleIssueInvoice(row)">开票反馈</el-button>
-                  <el-button v-if="['ISSUED', 'FEEDBACK_UPLOADED'].includes(row.status) && row.invoiceFilePath" link type="success" size="small" @click="handleCompleteInvoice(row)">完成开票</el-button>
+                  <el-button :data-testid="`invoice-view-${row.id}`" link type="primary" size="small" @click="handleViewInvoice(row)">查看</el-button>
+                  <el-button v-if="row.status !== 'COMPLETED'" :data-testid="`invoice-feedback-${row.id}`" link type="primary" size="small" @click="handleIssueInvoice(row)">开票反馈</el-button>
+                  <el-button v-if="['ISSUED', 'FEEDBACK_UPLOADED'].includes(row.status) && row.feedbackFileAvailable" :data-testid="`invoice-complete-${row.id}`" link type="success" size="small" @click="handleCompleteInvoice(row)">完成开票</el-button>
                 </template>
                 <template v-else-if="isInvoiceApplicant(row)">
-                  <el-button v-if="row.status === 'PENDING'" link type="primary" size="small" @click="handleEditInvoice(row)">修改</el-button>
-                  <el-button v-if="row.status === 'PENDING'" link type="danger" size="small" @click="handleDeleteInvoice(row)">删除</el-button>
-                  <el-button v-if="row.invoiceFilePath" link type="primary" size="small" @click="handleDownloadInvoiceFile(row)">反馈文件</el-button>
+                  <el-button v-if="row.status === 'PENDING'" :data-testid="`invoice-edit-${row.id}`" link type="primary" size="small" @click="handleEditInvoice(row)">修改</el-button>
+                  <el-button v-if="row.status === 'PENDING'" :data-testid="`invoice-delete-${row.id}`" link type="danger" size="small" @click="handleDeleteInvoice(row)">删除</el-button>
+                  <el-button v-if="row.feedbackFileAvailable" :data-testid="`invoice-download-${row.id}`" link type="primary" size="small" @click="handleDownloadInvoiceFile(row)">反馈文件</el-button>
                 </template>
                 <el-button v-else link type="primary" size="small" @click="handleViewInvoice(row)">查看</el-button>
               </template>
@@ -374,14 +378,14 @@
     </el-dialog>
 
     <!-- 发票申请对话框 -->
-    <el-dialog v-model="invoiceDialogVisible" :title="editingInvoiceId ? '修改发票申请' : '发起发票申请'" width="min(760px, calc(100vw - 24px))">
+    <el-dialog v-model="invoiceDialogVisible" :title="editingInvoiceId ? '修改发票申请' : '发起发票申请'" width="min(760px, calc(100vw - 24px))" class="invoice-application-dialog">
       <el-form :model="invoiceForm" label-width="120px">
         <el-form-item label="合同号">
-          <el-input v-model="invoiceForm.contractNo" placeholder="如：2026民001" />
+          <el-input data-testid="invoice-contract-no" v-model="invoiceForm.contractNo" placeholder="如：2026民001" />
         </el-form-item>
 
         <el-form-item label="发票种类" required>
-          <el-select v-model="invoiceForm.invoiceType" placeholder="请选择发票种类" style="width: 100%">
+          <el-select data-testid="invoice-type" v-model="invoiceForm.invoiceType" placeholder="请选择发票种类" style="width: 100%">
             <el-option label="纸质普通发票" value="PAPER_NORMAL" />
             <el-option label="纸质专用发票" value="PAPER_SPECIAL" />
             <el-option label="电子普通发票" value="ELECTRONIC_NORMAL" />
@@ -390,15 +394,16 @@
         </el-form-item>
 
         <el-form-item label="顾客名称" required>
-          <el-input v-model="invoiceForm.title" placeholder="请输入顾客名称/发票抬头" />
+          <el-input data-testid="invoice-title" v-model="invoiceForm.title" placeholder="请输入顾客名称/发票抬头" />
         </el-form-item>
 
         <el-form-item label="发票金额" required>
-          <el-input-number v-model="invoiceForm.amount" :min="0" :precision="2" placeholder="请输入金额" style="width: 100%" />
+          <el-input-number data-testid="invoice-amount" v-model="invoiceForm.amount" :min="0" :precision="2" placeholder="请输入金额" style="width: 100%" />
         </el-form-item>
 
         <el-form-item label="关联案件">
           <el-select
+            data-testid="invoice-case"
             v-model="invoiceForm.caseId"
             filterable
             placeholder="请选择案件（可选）"
@@ -415,19 +420,19 @@
         </el-form-item>
 
         <el-form-item label="执行部门">
-          <el-input v-model="invoiceForm.executionDepartment" placeholder="请输入执行部门" />
+          <el-input data-testid="invoice-department" v-model="invoiceForm.executionDepartment" placeholder="请输入执行部门" />
         </el-form-item>
 
         <el-form-item label="案源人">
-          <el-input v-model="invoiceForm.sourceUserName" placeholder="请输入案源人" />
+          <el-input data-testid="invoice-source-user" v-model="invoiceForm.sourceUserName" placeholder="请输入案源人" />
         </el-form-item>
 
         <el-form-item label="发票内容">
-          <el-input v-model="invoiceForm.invoiceContent" placeholder="如：法律服务费" />
+          <el-input data-testid="invoice-content" v-model="invoiceForm.invoiceContent" placeholder="如：法律服务费" />
         </el-form-item>
 
         <el-form-item label="纳税人识别号">
-          <el-input v-model="invoiceForm.taxNumber" placeholder="请输入纳税人识别号/统一社会信用代码" />
+          <el-input data-testid="invoice-tax-number" v-model="invoiceForm.taxNumber" placeholder="请输入纳税人识别号/统一社会信用代码" />
         </el-form-item>
 
         <el-form-item label="地址、电话">
@@ -439,25 +444,25 @@
         </el-form-item>
 
         <el-form-item label="需备注内容">
-          <el-input v-model="invoiceForm.remark" type="textarea" :rows="3" placeholder="请输入发票备注内容" />
+          <el-input data-testid="invoice-remark" v-model="invoiceForm.remark" type="textarea" :rows="3" placeholder="请输入发票备注内容" />
         </el-form-item>
       </el-form>
 
       <template #footer>
         <el-button @click="invoiceDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmitInvoice">{{ editingInvoiceId ? '保存修改' : '提交申请' }}</el-button>
+        <el-button data-testid="invoice-submit" type="primary" @click="handleSubmitInvoice">{{ editingInvoiceId ? '保存修改' : '提交申请' }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 出纳开票反馈对话框 -->
-    <el-dialog v-model="issueDialogVisible" title="开票反馈" width="min(620px, calc(100vw - 24px))">
+    <el-dialog v-model="issueDialogVisible" title="开票反馈" width="min(620px, calc(100vw - 24px))" class="invoice-feedback-dialog">
       <el-form :model="issueForm" label-width="110px">
         <el-form-item label="顾客名称">
           <el-input v-model="issueForm.title" disabled />
         </el-form-item>
 
         <el-form-item label="发票号码" required>
-          <el-input v-model="issueForm.invoiceNumber" placeholder="请输入已开具发票号码" />
+          <el-input data-testid="invoice-feedback-number" v-model="issueForm.invoiceNumber" placeholder="请输入已开具发票号码" />
         </el-form-item>
 
         <el-form-item label="开票日期" required>
@@ -472,6 +477,7 @@
 
         <el-form-item label="电子发票">
           <el-upload
+            data-testid="invoice-feedback-file"
             drag
             :auto-upload="false"
             :limit="1"
@@ -492,12 +498,12 @@
 
       <template #footer>
         <el-button @click="issueDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmitIssue">确认反馈</el-button>
+        <el-button data-testid="invoice-feedback-submit" type="primary" @click="handleSubmitIssue">确认反馈</el-button>
       </template>
     </el-dialog>
 
     <!-- 发票申请详情 -->
-    <el-dialog v-model="invoiceDetailVisible" title="发票申请信息" width="min(720px, calc(100vw - 24px))">
+    <el-dialog v-model="invoiceDetailVisible" title="发票申请信息" width="min(720px, calc(100vw - 24px))" class="invoice-detail-dialog">
       <el-descriptions :column="2" border>
         <el-descriptions-item label="合同号">{{ selectedInvoice.contractNo || '-' }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{ formatInvoiceStatus(selectedInvoice.status) }}</el-descriptions-item>
@@ -517,7 +523,7 @@
       </el-descriptions>
       <template #footer>
         <el-button @click="invoiceDetailVisible = false">关闭</el-button>
-        <el-button v-if="selectedInvoice.invoiceFilePath" type="primary" @click="handleDownloadInvoiceFile(selectedInvoice)">下载反馈文件</el-button>
+        <el-button v-if="selectedInvoice.feedbackFileAvailable" type="primary" @click="handleDownloadInvoiceFile(selectedInvoice)">下载反馈文件</el-button>
       </template>
     </el-dialog>
   </div>
@@ -939,7 +945,7 @@ const handleSubmitIssue = async () => {
 }
 
 const handleCompleteInvoice = async (row) => {
-  if (!row.invoiceFilePath) {
+  if (!row.feedbackFileAvailable) {
     ElMessage.warning('请先上传电子发票反馈文件')
     return
   }
@@ -988,7 +994,7 @@ const handleViewInvoice = (row) => {
 }
 
 const handleDownloadInvoiceFile = async (row) => {
-  if (!row.invoiceFilePath) {
+  if (!row.feedbackFileAvailable) {
     ElMessage.warning('暂无反馈文件')
     return
   }

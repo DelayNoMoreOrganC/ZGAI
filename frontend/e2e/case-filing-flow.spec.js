@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto'
 const requiredEnvironment = [
   'ZGAI_LAWYER_USERNAME', 'ZGAI_LAWYER_PASSWORD',
   'ZGAI_ADMINISTRATIVE_USERNAME', 'ZGAI_ADMINISTRATIVE_PASSWORD',
-  'ZGAI_DIRECTOR_USERNAME', 'ZGAI_DIRECTOR_PASSWORD'
+  'ZGAI_DIRECTOR_USERNAME', 'ZGAI_DIRECTOR_PASSWORD',
+  'ZGAI_FINANCE_USERNAME', 'ZGAI_FINANCE_PASSWORD'
 ]
 
 const credentials = {
@@ -19,6 +20,10 @@ const credentials = {
   director: () => ({
     username: process.env.ZGAI_DIRECTOR_USERNAME,
     password: process.env.ZGAI_DIRECTOR_PASSWORD
+  }),
+  finance: () => ({
+    username: process.env.ZGAI_FINANCE_USERNAME,
+    password: process.env.ZGAI_FINANCE_PASSWORD
   })
 }
 
@@ -56,6 +61,12 @@ const readDownload = async (download) => {
   return Buffer.concat(chunks)
 }
 
+const invoiceRowFor = (page, title) => page
+  .locator('[data-testid^="invoice-row-"]')
+  .filter({ hasText: title })
+  .first()
+  .locator('xpath=ancestor::tr')
+
 const approveFiling = async (page, caseName, comments) => {
   await page.goto('/approval')
   const card = page.locator('.filing-card').filter({ hasText: caseName }).first()
@@ -81,9 +92,9 @@ test.beforeAll(() => {
 })
 
 test.describe.configure({ mode: 'serial' })
-test.setTimeout(120_000)
+test.setTimeout(180_000)
 
-test('律师建客户并提交立案，完成两级审批、案件文件上传和快速用印', async ({ browser }) => {
+test('律师建客户立案并完成案件文件、快速用印和发票反馈锁定', async ({ browser }) => {
   const suffix = Date.now().toString().slice(-8)
   const clientName = `E2E客户-${suffix}有限公司`
   const opponentName = `E2E相对方-${suffix}`
@@ -237,6 +248,104 @@ test('律师建客户并提交立案，完成两级审批、案件文件上传�
   await expect(lawyerSealDrawer.getByText('同意用印', { exact: true }).first()).toBeVisible()
   await expect(lawyerSealDrawer.getByText('文件内容及用印用途核对无误，同意用印。', { exact: true }).first()).toBeVisible()
 
+  await lawyerPage.goto('/finance/invoices')
+  const deletedInvoiceTitle = `E2E待删除开票-${suffix}`
+  await lawyerPage.getByTestId('invoice-create-open').click()
+  let invoiceDialog = lawyerPage.locator('.invoice-application-dialog')
+  await inputFor(lawyerPage, 'invoice-title').fill(deletedInvoiceTitle)
+  await fillNumber(lawyerPage, 'invoice-amount', 100)
+  await invoiceDialog.getByTestId('invoice-submit').click()
+  await expect(lawyerPage.getByText('发票申请已提交', { exact: true })).toBeVisible()
+  let deletedInvoiceRow = invoiceRowFor(lawyerPage, deletedInvoiceTitle)
+  await expect(deletedInvoiceRow).toContainText('待审查')
+  await deletedInvoiceRow.getByRole('button', { name: '删除', exact: true }).click()
+  const deleteDialog = lawyerPage.locator('.el-message-box')
+  await deleteDialog.getByRole('button', { name: '删除', exact: true }).click()
+  await expect(lawyerPage.getByText('开票申请已删除', { exact: true })).toBeVisible()
+  await expect(lawyerPage.locator('[data-testid^="invoice-row-"]').filter({ hasText: deletedInvoiceTitle })).toHaveCount(0)
+
+  const invoiceTitle = `${clientName}开票申请`
+  const revisedRemark = `E2E修订后备注-${suffix}`
+  const invoiceNumber = `E2E-INV-${suffix}`
+  const invoiceBody = Buffer.from(`ZGAI invoice feedback browser fixture ${suffix}\n`, 'utf8')
+  await lawyerPage.getByTestId('invoice-create-open').click()
+  invoiceDialog = lawyerPage.locator('.invoice-application-dialog')
+  await inputFor(lawyerPage, 'invoice-contract-no').fill(`HT-${suffix}`)
+  await inputFor(lawyerPage, 'invoice-title').fill(invoiceTitle)
+  await fillNumber(lawyerPage, 'invoice-amount', 10000)
+  await lawyerPage.getByTestId('invoice-case').click()
+  await lawyerPage.getByRole('option').filter({ hasText: caseName }).last().click()
+  await inputFor(lawyerPage, 'invoice-department').fill('民商法务部')
+  await inputFor(lawyerPage, 'invoice-source-user').fill('验收律师')
+  await inputFor(lawyerPage, 'invoice-tax-number').fill(`91440600${suffix}`)
+  await textareaFor(lawyerPage, 'invoice-remark').fill('初始备注')
+  await invoiceDialog.getByTestId('invoice-submit').click()
+  await expect(lawyerPage.getByText('发票申请已提交', { exact: true })).toBeVisible()
+
+  let invoiceRow = invoiceRowFor(lawyerPage, invoiceTitle)
+  await expect(invoiceRow).toContainText('待审查')
+  await invoiceRow.getByRole('button', { name: '修改', exact: true }).click()
+  invoiceDialog = lawyerPage.locator('.invoice-application-dialog')
+  await fillNumber(lawyerPage, 'invoice-amount', 12600)
+  await textareaFor(lawyerPage, 'invoice-remark').fill(revisedRemark)
+  await invoiceDialog.getByTestId('invoice-submit').click()
+  await expect(lawyerPage.getByText('发票申请已修改', { exact: true })).toBeVisible()
+  invoiceRow = invoiceRowFor(lawyerPage, invoiceTitle)
+  await expect(invoiceRow).toContainText('¥12,600')
+
+  const financeContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  const financePage = await financeContext.newPage()
+  await login(financePage, credentials.finance())
+  await financePage.goto('/finance/invoices')
+  let financeInvoiceRow = invoiceRowFor(financePage, invoiceTitle)
+  await expect(financeInvoiceRow).toContainText('¥12,600')
+  await financeInvoiceRow.getByRole('button', { name: '查看', exact: true }).click()
+  const invoiceDetailDialog = financePage.locator('.invoice-detail-dialog')
+  await expect(invoiceDetailDialog).toContainText(revisedRemark)
+  await expect(invoiceDetailDialog).toContainText(caseName)
+  await expect(invoiceDetailDialog).not.toContainText('/private/tmp')
+  await invoiceDetailDialog.getByRole('button', { name: '关闭', exact: true }).click()
+
+  await financeInvoiceRow.getByRole('button', { name: '开票反馈', exact: true }).click()
+  const feedbackDialog = financePage.locator('.invoice-feedback-dialog')
+  await inputFor(financePage, 'invoice-feedback-number').fill(invoiceNumber)
+  await feedbackDialog.locator('input[type="file"]').setInputFiles({
+    name: `电子发票-${suffix}.pdf`,
+    mimeType: 'application/pdf',
+    buffer: invoiceBody
+  })
+  await feedbackDialog.getByTestId('invoice-feedback-submit').click()
+  await expect(financePage.getByText('开票反馈已提交', { exact: true })).toBeVisible()
+  financeInvoiceRow = invoiceRowFor(financePage, invoiceTitle)
+  await expect(financeInvoiceRow).toContainText('已反馈待完成')
+
+  await lawyerPage.goto('/finance/invoices')
+  invoiceRow = invoiceRowFor(lawyerPage, invoiceTitle)
+  await expect(invoiceRow).toContainText('已反馈待完成')
+  await expect(invoiceRow.getByRole('button', { name: '修改', exact: true })).toHaveCount(0)
+  await expect(invoiceRow.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
+  const invoiceDownloadPromise = lawyerPage.waitForEvent('download')
+  await invoiceRow.getByRole('button', { name: '反馈文件', exact: true }).click()
+  const downloadedInvoice = await readDownload(await invoiceDownloadPromise)
+  expect(sha256(downloadedInvoice)).toBe(sha256(invoiceBody))
+
+  await financeInvoiceRow.getByRole('button', { name: '完成开票', exact: true }).click()
+  const completeDialog = financePage.locator('.el-message-box')
+  await completeDialog.getByRole('button', { name: '确认完成', exact: true }).click()
+  await expect(financePage.getByText('开票记录已完成并锁定', { exact: true })).toBeVisible()
+  financeInvoiceRow = invoiceRowFor(financePage, invoiceTitle)
+  await expect(financeInvoiceRow).toContainText('已完成')
+  await expect(financeInvoiceRow.getByRole('button', { name: '开票反馈', exact: true })).toHaveCount(0)
+  await expect(financeInvoiceRow.getByRole('button', { name: '完成开票', exact: true })).toHaveCount(0)
+
+  await lawyerPage.goto('/finance/invoices')
+  invoiceRow = invoiceRowFor(lawyerPage, invoiceTitle)
+  await expect(invoiceRow).toContainText('已完成')
+  await expect(invoiceRow.getByRole('button', { name: '反馈文件', exact: true })).toBeVisible()
+  await expect(invoiceRow.getByRole('button', { name: '修改', exact: true })).toHaveCount(0)
+  await expect(invoiceRow.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
+
+  await financeContext.close()
   await directorContext.close()
   await administrativeContext.close()
   await lawyerContext.close()
