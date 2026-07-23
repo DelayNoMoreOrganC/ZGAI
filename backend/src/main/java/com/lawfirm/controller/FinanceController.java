@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.core.io.UrlResource;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
@@ -333,6 +334,8 @@ public class FinanceController {
             Long userId = securityUtils.getCurrentUserId();
             InvoiceDTO result = invoiceService.issueInvoice(id, dto, file, userId);
             return Result.success(result);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (IllegalArgumentException e) {
             log.error("开票反馈失败: {}", e.getMessage());
             return Result.error(e.getMessage());
@@ -353,6 +356,8 @@ public class FinanceController {
             Long userId = securityUtils.getCurrentUserId();
             InvoiceDTO result = invoiceService.completeInvoice(id, userId);
             return Result.success(result);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (IllegalArgumentException e) {
             log.error("完成开票失败: {}", e.getMessage());
             return Result.error(e.getMessage());
@@ -376,6 +381,8 @@ public class FinanceController {
             Long userId = securityUtils.getCurrentUserId();
             InvoiceDTO result = invoiceService.updateInvoice(id, dto, userId);
             return Result.success(result);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (IllegalArgumentException e) {
             log.error("更新开票记录失败: {}", e.getMessage());
             return Result.error(e.getMessage());
@@ -431,6 +438,8 @@ public class FinanceController {
         try {
             InvoiceDTO result = invoiceService.getInvoiceById(id, securityUtils.getCurrentUserId());
             return Result.success(result);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (IllegalArgumentException e) {
             log.error("查询开票记录失败: {}", e.getMessage());
             return Result.error(e.getMessage());

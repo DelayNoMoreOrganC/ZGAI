@@ -13,6 +13,7 @@ import com.lawfirm.repository.PartyRepository;
 import com.lawfirm.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.util.Optional;
 import java.util.List;
@@ -68,7 +69,7 @@ class ClientAccessPolicyTest {
         when(userPermissionService.hasPermission(viewer, "CLIENT_VIEW_ALL")).thenReturn(true);
 
         assertTrue(service.canAccessClient(200L, 40L));
-        assertThrows(IllegalArgumentException.class, () -> service.assertClientEditable(200L, 40L));
+        assertThrows(AccessDeniedException.class, () -> service.assertClientEditable(200L, 40L));
     }
 
     @Test
@@ -96,7 +97,7 @@ class ClientAccessPolicyTest {
         when(userRepository.findById(52L)).thenReturn(Optional.of(departmentMember));
 
         assertTrue(service.canAccessClient(202L, 52L));
-        assertThrows(IllegalArgumentException.class, () -> service.assertClientEditable(202L, 52L));
+        assertThrows(AccessDeniedException.class, () -> service.assertClientEditable(202L, 52L));
     }
 
     @Test
@@ -129,6 +130,7 @@ class ClientAccessPolicyTest {
         when(userRepository.findById(62L)).thenReturn(Optional.of(outsider));
 
         org.junit.jupiter.api.Assertions.assertFalse(service.canAccessClient(203L, 62L));
+        assertThrows(AccessDeniedException.class, () -> service.getClientById(203L, 62L));
     }
 
     @Test

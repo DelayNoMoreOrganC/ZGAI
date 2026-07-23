@@ -90,7 +90,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 || "/auth/logout".equals(path)
                 || "/auth/current-user".equals(path)
                 || "/auth/change-password".equals(path)
-                || "/user/change-password".equals(path)
+                || "/users/change-password".equals(path)
                 || "/health".equals(path)
                 || path.startsWith("/error");
     }

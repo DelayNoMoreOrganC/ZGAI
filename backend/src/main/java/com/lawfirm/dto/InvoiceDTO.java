@@ -3,6 +3,7 @@ package com.lawfirm.dto;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import lombok.Data;
+import org.springframework.format.annotation.DateTimeFormat;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -35,6 +36,7 @@ public class InvoiceDTO {
 
     private String taxNumber;
 
+    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private LocalDate billingDate;
 
     private String executionDepartment;

@@ -51,7 +51,7 @@ assert_permission() {
   local actual
   actual="$(jq -r --arg permission "$permission" '.data.permissions | index($permission) != null' <<<"$current_user")"
   if [[ "$actual" != "$expected" ]]; then
-    echo "[失败] $label 的 $permission 预期为 $expected，实际为 $actual" >&2
+    echo "[失败] ${label} 的 ${permission} 预期为 ${expected}，实际为 ${actual}" >&2
     exit 1
   fi
 }
@@ -63,7 +63,7 @@ check_read_endpoint() {
   local response
   response="$(get_authenticated "$token" "$endpoint")"
   if [[ "$(jq -r '.code // empty' <<<"$response")" != "200" ]]; then
-    echo "[失败] $label：$(jq -c '.' <<<"$response")" >&2
+    echo "[失败] ${label}：$(jq -c '.' <<<"$response")" >&2
     exit 1
   fi
 }
@@ -94,7 +94,7 @@ check_persona() {
   check_read_endpoint "$label 审批" "$token" 'approval?page=1&size=1'
   check_read_endpoint "$label 发票" "$token" 'finance/invoices?page=0&size=1'
   check_read_endpoint "$label 知识库" "$token" 'knowledge?page=0&size=1'
-  echo "[通过] $label：账号、权限和五项核心只读接口"
+  echo "[通过] ${label}：账号、权限和五项核心只读接口"
 }
 
 check_persona "普通律师" "$ZGAI_LAWYER_USERNAME" "$ZGAI_LAWYER_PASSWORD" \

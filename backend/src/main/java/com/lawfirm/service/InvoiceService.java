@@ -10,10 +10,12 @@ import com.lawfirm.repository.TodoRepository;
 import com.lawfirm.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -43,6 +45,9 @@ public class InvoiceService {
     private final UserRepository userRepository;
     private final TodoRepository todoRepository;
     private final UserPermissionService userPermissionService;
+
+    @Value("${file.upload-path:./uploads/}")
+    private String uploadPath;
 
     private static final String STATUS_PENDING = "PENDING";
     private static final String STATUS_FEEDBACK_UPLOADED = "FEEDBACK_UPLOADED";
@@ -93,7 +98,7 @@ public class InvoiceService {
         boolean applicant = invoice.getApplicantId() != null && invoice.getApplicantId().equals(currentUserId);
         boolean financeUser = canProcessInvoices(currentUser);
         if (!applicant && !financeUser) {
-            throw new IllegalArgumentException("无权修改该开票申请");
+            throw new AccessDeniedException("无权修改该开票申请");
         }
         if (STATUS_COMPLETED.equals(invoice.getStatus())) {
             throw new IllegalArgumentException("开票已完成，申请记录已锁定");
@@ -137,7 +142,7 @@ public class InvoiceService {
         boolean applicant = invoice.getApplicantId() != null && invoice.getApplicantId().equals(currentUserId);
         boolean financeUser = canViewAllInvoices(currentUser);
         if (!applicant && !financeUser) {
-            throw new IllegalArgumentException("无权查看该反馈文件");
+            throw new AccessDeniedException("无权查看该反馈文件");
         }
         if (!StringUtils.hasText(invoice.getInvoiceFilePath())) {
             throw new IllegalArgumentException("暂无反馈文件");
@@ -160,7 +165,7 @@ public class InvoiceService {
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new IllegalArgumentException("当前用户不存在"));
         if (!canProcessInvoices(currentUser)) {
-            throw new IllegalArgumentException("仅财务管理人员可处理开票申请");
+            throw new AccessDeniedException("仅财务管理人员可处理开票申请");
         }
         if (STATUS_COMPLETED.equals(invoice.getStatus())) {
             throw new IllegalArgumentException("开票已完成，申请记录已锁定");
@@ -218,7 +223,7 @@ public class InvoiceService {
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new IllegalArgumentException("当前用户不存在"));
         if (!canProcessInvoices(currentUser)) {
-            throw new IllegalArgumentException("仅财务管理人员可确认完成开票");
+            throw new AccessDeniedException("仅财务管理人员可确认完成开票");
         }
         if (STATUS_COMPLETED.equals(invoice.getStatus())) {
             return convertToDTO(invoice);
@@ -397,7 +402,7 @@ public class InvoiceService {
         if (canViewAllInvoices(currentUser) || currentUserId.equals(invoice.getApplicantId())) {
             return;
         }
-        throw new IllegalArgumentException("无权查看其他人员的开票申请");
+        throw new AccessDeniedException("无权查看其他人员的开票申请");
     }
 
     private void createCashierTodo(Invoice invoice, Long applicantId, Long cashierId) {
@@ -442,9 +447,16 @@ public class InvoiceService {
     private String saveInvoiceFile(Long invoiceId, MultipartFile file) {
         try {
             String filename = System.currentTimeMillis() + "_" + StringUtils.cleanPath(file.getOriginalFilename());
-            Path directory = Paths.get("uploads", "invoices", String.valueOf(invoiceId));
+            Path directory = Paths.get(uploadPath)
+                    .toAbsolutePath()
+                    .normalize()
+                    .resolve("invoices")
+                    .resolve(String.valueOf(invoiceId));
             Files.createDirectories(directory);
-            Path target = directory.resolve(filename);
+            Path target = directory.resolve(filename).normalize();
+            if (!target.startsWith(directory)) {
+                throw new IllegalArgumentException("电子发票文件名无效");
+            }
             file.transferTo(target.toFile());
             return target.toString();
         } catch (IOException e) {

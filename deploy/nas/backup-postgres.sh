@@ -26,7 +26,7 @@ fi
 
 LOCK_DIR="$ZGAI_BACKUPS/.postgres-backup.lock"
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  echo "已有备份任务运行中；若确认没有任务，请移除 $LOCK_DIR。" >&2
+  echo "已有备份任务运行中；若确认没有任务，请移除 ${LOCK_DIR}。" >&2
   exit 1
 fi
 cleanup_lock() { rmdir "$LOCK_DIR" 2>/dev/null || true; }

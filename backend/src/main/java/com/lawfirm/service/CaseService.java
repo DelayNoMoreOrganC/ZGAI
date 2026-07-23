@@ -19,6 +19,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.*;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -889,7 +890,7 @@ public class CaseService {
     @Transactional(readOnly = true)
     public void assertCaseVisible(Long caseId, Long currentUserId) {
         if (!canAccessCase(caseId, currentUserId)) {
-            throw new InvalidParameterException("caseId", "无权访问非本部门案件");
+            throw new AccessDeniedException("无权访问非本部门案件");
         }
     }
 
@@ -906,9 +907,9 @@ public class CaseService {
             throw new InvalidParameterException("caseId", "案件已结案或归档，案件信息已锁定");
         }
         if (isAdministrativeUser(currentUser)) {
-            throw new InvalidParameterException("caseId", "行政管理账号可查看全案，但无权直接修改案件信息");
+            throw new AccessDeniedException("行政管理账号可查看全案，但无权直接修改案件信息");
         }
-        throw new InvalidParameterException("caseId", "无权修改非本人或非本部门案件");
+        throw new AccessDeniedException("无权修改非本人或非本部门案件");
     }
 
     @Transactional(readOnly = true)
@@ -921,9 +922,9 @@ public class CaseService {
             return;
         }
         if (isAdministrativeUser(currentUser)) {
-            throw new InvalidParameterException("caseId", "行政管理账号可查看全案，但无权执行该案件操作");
+            throw new AccessDeniedException("行政管理账号可查看全案，但无权执行该案件操作");
         }
-        throw new InvalidParameterException("caseId", "无权操作非本人或非本部门案件");
+        throw new AccessDeniedException("无权操作非本人或非本部门案件");
     }
 
     private boolean isCaseEditableByUser(Long caseId, User currentUser) {

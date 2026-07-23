@@ -65,7 +65,7 @@ embedding_response="$(curl -fsS --max-time 60 "${auth_args[@]}" \
 }
 actual_embedding_dimension="$(jq -r '.data[0].embedding | length // 0' <<<"$embedding_response")"
 if [[ "$actual_embedding_dimension" != "$EXPECTED_DIMENSION" ]]; then
-  echo "Embedding 维度不匹配：期望 $EXPECTED_DIMENSION，实际 $actual_embedding_dimension" >&2
+  echo "Embedding 维度不匹配：期望 ${EXPECTED_DIMENSION}，实际 ${actual_embedding_dimension}" >&2
   exit 1
 fi
 echo "  Embedding 维度: $actual_embedding_dimension"
@@ -84,7 +84,7 @@ actual_qdrant_dimension="$(jq -r '
       then ($vectors | to_entries[0].value.size // 0)
     else 0 end' <<<"$collection_response")"
 if [[ "$actual_qdrant_dimension" != "$EXPECTED_DIMENSION" ]]; then
-  echo "Qdrant 维度不匹配：期望 $EXPECTED_DIMENSION，实际 $actual_qdrant_dimension" >&2
+  echo "Qdrant 维度不匹配：期望 ${EXPECTED_DIMENSION}，实际 ${actual_qdrant_dimension}" >&2
   exit 1
 fi
 echo "  Qdrant collection: $QDRANT_COLLECTION ($actual_qdrant_dimension 维)"

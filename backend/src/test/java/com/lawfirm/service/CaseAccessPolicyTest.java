@@ -24,6 +24,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.util.Collections;
 import java.util.List;
@@ -117,8 +118,8 @@ class CaseAccessPolicyTest {
         when(userRepository.findById(10L)).thenReturn(Optional.of(administrative));
 
         assertTrue(caseService.canAccessCase(100L, 10L));
-        assertThrows(InvalidParameterException.class, () -> caseService.assertCaseEditable(100L, 10L));
-        assertThrows(InvalidParameterException.class, () -> caseService.assertCaseManageable(100L, 10L));
+        assertThrows(AccessDeniedException.class, () -> caseService.assertCaseEditable(100L, 10L));
+        assertThrows(AccessDeniedException.class, () -> caseService.assertCaseManageable(100L, 10L));
     }
 
     @Test
@@ -146,7 +147,8 @@ class CaseAccessPolicyTest {
         when(caseMemberRepository.findByCaseIdAndDeletedFalse(102L)).thenReturn(Collections.emptyList());
 
         assertDoesNotThrow(() -> caseService.assertCaseEditable(102L, 20L));
-        assertThrows(InvalidParameterException.class, () -> caseService.assertCaseEditable(102L, 21L));
+        assertThrows(AccessDeniedException.class, () -> caseService.assertCaseVisible(102L, 21L));
+        assertThrows(AccessDeniedException.class, () -> caseService.assertCaseEditable(102L, 21L));
     }
 
     @Test
@@ -248,7 +250,7 @@ class CaseAccessPolicyTest {
         when(userRepository.findById(20L)).thenReturn(Optional.of(lawyer));
         when(caseMemberRepository.findByCaseIdAndDeletedFalse(202L)).thenReturn(Collections.emptyList());
 
-        assertThrows(InvalidParameterException.class,
+        assertThrows(AccessDeniedException.class,
                 () -> caseService.batchCloseCases(List.of(201L, 202L), 20L));
         verify(caseRepository, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
     }

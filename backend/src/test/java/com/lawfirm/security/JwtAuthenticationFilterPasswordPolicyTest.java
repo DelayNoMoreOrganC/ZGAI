@@ -67,6 +67,19 @@ class JwtAuthenticationFilterPasswordPolicyTest {
     }
 
     @Test
+    void allowsUserControllerPasswordEndpointWhilePasswordChangeIsRequired() throws Exception {
+        User user = authenticatedUser(true);
+        arrangeToken(user);
+        FilterChain chain = mock(FilterChain.class);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request("PUT", "/users/change-password"), response, chain);
+
+        assertEquals(200, response.getStatus());
+        verify(chain).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void allowsBusinessEndpointsAfterPasswordChange() throws Exception {
         User user = authenticatedUser(false);
         arrangeToken(user);

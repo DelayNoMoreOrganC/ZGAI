@@ -26,7 +26,7 @@ assert_success() {
   local code
   code="$(jq -r '.code // empty' <<<"$response")"
   if [[ "$code" != "200" ]]; then
-    echo "[失败] $name：$(jq -c '.' <<<"$response")" >&2
+    echo "[失败] ${name}：$(jq -c '.' <<<"$response")" >&2
     exit 1
   fi
   PASS_COUNT=$((PASS_COUNT + 1))

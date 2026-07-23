@@ -192,7 +192,7 @@ cd backend
 JAVA_HOME=/opt/homebrew/opt/openjdk@11 /opt/homebrew/opt/maven/bin/mvn test
 ```
 
-当前基线：281 项测试通过（2026-07-24 全量复验）。
+当前基线：285 项测试通过（2026-07-24 全量复验）。
 
 登录后可调用 `GET /api/ocr/health` 检查本地 OCR 能力。返回结果分别标识文字文档提取、图片 OCR 和扫描 PDF OCR 是否可用；缺少 Tesseract、`chi_sim/eng` 语言包或 pdftoppm 时会返回 `DEGRADED`，不会伪报服务正常。`POST /api/ocr/recognize` 只接受 PDF、DOCX、TXT、MD、PNG、JPG/JPEG，并受文件大小和 PDF 页数限制。
 
@@ -251,6 +251,8 @@ NAS 容器部署的 PostgreSQL 备份与离线恢复演练：
 恢复演练创建临时数据库并检查用户、案件、客户和审批核心表，不覆盖当前业务库。腾讯云快照或 NAS 快照不能替代该逻辑备份与恢复验证。
 
 角色冒烟测试需要通过环境变量提供普通律师、行政、主任和财务测试账号。不要在脚本或文档中写入密码。
+
+2026-07-24 已在独立端口、独立 H2 和临时文件根目录中使用五类虚构账号完成客户、立案利冲、两级审批、建档、文件、快速用印和发票闭环。该结果验证代码基线，但不替代真实员工账号、PostgreSQL 或目标 NAS 的上线验收。
 
 ## 数据与安全边界
 

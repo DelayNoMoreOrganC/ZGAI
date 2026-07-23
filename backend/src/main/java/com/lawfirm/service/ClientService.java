@@ -17,6 +17,7 @@ import com.lawfirm.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -131,7 +132,7 @@ public class ClientService {
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
         if (!canAccessClient(client, currentUser)) {
-            throw new IllegalArgumentException("无权访问非本部门相关客户");
+            throw new AccessDeniedException("无权访问非本部门相关客户");
         }
         ClientDTO dto = convertToDTO(client);
         boolean relationEditable = canEditClientByRelation(client, currentUser);
@@ -301,7 +302,7 @@ public class ClientService {
 
     public void assertClientVisible(Long clientId, Long currentUserId) {
         if (!canAccessClient(clientId, currentUserId)) {
-            throw new IllegalArgumentException("无权访问非本部门相关客户");
+            throw new AccessDeniedException("无权访问非本部门相关客户");
         }
     }
 
@@ -313,7 +314,7 @@ public class ClientService {
         if (canEditClientByRelation(client, currentUser)) {
             return;
         }
-        throw new IllegalArgumentException("仅案源人、承办人、主任或管理员可修改该客户");
+        throw new AccessDeniedException("仅案源人、承办人、主任或管理员可修改该客户");
     }
 
     private boolean canEditClientByRelation(Client client, User currentUser) {
