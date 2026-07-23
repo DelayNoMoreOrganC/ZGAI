@@ -200,7 +200,7 @@ cd backend
 JAVA_HOME=/opt/homebrew/opt/openjdk@11 /opt/homebrew/opt/maven/bin/mvn test
 ```
 
-当前基线：300 项测试通过（2026-07-24 全量复验）。
+当前基线：304 项测试通过（2026-07-24 全量复验）。必须使用 JDK 11；本机默认较新 JDK 可能在 Lombok 测试编译阶段失败。
 
 完整员工档案接口 `GET /api/users`、`GET /api/users/{id}` 需要 `USER_VIEW`。案件主办、案源人、审批人和日程参与人等业务选择器统一调用 `GET /api/users/options`，只返回在职人员的 ID、姓名、部门和身份类别，不返回账号、电话、邮箱、角色或登录信息。
 
@@ -253,7 +253,7 @@ ZGAI_FINANCE_USERNAME="$FINANCE_USER" ZGAI_FINANCE_PASSWORD="$FINANCE_PASSWORD" 
 npm run test:e2e:filing -- --project=desktop-chrome
 ```
 
-`scripts/setup-e2e-personas.sh` 可在全新隔离库中幂等创建/校准四类虚构账号，要求 `ZGAI_E2E_ENVIRONMENT=ISOLATED` 和显式确认值 `PROVISION_PERSONAS`。当前基线为四角色桌面/手机共 8 项与“客户 → 立案 → 中文图片 OCR → 候选案件 → 确认归案 → 快速用印 → 发票申请/修订 → 财务反馈 → 申请人下载 → 完成锁定”写入闭环 1 项通过；智能归案同时验证模型离线本地降级、暂存件所有权和财务写入拒绝，用印和发票下载均校验 SHA-256。安装 Playwright 后 `npm audit` 仍报告 4 个中等和 5 个高危依赖问题，需单独评估升级，不应在业务回归提交中盲目执行破坏性 `npm audit fix --force`。
+`scripts/setup-e2e-personas.sh` 可在全新隔离库中幂等创建/校准四类虚构账号，要求 `ZGAI_E2E_ENVIRONMENT=ISOLATED` 和显式确认值 `PROVISION_PERSONAS`。当前基线为四角色桌面/手机共 8 项与“客户 → 立案 → 中文图片 OCR → 确认归案 → 快速用印 → 发票闭环 → 结案 → 律师归档核对 → 行政复核 → 电子卷宗下载”写入闭环 1 项通过；同时验证财务无归档审批权限、模型离线本地降级、暂存件所有权、文件 SHA-256、页守恒和成功后案件锁定。安装 Playwright 后 `npm audit` 仍报告 4 个中等和 5 个高危依赖问题，需单独评估升级，不应在业务回归提交中盲目执行破坏性 `npm audit fix --force`。
 
 ### 归档 Worker
 
@@ -261,7 +261,7 @@ npm run test:e2e:filing -- --project=desktop-chrome
 PYTHONPATH=archive-worker python3 -m unittest discover -s archive-worker/tests -v
 ```
 
-当前基线：2 项生成测试通过，覆盖 PDF 页守恒/来源清单和图片 A4 等比转换。正式 NAS 仍需构建容器并使用脱敏民事卷宗完成浏览器闭环。
+当前基线：3 项测试通过，覆盖 PDF 页守恒/来源清单、图片 A4 等比转换和 TXT/MD 直接提取。隔离本地文件根目录的浏览器闭环已通过；正式 NAS 容器、脱敏真实卷宗、500 页和故障注入仍待验收。
 
 ### 部署配置
 
@@ -319,7 +319,7 @@ ZGAI_FINANCE_PASSWORD="$FINANCE_PASSWORD" \
 
 该脚本校验律师发起、本人及无权账号越权拒绝、主任全局只读、行政用印审批、财务反馈与完成锁定，以及申请人下载文件的 SHA-256 一致性。脚本不会输出 Token 或密码，临时响应在退出时自动清理。
 
-2026-07-24 已在独立端口、独立 H2 和临时文件根目录中使用五类虚构账号完成客户、立案利冲、两级审批、建档、文件、快速用印和发票 API 闭环。Playwright 另外完成四角色桌面/手机工作台、行政/主任审批页、财务开票页以及“客户 → 立案 → 行政初审 → 主任终审 → 正式案号/立案日 → 案件文件 → 快速用印 → 行政同意 → 发票申请/修订 → 财务反馈 → 申请人下载 → 完成锁定”写入闭环；同一流程还在 390×844 下验证律师客户详情、案件详情、案件 AI 助手，以及行政和 `MANAGER` 主任的案件详情访问。发票反馈接口和待办仅返回可用状态，不暴露服务器绝对路径。该结果验证代码基线，但不替代真实员工账号、PostgreSQL、目标 NAS 或尚未覆盖页面的上线验收。
+2026-07-24 已在独立端口、独立 H2 和临时文件根目录中使用虚构账号完成客户、立案利冲、两级审批、建档、智能归案、文件、快速用印、发票和民事电子卷宗闭环。Playwright 覆盖四角色桌面/手机工作台共 8 项，并以一条新案件完成律师结案与归档核对、财务审批拒绝、行政批准、PDF 下载和 `ARCHIVED` 锁定。生成卷宗为 A4 12 页，5 页源材料无缺页或重复，PDF 与 manifest 版本化写入且无暂存半成品。该结果验证代码基线，但不替代真实员工账号、PostgreSQL、目标 NAS、真实 LM Studio、脱敏卷宗或故障注入验收。
 
 ## 数据与安全边界
 

@@ -7,7 +7,7 @@ from pathlib import Path
 import fitz
 from PIL import Image
 
-from app.engine import _normalize_pdf, assemble_archive
+from app.engine import _normalize_pdf, analyze_archive, assemble_archive
 
 
 class ArchiveEngineTest(unittest.TestCase):
@@ -70,6 +70,24 @@ class ArchiveEngineTest(unittest.TestCase):
             if cleanup:
                 import shutil
                 shutil.rmtree(cleanup, ignore_errors=True)
+
+    def test_analysis_reads_plain_text_case_material_without_office_conversion(self):
+        source = self.root / "利冲审查报告.txt"
+        source.write_text("案件名称：测试案件\n经审查未发现利益冲突。", encoding="utf-8")
+
+        result = analyze_archive({
+            "jobId": 2,
+            "templateVersion": "CIVIL_V1",
+            "documents": [{
+                "caseDocumentId": 10,
+                "fileName": source.name,
+                "path": str(source),
+                "documentType": "利冲审查报告",
+            }],
+        })
+
+        self.assertEqual(1, result["documents"][0]["sourcePageCount"])
+        self.assertEqual(10, result["documents"][0]["caseDocumentId"])
 
 
 if __name__ == "__main__":

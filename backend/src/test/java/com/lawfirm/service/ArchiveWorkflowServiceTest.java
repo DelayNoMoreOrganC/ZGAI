@@ -3,6 +3,7 @@ package com.lawfirm.service;
 import com.lawfirm.dto.ArchiveJobCreateRequest;
 import com.lawfirm.dto.ArchiveReadinessDTO;
 import com.lawfirm.dto.ArchiveReviewRequest;
+import com.lawfirm.entity.ArchiveDocumentItem;
 import com.lawfirm.entity.ArchiveJob;
 import com.lawfirm.entity.Case;
 import com.lawfirm.entity.CaseDocument;
@@ -20,6 +21,7 @@ import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -35,7 +37,10 @@ class ArchiveWorkflowServiceTest {
     private CaseDocumentRepository caseDocumentRepository;
     private CaseService caseService;
     private CaseFileLibraryService fileLibraryService;
+    private CaseTimelineService timelineService;
+    private ArchiveWorkerClient workerClient;
     private SecurityUtils securityUtils;
+    private ArchiveTransactionRunner transactionRunner;
     private ArchiveWorkflowService service;
 
     @BeforeEach
@@ -49,12 +54,19 @@ class ArchiveWorkflowServiceTest {
         caseDocumentRepository = mock(CaseDocumentRepository.class);
         caseService = mock(CaseService.class);
         fileLibraryService = mock(CaseFileLibraryService.class);
+        timelineService = mock(CaseTimelineService.class);
+        workerClient = mock(ArchiveWorkerClient.class);
         securityUtils = mock(SecurityUtils.class);
+        transactionRunner = mock(ArchiveTransactionRunner.class);
+        when(transactionRunner.execute(any())).thenAnswer(invocation -> {
+            Supplier<?> callback = invocation.getArgument(0);
+            return callback.get();
+        });
         service = new ArchiveWorkflowService(
                 jobRepository, documentItemRepository, fieldRepository, outputRepository, auditRepository,
                 caseRepository, caseDocumentRepository, mock(PartyRepository.class), mock(UserRepository.class),
-                caseService, fileLibraryService, mock(CaseTimelineService.class), mock(ArchiveWorkerClient.class),
-                securityUtils);
+                caseService, fileLibraryService, timelineService, workerClient,
+                securityUtils, transactionRunner);
     }
 
     @Test
@@ -122,7 +134,7 @@ class ArchiveWorkflowServiceTest {
         Case caseEntity = civilCase("CLOSED");
         ArchiveJob job = job("ADMIN_REVIEW");
         when(securityUtils.hasAuthority("CASE_ARCHIVE_REVIEW")).thenReturn(true);
-        when(jobRepository.findById(3L)).thenReturn(Optional.of(job));
+        when(jobRepository.findActiveByIdForUpdate(3L)).thenReturn(Optional.of(job));
         when(caseRepository.findById(1L)).thenReturn(Optional.of(caseEntity));
         when(fieldRepository.findByJobIdAndDeletedFalseOrderByIdAsc(3L)).thenReturn(Collections.emptyList());
         when(documentItemRepository.findByJobIdAndDeletedFalseOrderByCatalogSeqAscSortOrderAsc(3L))
@@ -135,6 +147,49 @@ class ArchiveWorkflowServiceTest {
 
         assertTrue(error.getMessage().contains("例外理由"));
         verify(outputRepository, never()).save(any());
+    }
+
+    @Test
+    void assemblyFailureMarksJobFailedWithoutArchivingCase(@TempDir Path tempDir) throws Exception {
+        Case caseEntity = civilCase("CLOSED");
+        ArchiveJob job = job("ADMIN_REVIEW");
+        List<ArchiveDocumentItem> items = List.of(
+                archiveItem(31L, 101L, 3, "委托代理合同.pdf"),
+                archiveItem(32L, 102L, 4, "授权委托书.pdf"),
+                archiveItem(33L, 103L, 14, "民事判决书.pdf"));
+        List<CaseDocument> documents = new java.util.ArrayList<>();
+        for (ArchiveDocumentItem item : items) {
+            Path source = tempDir.resolve(item.getOriginalFileName());
+            Files.writeString(source, "archive fixture");
+            CaseDocument document = new CaseDocument();
+            document.setId(item.getCaseDocumentId());
+            document.setCaseId(1L);
+            document.setOriginalFileName(item.getOriginalFileName());
+            document.setFilePath(source.toString());
+            documents.add(document);
+        }
+        when(securityUtils.hasAuthority("CASE_ARCHIVE_REVIEW")).thenReturn(true);
+        when(jobRepository.findActiveByIdForUpdate(3L)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(3L)).thenReturn(Optional.of(job));
+        when(caseRepository.findById(1L)).thenReturn(Optional.of(caseEntity));
+        when(documentItemRepository.findByJobIdAndDeletedFalseOrderByCatalogSeqAscSortOrderAsc(3L))
+                .thenReturn(items);
+        when(fieldRepository.findByJobIdAndDeletedFalseOrderByIdAsc(3L)).thenReturn(Collections.emptyList());
+        when(caseDocumentRepository.findAllById(any())).thenReturn(documents);
+        when(fileLibraryService.ensureCaseFolder(caseEntity)).thenReturn(tempDir);
+        when(outputRepository.findByCaseIdAndDeletedFalseOrderByVersionNoDesc(1L)).thenReturn(Collections.emptyList());
+        when(workerClient.assemble(any())).thenThrow(new IllegalStateException("archive worker unavailable"));
+        ArchiveReviewRequest request = new ArchiveReviewRequest();
+        request.setDecision("APPROVE");
+
+        var result = service.review(3L, request, 22L);
+
+        assertEquals("FAILED", result.getStatus());
+        assertEquals("CLOSED", caseEntity.getStatus());
+        assertTrue(result.getErrorMessage().contains("archive worker unavailable"));
+        verify(outputRepository, never()).save(any());
+        verify(caseRepository, never()).save(any());
+        verify(timelineService, never()).createSystemTimeline(anyLong(), anyString(), anyString());
     }
 
     @Test
@@ -197,5 +252,19 @@ class ArchiveWorkflowServiceTest {
         value.setStatus(status);
         value.setDeleted(false);
         return value;
+    }
+
+    private ArchiveDocumentItem archiveItem(Long id, Long documentId, int catalogSeq, String fileName) {
+        ArchiveDocumentItem item = new ArchiveDocumentItem();
+        item.setId(id);
+        item.setJobId(3L);
+        item.setCaseDocumentId(documentId);
+        item.setOriginalFileName(fileName);
+        item.setCatalogSeq(catalogSeq);
+        item.setCatalogName("测试目录");
+        item.setIncluded(true);
+        item.setSortOrder(catalogSeq);
+        item.setDeleted(false);
+        return item;
     }
 }

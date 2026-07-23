@@ -1731,6 +1731,7 @@ public class CaseService {
         }
         for (Case caseEntity : cases) {
             caseEntity.setStatus(CaseStatus.CLOSED.getCode());
+            caseEntity.setCloseDate(LocalDate.now());
             caseEntity.setUpdatedAt(LocalDateTime.now());
             caseTimelineService.createSystemTimeline(
                     caseEntity.getId(),

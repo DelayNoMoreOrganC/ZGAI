@@ -43,6 +43,7 @@ public class ArchiveWorkflowService {
     private final CaseTimelineService caseTimelineService;
     private final ArchiveWorkerClient archiveWorkerClient;
     private final SecurityUtils securityUtils;
+    private final ArchiveTransactionRunner transactionRunner;
 
     private static final Map<Integer, String> CATALOG = createCatalog();
 
@@ -280,30 +281,55 @@ public class ArchiveWorkflowService {
         return toDTO(job, userId);
     }
 
-    @Transactional
     public ArchiveJobDTO review(Long jobId, ArchiveReviewRequest request, Long userId) {
         if (!canReview()) throw new AccessDeniedException("无归档复核权限");
-        ArchiveJob job = requireJob(jobId);
-        if (!ArchiveJobStatus.ADMIN_REVIEW.name().equals(job.getStatus())) {
-            throw new InvalidParameterException("status", "归档任务当前不在行政复核阶段");
-        }
         String decision = request.getDecision().trim().toUpperCase();
         if ("REJECT".equals(decision)) {
             if (!StringUtils.hasText(request.getReason())) {
                 throw new InvalidParameterException("reason", "驳回归档必须填写理由");
             }
-            job.setStatus(ArchiveJobStatus.REJECTED.name());
-            job.setReviewReason(request.getReason().trim());
-            job.setReviewedBy(userId);
-            job.setReviewedAt(LocalDateTime.now());
-            job.setCurrentStage("行政已驳回");
-            archiveJobRepository.save(job);
-            audit(jobId, userId, "REJECT", "行政驳回归档：" + safeAuditText(request.getReason()));
-            return toDTO(job, userId);
+            return transactionRunner.execute(() -> rejectReview(jobId, request, userId));
         }
         if (!"APPROVE".equals(decision)) {
             throw new InvalidParameterException("decision", "复核决定仅支持 APPROVE 或 REJECT");
         }
+
+        transactionRunner.execute(() -> prepareAssembly(jobId, request, userId));
+        try {
+            transactionRunner.execute(() -> {
+                ArchiveJob job = requireJobForUpdate(jobId);
+                if (!ArchiveJobStatus.ASSEMBLING.name().equals(job.getStatus())) {
+                    throw new InvalidParameterException("status", "归档任务当前不在电子卷宗生成阶段");
+                }
+                Case caseEntity = requireCase(job.getCaseId());
+                assembleAndComplete(job, caseEntity, fieldMap(jobId), userId);
+                return null;
+            });
+        } catch (RuntimeException e) {
+            transactionRunner.execute(() -> {
+                markAssemblyFailed(jobId, userId, e);
+                return null;
+            });
+        }
+        return transactionRunner.execute(() -> toDTO(requireJob(jobId), userId));
+    }
+
+    private ArchiveJobDTO rejectReview(Long jobId, ArchiveReviewRequest request, Long userId) {
+        ArchiveJob job = requireJobForUpdate(jobId);
+        requireAdministrativeReview(job);
+        job.setStatus(ArchiveJobStatus.REJECTED.name());
+        job.setReviewReason(request.getReason().trim());
+        job.setReviewedBy(userId);
+        job.setReviewedAt(LocalDateTime.now());
+        job.setCurrentStage("行政已驳回");
+        archiveJobRepository.save(job);
+        audit(jobId, userId, "REJECT", "行政驳回归档：" + safeAuditText(request.getReason()));
+        return toDTO(job, userId);
+    }
+
+    private Void prepareAssembly(Long jobId, ArchiveReviewRequest request, Long userId) {
+        ArchiveJob job = requireJobForUpdate(jobId);
+        requireAdministrativeReview(job);
 
         Case caseEntity = requireCase(job.getCaseId());
         Map<String, String> fields = fieldMap(jobId);
@@ -321,17 +347,24 @@ public class ArchiveWorkflowService {
         job.setCurrentStage("生成电子卷宗");
         archiveJobRepository.save(job);
         audit(jobId, userId, "APPROVE", missing.isEmpty() ? "行政复核通过" : "行政例外放行：" + safeAuditText(job.getExceptionReason()));
+        return null;
+    }
 
-        try {
-            assembleAndComplete(job, caseEntity, fields, userId);
-        } catch (RuntimeException e) {
+    private void markAssemblyFailed(Long jobId, Long userId, RuntimeException error) {
+        ArchiveJob job = requireJobForUpdate(jobId);
+        if (ArchiveJobStatus.ASSEMBLING.name().equals(job.getStatus())) {
             job.setStatus(ArchiveJobStatus.FAILED.name());
-            job.setErrorMessage(safeError(e));
+            job.setErrorMessage(safeError(error));
             job.setCurrentStage("电子卷宗生成失败");
             archiveJobRepository.save(job);
-            audit(jobId, userId, "ASSEMBLE_FAILED", safeError(e));
+            audit(jobId, userId, "ASSEMBLE_FAILED", safeError(error));
         }
-        return toDTO(job, userId);
+    }
+
+    private void requireAdministrativeReview(ArchiveJob job) {
+        if (!ArchiveJobStatus.ADMIN_REVIEW.name().equals(job.getStatus())) {
+            throw new InvalidParameterException("status", "归档任务当前不在行政复核阶段");
+        }
     }
 
     @Transactional(readOnly = true)
@@ -495,41 +528,35 @@ public class ArchiveWorkflowService {
         if (Files.exists(target)) throw new IllegalStateException("归档版本文件已存在，禁止覆盖");
         if (Files.exists(manifestTarget)) throw new IllegalStateException("归档版本清单已存在，禁止覆盖");
 
-        Map<String, Object> result = renderArchiveArtifact(job, caseEntity, fields, staging, true);
-        int gaps = defaultInt(result.get("gapPages"), -1);
-        int duplicates = defaultInt(result.get("duplicatePages"), -1);
-        String sha = sha256(staging);
-        String workerSha = stringValue(result.get("sha256"), "");
-        if (StringUtils.hasText(workerSha) && !sha.equalsIgnoreCase(workerSha)) {
-            deleteArtifact(staging);
-            throw new IllegalStateException("归档文件哈希校验失败");
-        }
-        Path stagingManifest = manifestPath(staging);
-        if (!Files.isRegularFile(stagingManifest)) {
-            deleteArtifact(staging);
-            throw new IllegalStateException("归档Worker未生成来源清单");
-        }
-        String manifestSha = sha256(stagingManifest);
         try {
-            Files.move(staging, target, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException e) {
-            try { Files.move(staging, target); } catch (Exception moveError) { throw new IllegalStateException("归档文件写入失败", moveError); }
-        } catch (Exception e) {
-            deleteArtifact(staging);
-            throw new IllegalStateException("归档文件写入失败", e);
-        }
-        try {
-            try {
-                Files.move(stagingManifest, manifestTarget, StandardCopyOption.ATOMIC_MOVE);
-            } catch (AtomicMoveNotSupportedException e) {
-                Files.move(stagingManifest, manifestTarget);
+            Map<String, Object> result = renderArchiveArtifact(job, caseEntity, fields, staging, true);
+            int gaps = defaultInt(result.get("gapPages"), -1);
+            int duplicates = defaultInt(result.get("duplicatePages"), -1);
+            String sha = sha256(staging);
+            String workerSha = stringValue(result.get("sha256"), "");
+            if (StringUtils.hasText(workerSha) && !sha.equalsIgnoreCase(workerSha)) {
+                throw new IllegalStateException("归档文件哈希校验失败");
             }
-        } catch (Exception e) {
-            try { Files.deleteIfExists(target); } catch (Exception ignored) { }
-            throw new IllegalStateException("归档来源清单写入失败", e);
-        }
+            Path stagingManifest = manifestPath(staging);
+            if (!Files.isRegularFile(stagingManifest)) {
+                throw new IllegalStateException("归档Worker未生成来源清单");
+            }
+            String manifestSha = sha256(stagingManifest);
+            try {
+                Files.move(staging, target, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(staging, target);
+            }
+            try {
+                try {
+                    Files.move(stagingManifest, manifestTarget, StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException e) {
+                    Files.move(stagingManifest, manifestTarget);
+                }
+            } catch (Exception e) {
+                throw new IllegalStateException("归档来源清单写入失败", e);
+            }
 
-        try {
             ArchiveOutput output = new ArchiveOutput();
             output.setJobId(job.getId());
             output.setCaseId(caseEntity.getId());
@@ -564,11 +591,17 @@ public class ArchiveWorkflowService {
             caseTimelineService.createSystemTimeline(caseEntity.getId(), "CASE_ARCHIVED",
                     "行政复核通过，已生成电子卷宗 " + fileName);
             audit(job.getId(), userId, "COMPLETE", "电子卷宗生成完成，SHA-256=" + sha);
-        } catch (RuntimeException e) {
-            try { Files.deleteIfExists(target); } catch (Exception ignored) { }
-            try { Files.deleteIfExists(manifestTarget); } catch (Exception ignored) { }
-            throw e;
+        } catch (Exception e) {
+            deleteArtifact(staging);
+            deleteArtifact(target);
+            if (e instanceof RuntimeException) throw (RuntimeException) e;
+            throw new IllegalStateException("归档文件写入失败", e);
         }
+    }
+
+    private ArchiveJob requireJobForUpdate(Long jobId) {
+        return archiveJobRepository.findActiveByIdForUpdate(jobId)
+                .orElseThrow(() -> new ResourceNotFoundException("归档任务", jobId));
     }
 
     private Map<String, Object> renderArchiveArtifact(ArchiveJob job, Case caseEntity, Map<String, String> fields,

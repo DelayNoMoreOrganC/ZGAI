@@ -17,7 +17,7 @@
             <template #default>{{ readiness.missingCritical.join('、') }}</template>
           </el-alert>
         </div>
-        <el-button v-if="readiness?.canStart && readiness.caseStatus !== 'ARCHIVED'" type="primary" :loading="creating" @click="startArchive()">
+        <el-button v-if="readiness?.canStart && readiness.caseStatus !== 'ARCHIVED'" data-testid="archive-start" type="primary" :loading="creating" @click="startArchive()">
           <el-icon><FolderChecked /></el-icon>开始智能归档
         </el-button>
         <el-button v-if="readiness?.canStart && readiness.caseStatus === 'ARCHIVED'" type="primary" @click="openCorrection">
@@ -32,10 +32,10 @@
             <p>{{ job.caseNumber || '暂未生成案件编号' }} · {{ job.templateVersion }}</p>
           </div>
           <div class="header-actions">
-            <el-tag :type="statusType(job.status)">{{ statusLabel(job.status) }}</el-tag>
+            <el-tag data-testid="archive-status" :type="statusType(job.status)">{{ statusLabel(job.status) }}</el-tag>
             <el-button v-if="job.status === 'COMPLETED' && readiness?.canStart && readiness.caseStatus === 'ARCHIVED'" @click="openCorrection">更正归档</el-button>
             <el-button v-if="canPreview" :loading="previewing" @click="preview">预览卷宗</el-button>
-            <el-button v-if="job.canDownload" type="primary" @click="download">下载电子卷宗</el-button>
+            <el-button v-if="job.canDownload" data-testid="archive-download" type="primary" @click="download">下载电子卷宗</el-button>
           </div>
         </header>
 
@@ -115,10 +115,10 @@
         </el-tabs>
 
         <footer class="workflow-footer">
-          <el-button v-if="job.canSubmit" type="primary" @click="submit">提交行政复核</el-button>
+          <el-button v-if="job.canSubmit" data-testid="archive-submit" type="primary" @click="submit">提交行政复核</el-button>
           <template v-if="job.canReview">
-            <el-button type="danger" plain @click="openReview('REJECT')">驳回</el-button>
-            <el-button type="success" @click="openReview('APPROVE')">批准并生成电子卷宗</el-button>
+            <el-button data-testid="archive-reject" type="danger" plain @click="openReview('REJECT')">驳回</el-button>
+            <el-button data-testid="archive-approve" type="success" @click="openReview('APPROVE')">批准并生成电子卷宗</el-button>
           </template>
         </footer>
       </template>
@@ -126,14 +126,14 @@
 
     <el-dialog v-model="reviewVisible" :title="reviewForm.decision === 'APPROVE' ? '行政归档复核' : '驳回归档'" width="520px">
       <el-form label-position="top">
-        <el-form-item label="复核意见"><el-input v-model="reviewForm.reason" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item label="复核意见"><el-input v-model="reviewForm.reason" data-testid="archive-review-reason" type="textarea" :rows="3" /></el-form-item>
         <el-form-item v-if="reviewForm.decision === 'APPROVE' && job?.missingCritical?.length" label="缺件例外理由" required>
           <el-input v-model="reviewForm.exceptionReason" type="textarea" :rows="4" placeholder="说明允许缺件归档的依据和后续处理方式" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="reviewVisible = false">取消</el-button>
-        <el-button :type="reviewForm.decision === 'APPROVE' ? 'success' : 'danger'" :loading="reviewing" @click="review">确认</el-button>
+        <el-button data-testid="archive-review-confirm" :type="reviewForm.decision === 'APPROVE' ? 'success' : 'danger'" :loading="reviewing" @click="review">确认</el-button>
       </template>
     </el-dialog>
 

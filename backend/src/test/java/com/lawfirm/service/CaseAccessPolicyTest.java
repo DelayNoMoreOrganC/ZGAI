@@ -278,6 +278,22 @@ class CaseAccessPolicyTest {
     }
 
     @Test
+    void batchCloseRecordsCloseDateForArchiveReadiness() {
+        Case ownCase = activeCase(203L, 20L);
+        ownCase.setCaseName("待归档案件");
+        User lawyer = user(20L, "律师甲", "律师", 2L);
+        when(caseRepository.findAllById(List.of(203L))).thenReturn(List.of(ownCase));
+        when(caseRepository.findById(203L)).thenReturn(Optional.of(ownCase));
+        when(userRepository.findById(20L)).thenReturn(Optional.of(lawyer));
+
+        caseService.batchCloseCases(List.of(203L), 20L);
+
+        assertEquals("CLOSED", ownCase.getStatus());
+        assertEquals(LocalDate.now(), ownCase.getCloseDate());
+        verify(caseRepository).saveAll(List.of(ownCase));
+    }
+
+    @Test
     void batchArchiveAlwaysRequiresArchiveWorkflow() {
         assertThrows(InvalidParameterException.class,
                 () -> caseService.batchArchiveCases(List.of(203L), "档案室A", 11L));

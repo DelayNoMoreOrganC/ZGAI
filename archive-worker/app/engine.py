@@ -196,6 +196,8 @@ def _extract_pages(path: Path, supplied_sha: Any = None) -> list[str]:
         pdf.close()
     elif suffix in {".png", ".jpg", ".jpeg", ".tif", ".tiff"}:
         pages = [_ocr_image_bytes(path.read_bytes())]
+    elif suffix in {".txt", ".md"}:
+        pages = [path.read_text(encoding="utf-8", errors="replace")]
     else:
         normalized, cleanup = _normalize_pdf(path)
         try:
