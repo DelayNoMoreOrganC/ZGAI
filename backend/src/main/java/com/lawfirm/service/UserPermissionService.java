@@ -12,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
 /** Resolves business permissions without relying on a person's name or the current HTTP session. */
@@ -47,17 +49,32 @@ public class UserPermissionService {
     }
 
     public Optional<User> findFirstActiveUserByPermission(String permissionCode) {
-        return findFirstActiveUserByPermission(permissionCode, null);
+        return findFirstActiveUserByPermission(permissionCode, Collections.emptyList());
     }
 
     public Optional<User> findFirstActiveUserByPermission(String permissionCode, String preferredRoleCode) {
+        return findFirstActiveUserByPermission(permissionCode,
+                preferredRoleCode == null ? Collections.emptyList() : Collections.singletonList(preferredRoleCode));
+    }
+
+    public Optional<User> findFirstActiveUserByPermission(String permissionCode, List<String> preferredRoleCodes) {
+        List<String> roles = preferredRoleCodes == null ? Collections.emptyList() : preferredRoleCodes;
         return userRepository.findAll().stream()
                 .filter(this::isActive)
                 .filter(user -> hasPermission(user, permissionCode))
                 .sorted(Comparator
-                        .comparing((User user) -> preferredRoleCode == null || hasRole(user, preferredRoleCode) ? 0 : 1)
+                        .comparing((User user) -> preferredRoleRank(user, roles))
                         .thenComparing(User::getId))
                 .findFirst();
+    }
+
+    private int preferredRoleRank(User user, List<String> roleCodes) {
+        for (int index = 0; index < roleCodes.size(); index++) {
+            if (hasRole(user, roleCodes.get(index))) {
+                return index;
+            }
+        }
+        return roleCodes.size();
     }
 
     public boolean hasRole(User user, String roleCode) {

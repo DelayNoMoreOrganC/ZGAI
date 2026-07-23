@@ -939,7 +939,8 @@ public class ApprovalService {
     }
 
     private boolean isDirector(User user) {
-        return user != null && "主任".equals(user.getPosition());
+        return user != null && ("主任".equals(user.getPosition())
+                || userPermissionService.hasRole(user, "MANAGER"));
     }
 
     private boolean hasText(String value) {

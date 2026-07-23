@@ -208,7 +208,7 @@
             <el-table-column prop="sourceUserName" label="案源人" width="100" />
             <el-table-column label="开票日期" width="120" sortable>
               <template #default="{ row }">
-                {{ ['ISSUED', 'FEEDBACK_UPLOADED', 'COMPLETED'].includes(row.status) ? row.billingDate : '-' }}
+                {{ ['ISSUED', 'FEEDBACK_UPLOADED', 'COMPLETED'].includes(row.status) ? formatLocalDate(row.billingDate) : '-' }}
               </template>
             </el-table-column>
             <el-table-column prop="invoiceNumber" label="发票号码" width="150" />
@@ -512,7 +512,7 @@
         <el-descriptions-item label="地址、电话">{{ selectedInvoice.addressPhone || '-' }}</el-descriptions-item>
         <el-descriptions-item label="开户行及账号">{{ selectedInvoice.bankAccount || '-' }}</el-descriptions-item>
         <el-descriptions-item label="发票号码">{{ selectedInvoice.invoiceNumber || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="开票日期">{{ ['ISSUED', 'FEEDBACK_UPLOADED', 'COMPLETED'].includes(selectedInvoice.status) ? selectedInvoice.billingDate : '-' }}</el-descriptions-item>
+        <el-descriptions-item label="开票日期">{{ ['ISSUED', 'FEEDBACK_UPLOADED', 'COMPLETED'].includes(selectedInvoice.status) ? formatLocalDate(selectedInvoice.billingDate) : '-' }}</el-descriptions-item>
         <el-descriptions-item label="备注" :span="2">{{ selectedInvoice.remark || '-' }}</el-descriptions-item>
       </el-descriptions>
       <template #footer>
@@ -605,6 +605,16 @@ const selectedInvoice = ref({})
 
 const currentUserId = computed(() => Number(userStore.userInfo?.id || userStore.userId || 0))
 const isFinanceUser = computed(() => userStore.hasPermission('FINANCE_EDIT'))
+
+const formatLocalDate = (value) => {
+  if (!value) return '-'
+  if (Array.isArray(value)) {
+    const [year, month, day] = value
+    const pad = number => String(number).padStart(2, '0')
+    return `${year}-${pad(month)}-${pad(day)}`
+  }
+  return String(value).slice(0, 10)
+}
 
 const isInvoiceApplicant = (row) => {
   return Number(row.applicantId) === currentUserId.value
@@ -874,7 +884,7 @@ const handleIssueInvoice = (row) => {
     id: row.id,
     title: row.title,
     invoiceNumber: row.invoiceNumber || '',
-    billingDate: row.billingDate || new Date().toISOString().split('T')[0],
+    billingDate: row.billingDate ? formatLocalDate(row.billingDate) : new Date().toISOString().split('T')[0],
     invoiceType: row.invoiceType,
     amount: row.amount,
     remark: row.remark || ''

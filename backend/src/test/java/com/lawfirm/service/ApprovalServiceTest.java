@@ -104,6 +104,18 @@ class ApprovalServiceTest {
     }
 
     @Test
+    void managerRoleCanViewApprovalWithoutDirectorPositionLabel() {
+        User manager = user(9L, "主任甲", "部门负责人");
+        Approval approval = pendingApproval(90L, ApprovalService.TYPE_CASE_FILING_DIRECTOR, 7L, 8L);
+        when(userRepository.findById(9L)).thenReturn(Optional.of(manager));
+        when(userPermissionService.hasRole(manager, "MANAGER")).thenReturn(true);
+        when(approvalRepository.findById(90L)).thenReturn(Optional.of(approval));
+
+        Approval result = approvalRepository.findById(90L).orElseThrow();
+        assertEquals(90L, service.getApprovalDetail(result.getId(), 9L).getId());
+    }
+
+    @Test
     void approvalKeywordSearchResolvesApplicantNames() {
         ApprovalQueryRequest request = new ApprovalQueryRequest();
         request.setKeyword("  行政甲  ");

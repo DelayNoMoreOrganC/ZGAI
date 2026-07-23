@@ -483,33 +483,24 @@ import { getInvoices } from '@/api/finance'
 import { useUserStore } from '@/stores'
 import { resolveExternalAppUrl } from '@/utils/external-app-url'
 import ApprovalDetailDrawer from '@/components/ApprovalDetailDrawer.vue'
+import {
+  isAdministrativeUser as resolveAdministrativeUser,
+  isDepartmentManager,
+  isDevelopmentAdmin,
+  isDirectorUser as resolveDirectorUser,
+  isFinanceUser as resolveFinanceUser
+} from '@/utils/userPersona'
 const userStore = useUserStore()
 const router = useRouter()
 
 const isSuccessResponse = (response) => response?.success || response?.code === 200
-const isAdministrativeUser = computed(() => {
-  const position = userStore.userInfo?.position || ''
-  const roles = userStore.roles || []
-  return position.startsWith('行政管理') || roles.some(role => String(role).includes('ADMINISTRATIVE'))
-})
-const isFinanceUser = computed(() => {
-  const position = userStore.userInfo?.position || ''
-  const roles = userStore.roles || []
-  return position.includes('财务') || position === '出纳' || roles.includes('FINANCE')
-})
-const isDirectorUser = computed(() => {
-  const position = userStore.userInfo?.position || ''
-  const roles = userStore.roles || []
-  return position === '主任' || roles.includes('MANAGER')
-})
-const isManagementUser = computed(() => {
-  const position = userStore.userInfo?.position || ''
-  const roles = userStore.roles || []
-  return isDirectorUser.value || position === '主管' || position === '部门主管' || roles.includes('DEPT_HEAD')
-})
+const isAdministrativeUser = computed(() => resolveAdministrativeUser(userStore))
+const isFinanceUser = computed(() => resolveFinanceUser(userStore))
+const isDirectorUser = computed(() => resolveDirectorUser(userStore))
+const isManagementUser = computed(() => isDepartmentManager(userStore))
 const currentUserId = computed(() => Number(userStore.userInfo?.id || userStore.userId || 0))
 const canViewAllApprovals = computed(() => {
-  return userStore.userInfo?.username === 'admin' || userStore.userInfo?.position === '主任'
+  return isDevelopmentAdmin(userStore) || isDirectorUser.value
 })
 
 // AI助手控制

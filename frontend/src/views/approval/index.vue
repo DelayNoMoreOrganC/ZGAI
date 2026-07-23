@@ -15,8 +15,10 @@
     <div v-if="isAdministrativeUser" class="role-workbench admin-approval-workbench">
       <div class="workbench-title">
         <div>
-          <h2>行政审批中心</h2>
-          <p>集中处理立案申请、利冲审查、公章用印和审批流转。</p>
+          <h2>{{ isDirector ? '主任审批中心' : '行政审批中心' }}</h2>
+          <p>{{ isDirector
+            ? '查看全所审批进度，重点处理立案终审和管理决策。'
+            : '集中处理立案申请、利冲审查、公章用印和审批流转。' }}</p>
         </div>
         <el-tag type="warning" size="large">待处理 {{ pendingList.length }}</el-tag>
       </div>
@@ -399,6 +401,11 @@ import {
 } from '@/api/approval'
 import { getCaseList } from '@/api/case'
 import { getUserOptions } from '@/api/user'
+import {
+  isAdministrativeUser as resolveAdministrativeUser,
+  isDevelopmentAdmin,
+  isDirectorUser
+} from '@/utils/userPersona'
 
 const router = useRouter()
 const route = useRoute()
@@ -423,13 +430,9 @@ const pendingPriorityApprovals = computed(() => pendingList.value
   .filter(item => isCaseFilingApproval(item) || item.approvalType === 'SEAL')
   .slice(0, 6))
 const currentUserId = computed(() => Number(userStore.userInfo?.id || userStore.userId || 0))
-const isSuperAdmin = computed(() => userStore.userInfo?.username === 'admin')
-const currentPosition = computed(() => userStore.userInfo?.position || '')
-const isDirector = computed(() => currentPosition.value === '主任')
-const isAdministrativeUser = computed(() => {
-  const position = currentPosition.value
-  return isSuperAdmin.value || position.startsWith('行政管理') || position === '主任'
-})
+const isSuperAdmin = computed(() => isDevelopmentAdmin(userStore))
+const isDirector = computed(() => isDirectorUser(userStore))
+const isAdministrativeUser = computed(() => isSuperAdmin.value || resolveAdministrativeUser(userStore) || isDirector.value)
 
 const approvalTypeMap = {
   SEAL: '公章用印审批',

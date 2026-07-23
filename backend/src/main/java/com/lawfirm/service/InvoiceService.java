@@ -380,7 +380,8 @@ public class InvoiceService {
     }
 
     private User findCashier() {
-        return userPermissionService.findFirstActiveUserByPermission("INVOICE_PROCESS", "INVOICE_PROCESSOR")
+        return userPermissionService.findFirstActiveUserByPermission(
+                        "INVOICE_PROCESS", java.util.Arrays.asList("INVOICE_PROCESSOR", "FINANCE"))
                 .orElseThrow(() -> new IllegalArgumentException("未找到具有开票处理权限的账号，请先配置财务角色"));
     }
 

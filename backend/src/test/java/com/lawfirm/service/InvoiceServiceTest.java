@@ -86,6 +86,30 @@ class InvoiceServiceTest {
     }
 
     @Test
+    void invoiceAssignmentPrefersProcessorThenFinanceRole() {
+        User finance = user(8L, "财务甲", "财务管理");
+        InvoiceDTO request = new InvoiceDTO();
+        request.setInvoiceType("增值税普通发票");
+        request.setAmount(new BigDecimal("1000"));
+        request.setTitle("测试客户");
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user(7L, "律师甲", "律师")));
+        when(userPermissionService.findFirstActiveUserByPermission(
+                "INVOICE_PROCESS", java.util.Arrays.asList("INVOICE_PROCESSOR", "FINANCE")))
+                .thenReturn(Optional.of(finance));
+        when(invoiceRepository.save(any(Invoice.class))).thenAnswer(invocation -> {
+            Invoice saved = invocation.getArgument(0);
+            saved.setId(16L);
+            return saved;
+        });
+
+        InvoiceDTO created = service.createInvoice(request, 7L);
+
+        assertEquals(8L, created.getCashierId());
+        verify(userPermissionService).findFirstActiveUserByPermission(
+                "INVOICE_PROCESS", java.util.Arrays.asList("INVOICE_PROCESSOR", "FINANCE"));
+    }
+
+    @Test
     void unrelatedLawyerCannotReadInvoiceDetail() {
         User lawyer = user(9L, "律师乙", "律师");
         when(userRepository.findById(9L)).thenReturn(Optional.of(lawyer));
