@@ -120,6 +120,14 @@ MIGRATION_CONFIRM_DATABASE=zgai_migration ./scripts/migrate-h2-to-postgres.sh ex
 ./stop.sh
 ```
 
+停止脚本会先发送 `SIGTERM`，等待 Spring 关闭数据库连接和文件资源；仅在默认 20 秒超时后才强制终止。可按服务单独停止，也可通过环境变量覆盖隔离实例端口：
+
+```bash
+./stop.sh backend
+./stop.sh frontend
+ZGAI_BACKEND_PORT=18080 ZGAI_STOP_TIMEOUT_SECONDS=30 ./stop.sh backend
+```
+
 ## 访问地址
 
 | 服务 | 默认地址 |
