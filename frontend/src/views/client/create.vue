@@ -268,7 +268,12 @@ const isPrincipalClient = computed(() => formData.clientRelationship === '委托
 
 const clientTypeOptions = ['个人', '企业', '金融机构', '事业单位', '党政机关', '社会团体', '其他']
 const relationshipOptions = ['委托人', '当事人', '对方当事人', '顾问单位', '关联企业', '股东', '法定代表人']
-const clientRoleOptions = ['原告', '被告', '第三人', '共同被告', '共同原告', '申请人', '被申请人', '上诉人', '被上诉人', '管理人', '债权人']
+const clientRoleOptions = [
+  '委托人', '顾问单位',
+  '原告', '被告', '第三人', '共同被告', '共同原告',
+  '申请人', '被申请人', '上诉人', '被上诉人',
+  '管理人', '债权人', '行政相对人', '被害人'
+]
 
 const formData = reactive({
   clientType: '个人',

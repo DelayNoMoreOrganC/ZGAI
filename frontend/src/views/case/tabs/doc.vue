@@ -44,6 +44,7 @@
           />
           <el-button
             v-if="isConsultantCase"
+            data-testid="case-legal-opinion-upload-open"
             :disabled="documentLocked"
             @click="openLegalOpinionUpload"
           >

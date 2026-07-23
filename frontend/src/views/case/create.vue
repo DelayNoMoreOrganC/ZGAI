@@ -202,6 +202,7 @@
             <el-col :span="12">
               <el-form-item label="顾问单位" prop="consultantClientId">
                 <el-select
+                  data-testid="case-consultant-client"
                   v-model="formData.consultantClientId"
                   filterable
                   remote
@@ -217,37 +218,38 @@
 
             <el-col :span="12">
               <el-form-item label="主要联系人" prop="consultantContactName">
-                <el-input v-model="formData.consultantContactName" placeholder="请输入顾问单位主要联系人" />
+                <el-input data-testid="case-consultant-contact-name" v-model="formData.consultantContactName" placeholder="请输入顾问单位主要联系人" />
               </el-form-item>
             </el-col>
 
             <el-col :span="12">
               <el-form-item label="联系人部门">
-                <el-input v-model="formData.consultantContactDepartment" placeholder="例如：法务部、办公室" />
+                <el-input data-testid="case-consultant-contact-department" v-model="formData.consultantContactDepartment" placeholder="例如：法务部、办公室" />
               </el-form-item>
             </el-col>
 
             <el-col :span="12">
               <el-form-item label="联系人职务">
-                <el-input v-model="formData.consultantContactTitle" placeholder="请输入职务" />
+                <el-input data-testid="case-consultant-contact-title" v-model="formData.consultantContactTitle" placeholder="请输入职务" />
               </el-form-item>
             </el-col>
 
             <el-col :span="12">
               <el-form-item label="联系人电话">
-                <el-input v-model="formData.consultantContactPhone" placeholder="手机号或区号+固话" />
+                <el-input data-testid="case-consultant-contact-phone" v-model="formData.consultantContactPhone" placeholder="手机号或区号+固话" />
               </el-form-item>
             </el-col>
 
             <el-col :span="12">
               <el-form-item label="联系人邮箱">
-                <el-input v-model="formData.consultantContactEmail" placeholder="请输入邮箱" />
+                <el-input data-testid="case-consultant-contact-email" v-model="formData.consultantContactEmail" placeholder="请输入邮箱" />
               </el-form-item>
             </el-col>
 
             <el-col :span="12">
               <el-form-item label="服务开始时间" prop="serviceStartDate">
                 <el-date-picker
+                  data-testid="case-consultant-service-start"
                   v-model="formData.serviceStartDate"
                   type="date"
                   placeholder="选择开始日期"
@@ -260,6 +262,7 @@
             <el-col :span="12">
               <el-form-item label="服务结束时间" prop="serviceEndDate">
                 <el-date-picker
+                  data-testid="case-consultant-service-end"
                   v-model="formData.serviceEndDate"
                   type="date"
                   placeholder="选择结束日期"
@@ -271,13 +274,13 @@
 
             <el-col :span="12">
               <el-form-item label="续签提醒日期">
-                <el-date-picker v-model="formData.renewalReminderDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+                <el-date-picker data-testid="case-consultant-renewal-reminder" v-model="formData.renewalReminderDate" type="date" placeholder="选择续签提醒日期" value-format="YYYY-MM-DD" style="width: 100%" />
               </el-form-item>
             </el-col>
 
             <el-col :span="24">
               <el-form-item label="服务范围" prop="consultantServiceScopes">
-                <el-select v-model="formData.consultantServiceScopes" multiple allow-create filterable style="width: 100%" placeholder="选择或输入服务范围">
+                <el-select data-testid="case-consultant-service-scopes" v-model="formData.consultantServiceScopes" multiple allow-create filterable style="width: 100%" placeholder="选择或输入服务范围">
                   <el-option v-for="scope in consultantScopeOptions" :key="scope" :label="scope" :value="scope" />
                 </el-select>
               </el-form-item>
@@ -285,19 +288,19 @@
 
             <el-col :span="24">
               <el-form-item label="响应约定">
-                <el-input v-model="formData.consultantResponseRequirement" placeholder="例如：普通事项2个工作日内响应，紧急事项4小时内响应" />
+                <el-input data-testid="case-consultant-response" v-model="formData.consultantResponseRequirement" placeholder="例如：普通事项2个工作日内响应，紧急事项4小时内响应" />
               </el-form-item>
             </el-col>
 
             <el-col :span="12">
               <el-form-item label="包含服务">
-                <el-input v-model="formData.consultantIncludedServices" type="textarea" :rows="3" placeholder="合同内已包含的服务、工时或次数" />
+                <el-input data-testid="case-consultant-included" v-model="formData.consultantIncludedServices" type="textarea" :rows="3" placeholder="合同内已包含的服务、工时或次数" />
               </el-form-item>
             </el-col>
 
             <el-col :span="12">
               <el-form-item label="除外服务">
-                <el-input v-model="formData.consultantExcludedServices" type="textarea" :rows="3" placeholder="诉讼、专项尽调等需另行委托的事项" />
+                <el-input data-testid="case-consultant-excluded" v-model="formData.consultantExcludedServices" type="textarea" :rows="3" placeholder="诉讼、专项尽调等需另行委托的事项" />
               </el-form-item>
             </el-col>
             </template>
@@ -1835,6 +1838,10 @@ onMounted(async () => {
       if (option.id && option.name) {
         clientList.value = [option]
         formData.relatedClients = [option.id]
+        if (formData.caseType === 'CONSULTANT') {
+          formData.consultantClientId = option.id
+          handleConsultantClientChange(option.id)
+        }
       }
     } catch (error) {
       ElMessage.warning('客户信息预填失败，请在关联客户中重新选择')

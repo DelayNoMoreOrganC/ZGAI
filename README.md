@@ -253,7 +253,13 @@ ZGAI_FINANCE_USERNAME="$FINANCE_USER" ZGAI_FINANCE_PASSWORD="$FINANCE_PASSWORD" 
 npm run test:e2e:filing -- --project=desktop-chrome
 ```
 
-`scripts/setup-e2e-personas.sh` 可在全新隔离库中幂等创建/校准四类虚构账号，要求 `ZGAI_E2E_ENVIRONMENT=ISOLATED` 和显式确认值 `PROVISION_PERSONAS`。当前基线为四角色桌面/手机共 8 项与“客户 → 立案 → 中文图片 OCR → 确认归案 → 快速用印 → 发票闭环 → 结案 → 律师归档核对 → 行政复核 → 电子卷宗下载”写入闭环 1 项通过；同时验证财务无归档审批权限、模型离线本地降级、暂存件所有权、文件 SHA-256、页守恒和成功后案件锁定。安装 Playwright 后 `npm audit` 仍报告 4 个中等和 5 个高危依赖问题，需单独评估升级，不应在业务回归提交中盲目执行破坏性 `npm audit fix --force`。
+只回归法律顾问建档、两级审批、法律意见书上传和快速用印时，沿用相同隔离环境变量执行：
+
+```bash
+npm run test:e2e:consultant
+```
+
+`scripts/setup-e2e-personas.sh` 可在全新隔离库中幂等创建/校准四类虚构账号，要求 `ZGAI_E2E_ENVIRONMENT=ISOLATED` 和显式确认值 `PROVISION_PERSONAS`。当前基线为四角色桌面/手机共 8 项、民事“客户 → 立案 → 中文图片 OCR → 确认归案 → 快速用印 → 发票闭环 → 结案 → 律师归档核对 → 行政复核 → 电子卷宗下载”写入闭环 1 项，以及“顾问单位 → 顾问立案 → 两级审批 → 法律意见书 → 快速用印”写入闭环 1 项通过；同时验证财务无案件文件写入及归档审批权限、模型离线本地降级、暂存件所有权、文件 SHA-256、页守恒和成功后案件锁定。安装 Playwright 后 `npm audit` 仍报告 4 个中等和 5 个高危依赖问题，需单独评估升级，不应在业务回归提交中盲目执行破坏性 `npm audit fix --force`。
 
 ### 归档 Worker
 

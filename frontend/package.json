@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:e2e:roles": "playwright test e2e/role-workbenches.spec.js",
-    "test:e2e:filing": "playwright test --project=desktop-chrome e2e/case-filing-flow.spec.js"
+    "test:e2e:filing": "playwright test --project=desktop-chrome e2e/case-filing-flow.spec.js",
+    "test:e2e:consultant": "playwright test --project=desktop-chrome e2e/case-filing-flow.spec.js --grep '法律顾问案件'"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
