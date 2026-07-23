@@ -49,7 +49,7 @@
           >
             上传法律意见书
           </el-button>
-          <el-button type="primary" :disabled="documentLocked" @click="openUploadDialog">
+          <el-button data-testid="case-document-upload-open" type="primary" :disabled="documentLocked" @click="openUploadDialog">
             <el-icon><Upload /></el-icon>
             上传文件
           </el-button>
@@ -83,7 +83,7 @@
       >
         <el-table-column label="文件名" min-width="260">
           <template #default="{ row }">
-            <div class="file-cell">
+            <div class="file-cell" :data-testid="`case-document-${row.id}`">
               <span class="file-badge">{{ getFileBadge(row.documentName) }}</span>
               <div>
                 <strong>{{ row.documentName || row.originalFileName }}</strong>
@@ -152,6 +152,7 @@
             <el-button link type="primary" @click="showVersions(row)">版本</el-button>
             <el-button
               v-if="canRequestSeal(row)"
+              :data-testid="`case-document-seal-${row.id}`"
               link
               type="warning"
               @click="openSealApproval(row)"
@@ -171,10 +172,10 @@
       </el-table>
     </section>
 
-    <el-dialog v-model="uploadDialogVisible" title="上传案件文件" width="560px">
+    <el-dialog v-model="uploadDialogVisible" title="上传案件文件" width="560px" class="case-document-upload-dialog">
       <el-form label-width="90px">
         <el-form-item label="存放目录">
-          <el-select v-model="uploadForm.folderPath" placeholder="请选择目录" style="width: 100%">
+          <el-select data-testid="case-document-folder" v-model="uploadForm.folderPath" placeholder="请选择目录" style="width: 100%">
             <el-option
               v-for="folder in folders"
               :key="folder.id || folder.folderPath"
@@ -185,7 +186,7 @@
         </el-form-item>
 
         <el-form-item label="文件类型">
-          <el-select v-model="uploadForm.documentType" placeholder="请选择文件类型" style="width: 100%">
+          <el-select data-testid="case-document-type" v-model="uploadForm.documentType" placeholder="请选择文件类型" style="width: 100%">
             <el-option
               v-for="type in documentTypes"
               :key="type"
@@ -197,6 +198,7 @@
 
         <el-form-item label="选择文件">
           <el-upload
+            data-testid="case-document-file"
             drag
             action="#"
             :auto-upload="false"
@@ -218,22 +220,23 @@
 
       <template #footer>
         <el-button @click="uploadDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="uploading" @click="submitUpload">
+        <el-button data-testid="case-document-upload-submit" type="primary" :loading="uploading" @click="submitUpload">
           上传
         </el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="sealDialogVisible" title="快速申请公章用印" width="560px">
+    <el-dialog v-model="sealDialogVisible" title="快速申请公章用印" width="560px" class="case-document-seal-dialog">
       <el-form label-width="90px">
         <el-form-item label="用印文件">
           <el-input :model-value="sealTarget?.originalFileName || sealTarget?.documentName" disabled />
         </el-form-item>
         <el-form-item label="审批标题" required>
-          <el-input v-model="sealForm.title" maxlength="200" />
+          <el-input data-testid="seal-approval-title" v-model="sealForm.title" maxlength="200" />
         </el-form-item>
         <el-form-item label="用印事由" required>
           <el-input
+            data-testid="seal-approval-content"
             v-model="sealForm.content"
             type="textarea"
             :rows="5"
@@ -245,7 +248,7 @@
       </el-form>
       <template #footer>
         <el-button @click="sealDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="sealSubmitting" @click="submitSealApproval">
+        <el-button data-testid="seal-approval-submit" type="primary" :loading="sealSubmitting" @click="submitSealApproval">
           提交行政审批
         </el-button>
       </template>

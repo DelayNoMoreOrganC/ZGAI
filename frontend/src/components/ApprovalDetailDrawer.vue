@@ -53,6 +53,7 @@
             v-for="attachment in selectedApproval.sealAttachments || []"
             :key="attachment.id"
             class="seal-file-row"
+            :data-testid="`seal-attachment-${attachment.id}`"
           >
             <div>
               <strong>{{ attachment.originalFileName }}</strong>
