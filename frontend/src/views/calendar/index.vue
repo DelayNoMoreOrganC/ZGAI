@@ -415,7 +415,7 @@ import PriorityDot from '@/components/PriorityDot.vue'
 import { getCalendarEvents, createEvent, updateEvent, deleteEvent } from '@/api/calendar'
 import { getTodos, createTodo, updateTodo, deleteTodo } from '@/api/todo'
 import { getCaseList } from '@/api/case'
-import { getUserList } from '@/api/user'
+import { getUserOptions } from '@/api/user'
 
 // 视图模式
 const viewMode = ref('month')
@@ -808,11 +808,10 @@ const fetchFormOptions = async () => {
   try {
     const [caseRes, userRes] = await Promise.all([
       getCaseList({ page: 1, size: 300 }),
-      getUserList({ page: 0, size: 300, status: 1 })
+      getUserOptions({ size: 300 })
     ])
     const cases = caseRes.data?.records || []
-    const userData = userRes.data || {}
-    const users = userData.content || userData.records || userData || []
+    const users = userRes.data || []
     caseList.value = cases.map(item => ({ id: item.id, name: item.caseName }))
     userList.value = users
       .filter(user => user.status === undefined || user.status === 1)

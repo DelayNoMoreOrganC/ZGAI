@@ -398,7 +398,7 @@ import {
   withdrawApproval
 } from '@/api/approval'
 import { getCaseList } from '@/api/case'
-import { getUserList } from '@/api/user'
+import { getUserOptions } from '@/api/user'
 
 const router = useRouter()
 const route = useRoute()
@@ -631,9 +631,8 @@ const handleSealFileRemove = () => {
 }
 
 const loadUserOptions = async () => {
-  const response = await getUserList({ page: 1, size: 300, status: 1 })
-  const pageData = response.data || {}
-  userOptions.value = pageData.content || pageData.records || []
+  const response = await getUserOptions({ size: 300 })
+  userOptions.value = response.data || []
 }
 
 const handleSubmitApproval = async () => {

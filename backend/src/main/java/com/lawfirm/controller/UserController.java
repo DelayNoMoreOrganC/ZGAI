@@ -3,6 +3,7 @@ package com.lawfirm.controller;
 import com.lawfirm.annotation.AuditLog;
 import com.lawfirm.dto.UserCreateRequest;
 import com.lawfirm.dto.UserDTO;
+import com.lawfirm.dto.UserOptionDTO;
 import com.lawfirm.dto.UserUpdateRequest;
 import com.lawfirm.service.UserService;
 import com.lawfirm.security.SecurityUtils;
@@ -95,7 +96,7 @@ public class UserController {
      * GET /api/user
      */
     @GetMapping
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('USER_VIEW')")
     public Result<Page<UserDTO>> getUserList(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
@@ -118,7 +119,7 @@ public class UserController {
      * GET /api/user/{id}
      */
     @GetMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('USER_VIEW')")
     public Result<UserDTO> getUserDetail(@PathVariable Long id) {
         try {
             UserDTO result = userService.getUserDetail(id);
@@ -129,6 +130,18 @@ public class UserController {
             log.error("获取用户详情失败", e);
             return Result.error("获取用户详情失败");
         }
+    }
+
+    /**
+     * 获取业务表单可选择的在职员工最小目录。
+     */
+    @GetMapping("/options")
+    @PreAuthorize("isAuthenticated()")
+    public Result<List<UserOptionDTO>> getUserOptions(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long departmentId,
+            @RequestParam(defaultValue = "300") int size) {
+        return Result.success(userService.getUserOptions(keyword, departmentId, size));
     }
 
     /**

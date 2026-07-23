@@ -2,6 +2,7 @@ package com.lawfirm.service;
 
 import com.lawfirm.entity.User;
 import com.lawfirm.exception.InvalidParameterException;
+import com.lawfirm.dto.UserUpdateRequest;
 import com.lawfirm.repository.DepartmentRepository;
 import com.lawfirm.repository.RoleRepository;
 import com.lawfirm.repository.UserRepository;
@@ -61,6 +62,15 @@ class UserServiceProtectionTest {
         assertThrows(InvalidParameterException.class,
                 () -> service.assignRoles(1L, Collections.emptyList()));
         verifyNoInteractions(userRoleRepository);
+    }
+
+    @Test
+    void developmentAdminCannotBeUpdatedFromEmployeeManagement() {
+        User admin = developmentAdmin("admin");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(admin));
+
+        assertThrows(InvalidParameterException.class,
+                () -> service.updateUser(1L, new UserUpdateRequest()));
     }
 
     private User developmentAdmin(String username) {

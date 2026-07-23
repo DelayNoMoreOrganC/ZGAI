@@ -328,7 +328,7 @@ import {
   batchChangeOwner
 } from '@/api/case'
 import { getDepartmentList } from '@/api/department'
-import { getUserList } from '@/api/user'
+import { getUserOptions } from '@/api/user'
 import { useUserStore } from '@/stores/user'
 import { CASE_TYPE_OPTIONS, getCaseTypeLabel, getCaseTypeWorkflow } from '@/utils/caseTypeProfiles'
 
@@ -417,9 +417,8 @@ const caseStages = computed(() => {
 
 const fetchLawyerList = async () => {
   try {
-    const res = await getUserList({ page: 0, size: 300, status: 1 })
-    const data = res.data || {}
-    const users = data.content || data.records || data || []
+    const res = await getUserOptions({ size: 300 })
+    const users = res.data || []
     const handlerPositions = ['主任', '部门主管', '合伙人', '律师', '实习律师', '助理', '律师助理']
     lawyerList.value = users
       .filter(user => (user.status === undefined || user.status === 1)

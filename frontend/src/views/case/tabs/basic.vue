@@ -932,7 +932,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { createParty, updateParty, deleteParty, updateCase } from '@/api/case'
 import { getCaseProcedures, createCaseProcedure, updateCaseProcedure, deleteCaseProcedure } from '@/api/case'
-import { getUserList } from '@/api/user'
+import { getUserOptions } from '@/api/user'
 import { downloadConflictWaiverAttachment } from '@/api/client'
 import { CASE_TYPE_OPTIONS, getCaseTypeLabel, getCaseTypeProfile, getPartyRoleOptions, PARTY_ROLE_LABELS } from '@/utils/caseTypeProfiles'
 import { FEE_METHOD_OPTIONS, formatFeeMethod } from '@/utils/feeMethod'
@@ -1057,9 +1057,8 @@ const assistantList = computed(() => userOptions.value.filter(user => isPosition
 
 const loadUserOptions = async () => {
   try {
-    const response = await getUserList({ page: 0, size: 300, status: 1 })
-    const data = response.data || {}
-    const users = data.content || data.records || data || []
+    const response = await getUserOptions({ size: 300 })
+    const users = response.data || []
     userOptions.value = users
       .filter(user => user.status === undefined || user.status === 1)
       .map(user => ({

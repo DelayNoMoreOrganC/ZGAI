@@ -2,6 +2,7 @@ package com.lawfirm.service;
 
 import com.lawfirm.dto.UserCreateRequest;
 import com.lawfirm.dto.UserDTO;
+import com.lawfirm.dto.UserOptionDTO;
 import com.lawfirm.dto.UserUpdateRequest;
 import com.lawfirm.entity.User;
 import com.lawfirm.entity.UserRole;
@@ -26,6 +27,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -75,6 +77,8 @@ public class UserService {
     public UserDTO updateUser(Long userId, UserUpdateRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("用户", userId));
+
+        requireMutableAccount(user);
 
         if (request.getRealName() != null) {
             user.setRealName(request.getRealName());
@@ -166,6 +170,51 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("用户", userId));
 
         return toDTO(user);
+    }
+
+    /**
+     * 返回业务下拉所需的最小在职员工目录，不包含账号、电话、邮箱和角色。
+     */
+    @Transactional(readOnly = true)
+    public List<UserOptionDTO> getUserOptions(String keyword, Long departmentId, int size) {
+        int safeSize = Math.max(1, Math.min(size, 300));
+        String normalizedKeyword = StringUtils.hasText(keyword)
+                ? keyword.trim().toLowerCase(Locale.ROOT)
+                : null;
+        Specification<User> specification = (root, query, cb) -> {
+            List<javax.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get("deleted")));
+            predicates.add(cb.equal(root.get("status"), 1));
+            if (normalizedKeyword != null) {
+                predicates.add(cb.like(cb.lower(root.get("realName")), "%" + normalizedKeyword + "%"));
+            }
+            if (departmentId != null) {
+                predicates.add(cb.equal(root.get("departmentId"), departmentId));
+            }
+            return cb.and(predicates.toArray(new javax.persistence.criteria.Predicate[0]));
+        };
+
+        List<User> users = userRepository.findAll(specification,
+                PageRequest.of(0, safeSize, Sort.by(Sort.Direction.ASC, "realName")
+                        .and(Sort.by(Sort.Direction.ASC, "id"))))
+                .getContent();
+        List<Long> departmentIds = users.stream()
+                .map(User::getDepartmentId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<Long, String> departmentNames = departmentRepository.findAllById(departmentIds).stream()
+                .collect(Collectors.toMap(com.lawfirm.entity.Department::getId,
+                        com.lawfirm.entity.Department::getDeptName));
+
+        return users.stream()
+                .map(user -> new UserOptionDTO(
+                        user.getId(),
+                        user.getRealName(),
+                        user.getDepartmentId(),
+                        departmentNames.get(user.getDepartmentId()),
+                        user.getPosition()))
+                .collect(Collectors.toList());
     }
 
     /**
@@ -311,7 +360,7 @@ public class UserService {
     private void requireMutableAccount(User user) {
         String username = user.getUsername();
         if ("admin".equalsIgnoreCase(username) || "amin".equalsIgnoreCase(username)) {
-            throw new InvalidParameterException("userId", "开发管理员账号不能被停用、删除或调整角色");
+            throw new InvalidParameterException("userId", "受保护开发管理员账号不能通过员工管理修改");
         }
     }
 

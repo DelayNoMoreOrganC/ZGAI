@@ -9,6 +9,15 @@ export function getUserList(params) {
   })
 }
 
+// 获取业务表单使用的最小在职员工目录
+export function getUserOptions(params) {
+  return request({
+    url: '/users/options',
+    method: 'get',
+    params
+  })
+}
+
 // 获取用户详情
 export function getUserDetail(id) {
   return request({

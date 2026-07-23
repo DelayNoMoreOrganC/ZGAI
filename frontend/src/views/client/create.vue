@@ -252,7 +252,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
 import { createClient, getClientDetail, updateClient, previewConflictCheck } from '@/api/client'
 import { getDepartmentList } from '@/api/department'
-import { getUserList } from '@/api/user'
+import { getUserOptions } from '@/api/user'
 
 const router = useRouter()
 const route = useRoute()
@@ -403,8 +403,8 @@ const loadDepartments = async () => {
 
 const loadUsers = async () => {
   try {
-    const response = await getUserList({ page: 0, size: 200, status: 1 })
-    userOptions.value = response.data?.content || response.data || []
+    const response = await getUserOptions({ size: 200 })
+    userOptions.value = response.data || []
   } catch (error) {
     console.error('加载人员列表失败:', error)
     ElMessage.error('加载人员列表失败')

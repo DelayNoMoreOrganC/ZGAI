@@ -200,7 +200,9 @@ cd backend
 JAVA_HOME=/opt/homebrew/opt/openjdk@11 /opt/homebrew/opt/maven/bin/mvn test
 ```
 
-当前基线：287 项测试通过（2026-07-24 全量复验）。
+当前基线：289 项测试通过（2026-07-24 全量复验）。
+
+完整员工档案接口 `GET /api/users`、`GET /api/users/{id}` 需要 `USER_VIEW`。案件主办、案源人、审批人和日程参与人等业务选择器统一调用 `GET /api/users/options`，只返回在职人员的 ID、姓名、部门和身份类别，不返回账号、电话、邮箱、角色或登录信息。
 
 可执行 JAR 正在运行时不要执行会覆盖同一路径的 `mvn package`。需要重新打包时先执行 `./stop.sh backend`；`start.sh` 已固定为先优雅停止旧服务，再按需构建和启动。
 

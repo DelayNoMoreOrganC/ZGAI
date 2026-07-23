@@ -71,11 +71,11 @@
         <template #default="{ row }">
           <el-tag
             v-for="role in row.roles"
-            :key="role.id"
+            :key="role"
             size="small"
             style="margin-right: 5px"
           >
-            {{ role.roleName }}
+            {{ role }}
           </el-tag>
           <span v-if="!row.roles || row.roles.length === 0" style="color: #999">未分配</span>
         </template>
@@ -94,26 +94,40 @@
       </el-table-column>
       <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="handleEdit(row)">
-            编辑
-          </el-button>
-          <el-button link type="warning" size="small" @click="handleResetPassword(row)">
-            重置密码
-          </el-button>
-          <el-button
-            link
-            :type="row.status === 1 ? 'warning' : 'success'"
-            size="small"
-            @click="handleToggleStatus(row)"
-          >
-            {{ row.status === 1 ? '禁用' : '启用' }}
-          </el-button>
-          <el-button link type="primary" size="small" @click="handleAssignRoles(row)">
-            分配角色
-          </el-button>
-          <el-button link type="danger" size="small" @click="handleDelete(row)">
-            删除
-          </el-button>
+          <template v-if="isProtectedAccount(row)">
+            <el-tag type="info" size="small">受保护开发账号</el-tag>
+            <el-button
+              v-if="canResetProtectedAccount(row)"
+              link
+              type="warning"
+              size="small"
+              @click="handleResetPassword(row)"
+            >
+              重置密码
+            </el-button>
+          </template>
+          <template v-else>
+            <el-button link type="primary" size="small" @click="handleEdit(row)">
+              编辑
+            </el-button>
+            <el-button link type="warning" size="small" @click="handleResetPassword(row)">
+              重置密码
+            </el-button>
+            <el-button
+              link
+              :type="row.status === 1 ? 'warning' : 'success'"
+              size="small"
+              @click="handleToggleStatus(row)"
+            >
+              {{ row.status === 1 ? '禁用' : '启用' }}
+            </el-button>
+            <el-button link type="primary" size="small" @click="handleAssignRoles(row)">
+              分配角色
+            </el-button>
+            <el-button link type="danger" size="small" @click="handleDelete(row)">
+              删除
+            </el-button>
+          </template>
         </template>
       </el-table-column>
     </el-table>
@@ -240,6 +254,9 @@ import {
 } from '@/api/user'
 import { getAllRoles } from '@/api/role'
 import { getDepartmentList } from '@/api/department'
+import { useUserStore } from '@/stores'
+
+const userStore = useUserStore()
 
 const loading = ref(false)
 const userList = ref([])
@@ -320,7 +337,7 @@ const fetchUsers = async () => {
   try {
     loading.value = true
     const res = await getUserList({
-      page: pagination.page,
+      page: pagination.page - 1,
       size: pagination.size,
       keyword: filters.keyword || undefined,
       departmentId: filters.departmentId,
@@ -480,8 +497,7 @@ const handleToggleStatus = async (row) => {
 // 分配角色
 const handleAssignRoles = async (row) => {
   currentUser.value = row
-  // 设置已分配的角色
-  selectedRoles.value = row.roles?.map(r => r.id) || []
+  selectedRoles.value = row.roleIds || []
   roleDialogVisible.value = true
 }
 
@@ -530,10 +546,15 @@ const handleCurrentChange = (page) => {
 
 // 格式化日期
 const formatDate = (dateStr) => {
-  if (!dateStr) return ''
+  if (!dateStr) return '-'
   const date = new Date(dateStr)
+  if (Number.isNaN(date.getTime())) return '-'
   return date.toLocaleString('zh-CN')
 }
+
+const isProtectedAccount = (row) => ['admin', 'amin'].includes(String(row?.username || '').toLowerCase())
+const canResetProtectedAccount = (row) => isProtectedAccount(row)
+  && Number(row?.id) !== Number(userStore.userId)
 
 onMounted(() => {
   fetchDepartments()

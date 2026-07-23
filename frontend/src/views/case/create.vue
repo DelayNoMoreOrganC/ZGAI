@@ -984,7 +984,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import AIDocumentFill from '@/components/AIDocumentFill.vue'
 import { createCase, updateCase, checkDuplicate, getCaseDetail } from '@/api/case'
 import { getClientDetail, searchClients } from '@/api/client'
-import { getUserList } from '@/api/user'
+import { getUserOptions } from '@/api/user'
 import { useSubmitForm } from '@/composables/useSubmitForm'
 import { CASE_TYPE_OPTIONS, CASE_TYPE_PROFILES, getPartyRoleOptions } from '@/utils/caseTypeProfiles'
 
@@ -1465,9 +1465,8 @@ const caseOptions = ref([])
 
 const loadUserOptions = async () => {
   try {
-    const response = await getUserList({ page: 0, size: 300, status: 1 })
-    const pageData = response.data || {}
-    const users = pageData.content || pageData.records || pageData || []
+    const response = await getUserOptions({ size: 300 })
+    const users = response.data || []
     userOptions.value = users
       .filter(user => user.status === undefined || user.status === 1)
       .map(normalizeUserOption)

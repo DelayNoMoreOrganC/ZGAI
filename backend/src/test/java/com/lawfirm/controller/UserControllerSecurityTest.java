@@ -25,10 +25,11 @@ class UserControllerSecurityTest {
     }
 
     @Test
-    void employeeDirectoryAndOwnPasswordRemainAvailableToAuthenticatedUsers() throws Exception {
-        assertPolicy("getUserList", "isAuthenticated()",
+    void fullEmployeeDirectoryRequiresUserViewAndMinimalOptionsRemainAuthenticated() throws Exception {
+        assertPolicy("getUserList", "hasAuthority('USER_VIEW')",
                 int.class, int.class, String.class, Long.class, Integer.class);
-        assertPolicy("getUserDetail", "isAuthenticated()", Long.class);
+        assertPolicy("getUserDetail", "hasAuthority('USER_VIEW')", Long.class);
+        assertPolicy("getUserOptions", "isAuthenticated()", String.class, Long.class, int.class);
         assertPolicy("changePassword", "isAuthenticated()", java.util.Map.class);
     }
 
