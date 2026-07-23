@@ -16,7 +16,7 @@ export default defineConfig({
     strictPort: true, // 强制使用3017，不尝试其他端口
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: process.env.VITE_BACKEND_TARGET || 'http://localhost:8080',
         changeOrigin: true
       }
     }

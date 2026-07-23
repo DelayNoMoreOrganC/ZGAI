@@ -200,7 +200,15 @@ cd backend
 JAVA_HOME=/opt/homebrew/opt/openjdk@11 /opt/homebrew/opt/maven/bin/mvn test
 ```
 
-当前基线：285 项测试通过（2026-07-24 全量复验）。
+当前基线：287 项测试通过（2026-07-24 全量复验）。
+
+可执行 JAR 正在运行时不要执行会覆盖同一路径的 `mvn package`。需要重新打包时先执行 `./stop.sh backend`；`start.sh` 已固定为先优雅停止旧服务，再按需构建和启动。
+
+隔离前端测试可以覆盖代理目标，不必连接默认 `8080`：
+
+```bash
+VITE_BACKEND_TARGET=http://127.0.0.1:18081 npm run dev -- --port 13117
+```
 
 登录后可调用 `GET /api/ocr/health` 检查本地 OCR 能力。返回结果分别标识文字文档提取、图片 OCR 和扫描 PDF OCR 是否可用；缺少 Tesseract、`chi_sim/eng` 语言包或 pdftoppm 时会返回 `DEGRADED`，不会伪报服务正常。`POST /api/ocr/recognize` 只接受 PDF、DOCX、TXT、MD、PNG、JPG/JPEG，并受文件大小和 PDF 页数限制。
 

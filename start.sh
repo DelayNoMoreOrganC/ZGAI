@@ -165,15 +165,9 @@ if [ "$DB_MODE" = "h2" ]; then
     mkdir -p "$ROOT_DIR/backend/data"
 fi
 
-# ── Kill old processes ──
+# Stop existing services before Maven can replace the executable JAR.
 echo "[*] 清理旧进程..."
-lsof -ti:8080 2>/dev/null | xargs kill -9 2>/dev/null || true
-lsof -ti:3017 2>/dev/null | xargs kill -9 2>/dev/null || true
-lsof -ti:3000 2>/dev/null | xargs kill -9 2>/dev/null || true
-lsof -ti:5000 2>/dev/null | xargs kill -9 2>/dev/null || true
-lsof -ti:5002 2>/dev/null | xargs kill -9 2>/dev/null || true
-lsof -ti:5100 2>/dev/null | xargs kill -9 2>/dev/null || true
-sleep 1
+ZGAI_STOP_TIMEOUT_SECONDS="${ZGAI_STOP_TIMEOUT_SECONDS:-20}" "$ROOT_DIR/stop.sh" all
 
 # ── 1. 启动后端 ──
 echo "[1/2] 启动后端 (Spring Boot :8080)..."

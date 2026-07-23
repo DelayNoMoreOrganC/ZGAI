@@ -79,4 +79,14 @@ public class UserAuthorityService {
                 .map(SimpleGrantedAuthority::new)
                 .collect(Collectors.toList());
     }
+
+    public List<String> loadRoleCodes(User user) {
+        Set<String> roleCodes = new LinkedHashSet<>();
+        userRoleRepository.findByUserId(user.getId()).forEach(userRole ->
+                roleRepository.findById(userRole.getRoleId())
+                        .filter(role -> !Boolean.TRUE.equals(role.getDeleted()))
+                        .map(Role::getRoleCode)
+                        .ifPresent(roleCodes::add));
+        return List.copyOf(roleCodes);
+    }
 }

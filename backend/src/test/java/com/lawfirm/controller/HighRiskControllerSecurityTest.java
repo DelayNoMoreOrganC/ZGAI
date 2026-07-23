@@ -37,6 +37,7 @@ class HighRiskControllerSecurityTest {
         assertPolicy(RoleController.class, "getRoleList", "hasAuthority('ROLE_VIEW')", int.class, int.class);
         assertPolicy(RoleController.class, "getRoleDetail", "hasAuthority('ROLE_VIEW')", Long.class);
         assertPolicy(RoleController.class, "getAllRoles", "hasAuthority('ROLE_VIEW')");
+        assertPolicy(RoleController.class, "getAvailablePermissions", "hasAuthority('ROLE_VIEW')");
     }
 
     @Test

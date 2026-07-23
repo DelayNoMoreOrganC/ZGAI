@@ -2,6 +2,7 @@ package com.lawfirm.service;
 
 import com.lawfirm.dto.RoleCreateRequest;
 import com.lawfirm.entity.Role;
+import com.lawfirm.entity.Permission;
 import com.lawfirm.exception.InvalidParameterException;
 import com.lawfirm.repository.PermissionRepository;
 import com.lawfirm.repository.RolePermissionRepository;
@@ -11,8 +12,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -20,17 +23,38 @@ import static org.mockito.Mockito.when;
 class RoleServiceProtectionTest {
 
     private RoleRepository roleRepository;
+    private PermissionRepository permissionRepository;
     private RoleService service;
 
     @BeforeEach
     void setUp() {
         roleRepository = mock(RoleRepository.class);
+        permissionRepository = mock(PermissionRepository.class);
         service = new RoleService(
                 roleRepository,
-                mock(PermissionRepository.class),
+                permissionRepository,
                 mock(RolePermissionRepository.class),
                 mock(UserRoleRepository.class)
         );
+    }
+
+    @Test
+    void availablePermissionsExposeOnlyMinimalDisplayFields() {
+        Permission permission = new Permission();
+        permission.setId(7L);
+        permission.setPermissionCode("CASE_VIEW");
+        permission.setPermissionName("查看案件");
+        permission.setResourceUrl("/internal/cases/**");
+        permission.setDeleted(false);
+        when(permissionRepository.findByDeletedFalseOrderBySortOrderAscPermissionNameAsc())
+                .thenReturn(List.of(permission));
+
+        var result = service.getAvailablePermissions();
+
+        assertEquals(1, result.size());
+        assertEquals(7L, result.get(0).getId());
+        assertEquals("CASE_VIEW", result.get(0).getPermissionCode());
+        assertEquals("查看案件", result.get(0).getPermissionName());
     }
 
     @Test

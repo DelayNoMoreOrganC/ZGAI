@@ -19,29 +19,21 @@
           <el-tag size="small">{{ row.userCount || 0 }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="status" label="状态" width="80">
+      <el-table-column label="角色类型" width="110" align="center">
         <template #default="{ row }">
-          <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">
-            {{ row.status === 1 ? '启用' : '禁用' }}
+          <el-tag :type="row.systemRole ? 'info' : 'success'" size="small">
+            {{ row.systemRole ? '系统角色' : '自定义角色' }}
           </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="createdAt" label="创建时间" width="160">
-        <template #default="{ row }">
-          {{ formatDate(row.createdAt) }}
         </template>
       </el-table-column>
       <el-table-column label="操作" width="250" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="handleEdit(row)">
-            编辑
-          </el-button>
-          <el-button link type="primary" size="small" @click="handleAssignPermissions(row)">
-            分配权限
-          </el-button>
-          <el-button link type="danger" size="small" @click="handleDelete(row)">
-            删除
-          </el-button>
+          <template v-if="!row.systemRole">
+            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button link type="primary" size="small" @click="handleAssignPermissions(row)">分配权限</el-button>
+            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+          </template>
+          <span v-else class="system-role-hint">由身份权限基线维护</span>
         </template>
       </el-table-column>
     </el-table>
@@ -84,12 +76,6 @@
           />
         </el-form-item>
 
-        <el-form-item label="状态" prop="status">
-          <el-radio-group v-model="roleForm.status">
-            <el-radio :label="1">启用</el-radio>
-            <el-radio :label="0">禁用</el-radio>
-          </el-radio-group>
-        </el-form-item>
       </el-form>
 
       <template #footer>
@@ -100,15 +86,17 @@
 
     <!-- 分配权限对话框 -->
     <el-dialog v-model="permissionDialogVisible" title="分配权限" width="600px">
-      <div class="permission-tree">
+      <div class="permission-tree" v-loading="permissionLoading">
         <el-tree
+          v-if="permissionTree.length"
           ref="permissionTreeRef"
           :data="permissionTree"
           :props="treeProps"
           show-checkbox
-          node-key="id"
+          node-key="key"
           default-expand-all
         />
+        <el-empty v-else-if="!permissionLoading" description="暂无可分配权限" :image-size="64" />
       </div>
       <template #footer>
         <el-button @click="permissionDialogVisible = false">取消</el-button>
@@ -119,7 +107,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -128,7 +116,8 @@ import {
   createRole,
   updateRole,
   deleteRole,
-  assignPermissions
+  assignPermissions,
+  getAvailablePermissions
 } from '@/api/role'
 
 const loading = ref(false)
@@ -150,8 +139,7 @@ const roleFormRef = ref(null)
 const roleForm = reactive({
   roleName: '',
   roleCode: '',
-  description: '',
-  status: 1
+  description: ''
 })
 
 // 表单验证规则
@@ -161,7 +149,7 @@ const roleRules = {
   ],
   roleCode: [
     { required: true, message: '请输入角色代码', trigger: 'blur' },
-    { pattern: /^[A-Z_]+$/, message: '角色代码只能包含大写字母和下划线', trigger: 'blur' }
+    { pattern: /^[A-Z][A-Z0-9_]{1,49}$/, message: '角色代码须以大写字母开头，仅包含大写字母、数字和下划线', trigger: 'blur' }
   ]
 }
 
@@ -169,67 +157,55 @@ const roleRules = {
 const permissionDialogVisible = ref(false)
 const currentRole = ref(null)
 const permissionTreeRef = ref(null)
+const permissionLoading = ref(false)
+const permissionTree = ref([])
 const treeProps = {
   children: 'children',
   label: 'name'
 }
 
-// 权限树数据（模拟，实际应该从后端获取）
-const permissionTree = ref([
-  {
-    id: 1,
-    name: '案件管理',
-    children: [
-      { id: 11, name: '案件查看' },
-      { id: 12, name: '案件创建' },
-      { id: 13, name: '案件编辑' },
-      { id: 14, name: '案件删除' }
-    ]
-  },
-  {
-    id: 2,
-    name: '客户管理',
-    children: [
-      { id: 21, name: '客户查看' },
-      { id: 22, name: '客户创建' },
-      { id: 23, name: '客户编辑' }
-    ]
-  },
-  {
-    id: 3,
-    name: '文档管理',
-    children: [
-      { id: 31, name: '文档查看' },
-      { id: 32, name: '文档上传' },
-      { id: 33, name: '文档下载' }
-    ]
-  },
-  {
-    id: 4,
-    name: '日程管理',
-    children: [
-      { id: 41, name: '日程查看' },
-      { id: 42, name: '日程创建' },
-      { id: 43, name: '日程编辑' }
-    ]
-  },
-  {
-    id: 5,
-    name: '系统管理',
-    children: [
-      { id: 51, name: '用户管理' },
-      { id: 52, name: '角色管理' },
-      { id: 53, name: '权限管理' }
-    ]
+const permissionGroups = {
+  CASE: '案件管理', CLIENT: '客户管理', DOCUMENT: '案件文件', APPROVAL: '审批管理',
+  TODO: '待办与日程', CALENDAR: '待办与日程', FINANCE: '财务管理', INVOICE: '财务管理',
+  KNOWLEDGE: '知识与 AI', AI: '知识与 AI', STATISTICS: '统计报表', WORK: '统计报表',
+  USER: '系统管理', ROLE: '系统管理', SYSTEM: '系统管理', BACKUP: '系统管理', AUDIT: '系统管理'
+}
+
+const buildPermissionTree = (permissions) => {
+  const groups = new Map()
+  permissions.forEach(permission => {
+    const prefix = String(permission.permissionCode || '').split('_')[0]
+    const groupName = permissionGroups[prefix] || '其他权限'
+    if (!groups.has(groupName)) groups.set(groupName, [])
+    groups.get(groupName).push({
+      key: `permission:${permission.id}`,
+      permissionId: permission.id,
+      name: `${permission.permissionName}（${permission.permissionCode}）`
+    })
+  })
+  return Array.from(groups.entries()).map(([name, children]) => ({
+    key: `group:${name}`,
+    name,
+    children
+  }))
+}
+
+const loadPermissionTree = async () => {
+  permissionLoading.value = true
+  try {
+    const response = await getAvailablePermissions()
+    permissionTree.value = buildPermissionTree(response.data || [])
+  } finally {
+    permissionLoading.value = false
   }
-])
+}
 
 // 获取角色列表
 const fetchRoles = async () => {
   try {
     loading.value = true
     const res = await getRoleList({
-      page: pagination.page,
+      page: pagination.page - 1,
       size: pagination.size
     })
 
@@ -249,8 +225,7 @@ const handleAdd = () => {
   Object.assign(roleForm, {
     roleName: '',
     roleCode: '',
-    description: '',
-    status: 1
+    description: ''
   })
   dialogVisible.value = true
 }
@@ -262,8 +237,7 @@ const handleEdit = (row) => {
     id: row.id,
     roleName: row.roleName,
     roleCode: row.roleCode,
-    description: row.description,
-    status: row.status
+    description: row.description
   })
   dialogVisible.value = true
 }
@@ -297,21 +271,32 @@ const handleDialogClose = () => {
 }
 
 // 分配权限
-const handleAssignPermissions = (row) => {
+const handleAssignPermissions = async (row) => {
   currentRole.value = row
-  // 加载角色已有的权限并设置选中状态
-  const rolePermissions = row.permissions || []
-  selectedPermissions.value = rolePermissions.map(p => p.id)
-  permissionDialogVisible.value = true
+  try {
+    await loadPermissionTree()
+    permissionDialogVisible.value = true
+    await nextTick()
+    const checkedKeys = (row.permissionIds || []).map(id => `permission:${id}`)
+    permissionTreeRef.value?.setCheckedKeys(checkedKeys)
+  } catch (error) {
+    console.error('获取权限目录失败:', error)
+    ElMessage.error('获取权限目录失败')
+  }
 }
 
 // 保存权限分配
 const handleSavePermissions = async () => {
   try {
     const checkedKeys = permissionTreeRef.value?.getCheckedKeys() || []
-    await assignPermissions(currentRole.value.id, { permissionIds: checkedKeys })
+    const permissionIds = checkedKeys
+      .filter(key => String(key).startsWith('permission:'))
+      .map(key => Number(String(key).slice('permission:'.length)))
+      .filter(Number.isFinite)
+    await assignPermissions(currentRole.value.id, { permissionIds })
     ElMessage.success('分配权限成功')
     permissionDialogVisible.value = false
+    fetchRoles()
   } catch (error) {
     console.error('分配权限失败:', error)
     ElMessage.error('分配权限失败')
@@ -348,13 +333,6 @@ const handleCurrentChange = (page) => {
   fetchRoles()
 }
 
-// 格式化日期
-const formatDate = (dateStr) => {
-  if (!dateStr) return ''
-  const date = new Date(dateStr)
-  return date.toLocaleString('zh-CN')
-}
-
 onMounted(() => {
   fetchRoles()
 })
@@ -374,6 +352,12 @@ onMounted(() => {
     border: 1px solid #dcdfe6;
     border-radius: 4px;
     padding: 10px;
+    min-height: 180px;
+  }
+
+  .system-role-hint {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
   }
 }
 </style>

@@ -26,8 +26,10 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.concurrent.TimeUnit;
 
@@ -132,7 +134,7 @@ public class AuthController {
             data.put("departmentId", user.getDepartmentId());
             data.put("position", user.getPosition());
             data.put("mustChangePassword", Boolean.TRUE.equals(user.getMustChangePassword()));
-            addAuthorityData(data, authentication.getAuthorities().stream()
+            addAuthorityData(data, user, authentication.getAuthorities().stream()
                     .map(org.springframework.security.core.GrantedAuthority::getAuthority)
                     .collect(Collectors.toList()));
 
@@ -182,21 +184,23 @@ public class AuthController {
         data.put("departmentId", user.getDepartmentId());
         data.put("position", user.getPosition());
         data.put("mustChangePassword", Boolean.TRUE.equals(user.getMustChangePassword()));
-        addAuthorityData(data, userAuthorityService.loadAuthorities(user).stream()
+        addAuthorityData(data, user, userAuthorityService.loadAuthorities(user).stream()
                 .map(org.springframework.security.core.GrantedAuthority::getAuthority)
                 .collect(Collectors.toList()));
 
         return Result.success(data);
     }
 
-    private void addAuthorityData(Map<String, Object> data, List<String> authorities) {
+    void addAuthorityData(Map<String, Object> data, User user, List<String> authorities) {
+        List<String> roleCodes = userAuthorityService.loadRoleCodes(user);
+        Set<String> roleAuthorities = roleCodes.stream()
+                .map(roleCode -> "ROLE_" + roleCode)
+                .collect(Collectors.toCollection(HashSet::new));
         data.put("permissions", authorities.stream()
-                .filter(authority -> !authority.startsWith("ROLE_"))
+                .filter(authority -> !"ROLE_USER".equals(authority))
+                .filter(authority -> !roleAuthorities.contains(authority))
                 .collect(Collectors.toList()));
-        data.put("roles", authorities.stream()
-                .filter(authority -> authority.startsWith("ROLE_"))
-                .map(authority -> authority.substring("ROLE_".length()))
-                .collect(Collectors.toList()));
+        data.put("roles", roleCodes);
     }
 
     /**

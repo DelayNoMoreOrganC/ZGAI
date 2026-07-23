@@ -172,7 +172,7 @@
       </el-tab-pane>
 
       <!-- 角色管理 -->
-      <el-tab-pane label="角色管理" name="roles">
+      <el-tab-pane v-if="userStore.hasPermission('ROLE_VIEW')" label="角色管理" name="roles">
         <div class="tab-content">
           <Suspense>
             <RoleManagement />
@@ -303,10 +303,12 @@ import { Plus, Download } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import request from '@/utils/request'
 import { defineAsyncComponent } from 'vue'
+import { useUserStore } from '@/stores'
 
 // 异步加载系统管理组件
 const UserManagement = defineAsyncComponent(() => import('@/views/system/user/index.vue'))
 const RoleManagement = defineAsyncComponent(() => import('@/views/system/role/index.vue'))
+const userStore = useUserStore()
 
 const activeTab = ref('notices')
 const noticeType = ref('')

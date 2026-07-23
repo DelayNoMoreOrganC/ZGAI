@@ -2,6 +2,7 @@ package com.lawfirm.service;
 
 import com.lawfirm.dto.RoleCreateRequest;
 import com.lawfirm.dto.RoleDTO;
+import com.lawfirm.dto.PermissionOptionDTO;
 import com.lawfirm.entity.Role;
 import com.lawfirm.entity.RolePermission;
 import com.lawfirm.repository.PermissionRepository;
@@ -180,6 +181,18 @@ public class RoleService {
 
         return roles.stream()
                 .map(this::toSimpleDTO)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 获取当前有效的可分配权限。资源地址等内部字段不向前端暴露。
+     */
+    public List<PermissionOptionDTO> getAvailablePermissions() {
+        return permissionRepository.findByDeletedFalseOrderBySortOrderAscPermissionNameAsc().stream()
+                .map(permission -> new PermissionOptionDTO(
+                        permission.getId(),
+                        permission.getPermissionCode(),
+                        permission.getPermissionName()))
                 .collect(Collectors.toList());
     }
 

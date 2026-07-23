@@ -17,6 +17,14 @@ export function getAllRoles() {
   })
 }
 
+// 获取当前有效的可分配权限目录
+export function getAvailablePermissions() {
+  return request({
+    url: '/roles/permissions/available',
+    method: 'get'
+  })
+}
+
 // 获取角色详情
 export function getRoleDetail(id) {
   return request({

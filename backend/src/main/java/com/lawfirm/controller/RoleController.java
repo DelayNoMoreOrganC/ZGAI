@@ -3,6 +3,7 @@ package com.lawfirm.controller;
 import com.lawfirm.annotation.AuditLog;
 import com.lawfirm.dto.RoleCreateRequest;
 import com.lawfirm.dto.RoleDTO;
+import com.lawfirm.dto.PermissionOptionDTO;
 import com.lawfirm.exception.BusinessException;
 import com.lawfirm.service.RoleService;
 import com.lawfirm.util.Result;
@@ -160,5 +161,14 @@ public class RoleController {
             log.error("获取所有角色失败", e);
             return Result.error("获取所有角色失败");
         }
+    }
+
+    /**
+     * 获取可分配权限目录。
+     */
+    @GetMapping("/permissions/available")
+    @PreAuthorize("hasAuthority('ROLE_VIEW')")
+    public Result<List<PermissionOptionDTO>> getAvailablePermissions() {
+        return Result.success(roleService.getAvailablePermissions());
     }
 }

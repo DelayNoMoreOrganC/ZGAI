@@ -197,7 +197,7 @@ const routes = [
         path: 'admin-oa',
         name: 'AdminOA',
         component: () => import('@/views/admin/index.vue'),
-        meta: { title: '行政', icon: '🏢' }
+        meta: { title: '行政', icon: '🏢', requiredPermission: 'USER_VIEW' }
       },
       // 统计报表
       {

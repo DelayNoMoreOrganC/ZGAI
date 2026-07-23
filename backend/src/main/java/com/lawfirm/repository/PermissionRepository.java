@@ -27,4 +27,6 @@ public interface PermissionRepository extends JpaRepository<Permission, Long> {
      * 根据资源类型查找权限列表
      */
     List<Permission> findByResourceType(String resourceType);
+
+    List<Permission> findByDeletedFalseOrderBySortOrderAscPermissionNameAsc();
 }
