@@ -29,6 +29,8 @@ public class CaseDocumentDTO {
     private Boolean knowledgeEligible;
     private String indexStatus;
     private String ocrResult;
+
+    private String contentSha256;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 

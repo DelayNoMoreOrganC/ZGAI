@@ -11,11 +11,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.*;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.net.URI;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -47,6 +51,9 @@ public class BackupService {
     @Value("${backup.postgres.pg-dump-path:pg_dump}")
     private String pgDumpPath;
 
+    @Value("${backup.postgres.pg-restore-path:pg_restore}")
+    private String pgRestorePath;
+
     /**
      * 每天凌晨2点执行自动备份
      * cron表达式: 秒 分 时 日 月 周
@@ -66,7 +73,6 @@ public class BackupService {
     /**
      * 手动触发备份
      */
-    @Transactional(rollbackFor = Exception.class)
     public DataBackup manualBackup(String remark, Long userId) {
         log.info("开始执行手动数据备份，操作人: {}", userId);
         return performBackup("MANUAL", remark, userId);
@@ -75,7 +81,6 @@ public class BackupService {
     /**
      * 执行备份
      */
-    @Transactional(rollbackFor = Exception.class)
     private DataBackup performBackup(String backupType, String remark, Long... userIds) {
         Long userId = userIds.length > 0 ? userIds[0] : 0L;
 
@@ -88,41 +93,56 @@ public class BackupService {
         backup.setRemark(remark);
         backup.setFilePath("");
 
+        Path temporaryFile = null;
+        Path finalFile = null;
         try {
             // 确保备份目录存在
-            Path backupPath = Paths.get(backupBaseDir);
+            Path backupPath = backupRoot();
             if (!Files.exists(backupPath)) {
                 Files.createDirectories(backupPath);
             }
+            if (!Files.isDirectory(backupPath) || !Files.isWritable(backupPath)) {
+                throw new IOException("备份目录不可写");
+            }
 
             // 生成备份文件名
-            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS"));
             String backupFileName = "lawfirm_backup_" + timestamp + getBackupFileExtension();
-            String backupFilePath = backupPath.resolve(backupFileName).toString();
-            backup.setFilePath(backupFilePath);
+            finalFile = backupPath.resolve(backupFileName).normalize();
+            temporaryFile = backupPath.resolve(backupFileName + ".part").normalize();
+            backup.setFilePath(finalFile.toString());
 
             // 执行数据库备份
-            boolean success = backupDatabase(backupFilePath);
+            boolean success = backupDatabase(temporaryFile.toString());
 
             if (success) {
+                if (!verifyBackupFile(temporaryFile)) {
+                    throw new IOException("备份文件完整性校验失败");
+                }
+                moveAtomically(temporaryFile, finalFile);
+
                 // 获取文件大小
-                File backupFile = new File(backupFilePath);
-                long fileSize = backupFile.length();
+                long fileSize = Files.size(finalFile);
 
                 // 更新备份记录
-                backup.setFilePath(backupFilePath);
                 backup.setFileSize(fileSize);
                 backup.setBackupStatus("SUCCESS");
+                backup.setContentSha256(sha256(finalFile));
+                backup.setVerificationStatus("VERIFIED");
+                backup.setVerifiedAt(LocalDateTime.now());
                 dataBackupRepository.save(backup);
 
-                log.info("数据备份成功: 文件={}, 大小={}字节", backupFilePath, fileSize);
+                log.info("数据备份成功: 文件={}, 大小={}字节", finalFile.getFileName(), fileSize);
             } else {
                 throw new RuntimeException("数据库备份执行失败");
             }
 
         } catch (Exception e) {
             log.error("数据备份失败: {}", e.getMessage(), e);
+            deleteQuietly(temporaryFile);
+            deleteQuietly(finalFile);
             backup.setBackupStatus("FAILED");
+            backup.setVerificationStatus("FAILED");
             backup.setErrorMessage(e.getMessage());
             dataBackupRepository.save(backup);
             throw new RuntimeException("数据备份失败: " + e.getMessage(), e);
@@ -195,6 +215,61 @@ public class BackupService {
         }
     }
 
+    private boolean verifyBackupFile(Path backupFile) {
+        try {
+            if (backupFile == null || !Files.isRegularFile(backupFile, LinkOption.NOFOLLOW_LINKS)
+                    || Files.isSymbolicLink(backupFile) || Files.size(backupFile) <= 0) {
+                return false;
+            }
+            if (!datasourceUrl.contains("postgresql")) {
+                return true;
+            }
+
+            List<String> command = new ArrayList<>();
+            command.add(pgRestorePath);
+            command.add("--list");
+            command.add(backupFile.toString());
+            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            String output = readProcessOutput(process);
+            int exitCode = process.waitFor();
+            if (exitCode != 0 || output.trim().isEmpty()) {
+                log.error("PostgreSQL备份校验失败: exitCode={}, output={}", exitCode, output);
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.error("备份文件校验异常: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public boolean verifyBackup(Long backupId) {
+        DataBackup backup = dataBackupRepository.findById(backupId)
+                .orElseThrow(() -> new RuntimeException("备份记录不存在"));
+        if (!"SUCCESS".equals(backup.getBackupStatus())) {
+            throw new RuntimeException("只能校验成功生成的备份");
+        }
+
+        Path backupFile = resolveManagedBackupPath(backup.getFilePath());
+        boolean verified = verifyBackupFile(backupFile);
+        backup.setVerificationStatus(verified ? "VERIFIED" : "FAILED");
+        backup.setVerifiedAt(LocalDateTime.now());
+        if (verified) {
+            try {
+                backup.setFileSize(Files.size(backupFile));
+                backup.setContentSha256(sha256(backupFile));
+                backup.setErrorMessage(null);
+            } catch (IOException e) {
+                throw new RuntimeException("读取备份文件失败", e);
+            }
+        } else {
+            backup.setErrorMessage("备份文件完整性校验失败");
+        }
+        dataBackupRepository.save(backup);
+        return verified;
+    }
+
     static PostgreSqlConnectionInfo parsePostgreSqlConnection(String jdbcUrl) {
         if (jdbcUrl == null || !jdbcUrl.startsWith("jdbc:postgresql://")) {
             throw new IllegalArgumentException("无效的PostgreSQL JDBC地址");
@@ -203,6 +278,9 @@ public class BackupService {
         String path = uri.getPath();
         if (path == null || path.length() <= 1) {
             throw new IllegalArgumentException("PostgreSQL JDBC地址缺少数据库名");
+        }
+        if (uri.getHost() == null || uri.getHost().trim().isEmpty()) {
+            throw new IllegalArgumentException("PostgreSQL JDBC地址缺少主机名");
         }
         return new PostgreSqlConnectionInfo(
                 uri.getHost(),
@@ -381,20 +459,17 @@ public class BackupService {
             for (DataBackup backup : expiredBackups) {
                 try {
                     // 删除物理文件
-                    File backupFile = new File(backup.getFilePath());
-                    if (backupFile.exists()) {
-                        boolean deleted = backupFile.delete();
-                        if (deleted) {
-                            log.info("删除过期备份文件: {}", backup.getFilePath());
-                            deletedCount++;
-                        } else {
-                            log.warn("删除备份文件失败: {}", backup.getFilePath());
-                        }
+                    Path backupFile = resolveManagedBackupPath(backup.getFilePath());
+                    boolean deleted = !Files.exists(backupFile) || Files.deleteIfExists(backupFile);
+                    if (!deleted) {
+                        log.warn("删除备份文件失败，保留备份记录: backupId={}", backup.getId());
+                        continue;
                     }
 
                     // 标记记录为已删除
                     backup.setDeleted(true);
                     dataBackupRepository.save(backup);
+                    deletedCount++;
 
                 } catch (Exception e) {
                     log.error("删除过期备份失败: {}", e.getMessage(), e);
@@ -429,19 +504,19 @@ public class BackupService {
             throw new RuntimeException("只能从成功的备份恢复数据");
         }
 
-        File backupFile = new File(backup.getFilePath());
-        if (!backupFile.exists()) {
-            throw new RuntimeException("备份文件不存在: " + backup.getFilePath());
+        Path backupFile = resolveManagedBackupPath(backup.getFilePath());
+        if (!Files.exists(backupFile)) {
+            throw new RuntimeException("备份文件不存在");
         }
 
         try {
             // 检测数据库类型并执行相应的恢复
             if (datasourceUrl.contains("h2")) {
-                return restoreH2Database(backup.getFilePath());
+                return restoreH2Database(backupFile.toString());
             } else if (datasourceUrl.contains("postgresql")) {
                 throw new RuntimeException("PostgreSQL恢复必须停机后由管理员使用pg_restore执行，系统内不允许在线覆盖主库");
             } else if (datasourceUrl.contains("mysql")) {
-                return restoreMySQLDatabase(backup.getFilePath());
+                return restoreMySQLDatabase(backupFile.toString());
             } else {
                 throw new RuntimeException("不支持的数据库类型: " + datasourceUrl);
             }
@@ -567,10 +642,11 @@ public class BackupService {
                     .orElseThrow(() -> new RuntimeException("备份记录不存在"));
 
             // 删除物理文件
-            File backupFile = new File(backup.getFilePath());
-            if (backupFile.exists()) {
-                boolean fileDeleted = backupFile.delete();
-                if (!fileDeleted) {
+            Path backupFile = resolveManagedBackupPath(backup.getFilePath());
+            if (Files.exists(backupFile)) {
+                try {
+                    Files.delete(backupFile);
+                } catch (IOException e) {
                     log.warn("备份文件删除失败，保留数据库记录: backupId={}", backupId);
                     return false;
                 }
@@ -586,6 +662,74 @@ public class BackupService {
         } catch (Exception e) {
             log.error("删除备份失败: {}", e.getMessage(), e);
             return false;
+        }
+    }
+
+    private Path backupRoot() {
+        return Paths.get(backupBaseDir).toAbsolutePath().normalize();
+    }
+
+    private Path resolveManagedBackupPath(String storedPath) {
+        if (storedPath == null || storedPath.trim().isEmpty()) {
+            throw new SecurityException("备份文件路径无效");
+        }
+        try {
+            Path root = backupRoot();
+            Path candidate = Paths.get(storedPath).toAbsolutePath().normalize();
+            if (!candidate.startsWith(root) || Files.isSymbolicLink(candidate)) {
+                throw new SecurityException("备份文件路径超出受控目录");
+            }
+            if (Files.exists(root) && Files.exists(candidate)) {
+                Path realRoot = root.toRealPath();
+                Path realCandidate = candidate.toRealPath();
+                if (!realCandidate.startsWith(realRoot)) {
+                    throw new SecurityException("备份文件真实路径超出受控目录");
+                }
+            }
+            return candidate;
+        } catch (IOException e) {
+            throw new RuntimeException("无法校验备份文件路径", e);
+        }
+    }
+
+    private void moveAtomically(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(source, target);
+        }
+    }
+
+    private void deleteQuietly(Path path) {
+        if (path == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException cleanupError) {
+            log.warn("清理备份半成品失败: {}", path.getFileName());
+        }
+    }
+
+    static String sha256(Path path) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (InputStream input = Files.newInputStream(path)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = input.read(buffer)) >= 0) {
+                    if (read > 0) {
+                        digest.update(buffer, 0, read);
+                    }
+                }
+            }
+            StringBuilder result = new StringBuilder(64);
+            for (byte value : digest.digest()) {
+                result.append(String.format("%02x", value));
+            }
+            return result.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("当前运行环境不支持SHA-256", e);
         }
     }
 }

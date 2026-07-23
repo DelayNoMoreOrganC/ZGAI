@@ -28,6 +28,11 @@ public class BatchOperationRequest {
     private Long ownerId;
 
     /**
+     * 归档保管地。
+     */
+    private String archiveLocation;
+
+    /**
      * 操作原因（用于状态变更等）
      */
     private String reason;

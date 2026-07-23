@@ -45,6 +45,24 @@ public class AILog {
     @Column(name = "model_name", length = 50)
     private String modelName;
 
+    @Column(name = "provider_type", length = 50)
+    private String providerType;
+
+    @Column(name = "input_summary", length = 500)
+    private String inputSummary;
+
+    @Column(name = "input_hash", length = 64)
+    private String inputHash;
+
+    @Column(name = "output_hash", length = 64)
+    private String outputHash;
+
+    @Column(name = "estimated_cost_micros")
+    private Long estimatedCostMicros;
+
+    @Column(name = "privacy_sanitized_at")
+    private LocalDateTime privacySanitizedAt;
+
     @Column(length = 20)
     private String status;
 
@@ -130,6 +148,30 @@ public class AILog {
     public void setModelName(String modelName) {
         this.modelName = modelName;
     }
+
+    public String getProviderType() { return providerType; }
+
+    public void setProviderType(String providerType) { this.providerType = providerType; }
+
+    public String getInputSummary() { return inputSummary; }
+
+    public void setInputSummary(String inputSummary) { this.inputSummary = inputSummary; }
+
+    public String getInputHash() { return inputHash; }
+
+    public void setInputHash(String inputHash) { this.inputHash = inputHash; }
+
+    public String getOutputHash() { return outputHash; }
+
+    public void setOutputHash(String outputHash) { this.outputHash = outputHash; }
+
+    public Long getEstimatedCostMicros() { return estimatedCostMicros; }
+
+    public void setEstimatedCostMicros(Long estimatedCostMicros) { this.estimatedCostMicros = estimatedCostMicros; }
+
+    public LocalDateTime getPrivacySanitizedAt() { return privacySanitizedAt; }
+
+    public void setPrivacySanitizedAt(LocalDateTime privacySanitizedAt) { this.privacySanitizedAt = privacySanitizedAt; }
 
     public String getStatus() {
         return status;

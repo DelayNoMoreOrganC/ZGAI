@@ -223,8 +223,8 @@
         <!-- AI智能创建上传框 -->
         <div class="ai-upload-section">
           <div class="section-header">
-            <h3>🤖 AI智能创建</h3>
-            <el-tag size="small" type="success">支持创建待办/任务/日程/日志</el-tag>
+            <h3>案件 AI 助手</h3>
+            <el-button text type="primary" @click="router.push('/ai/case-workbench')">进入助手</el-button>
           </div>
           <el-upload
             ref="uploadRef"
@@ -237,11 +237,11 @@
           >
             <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
             <div class="el-upload__text">
-              拖拽文件到此处或 <em>点击上传</em>
+              拖入待归案文件，或 <em>点击选择</em>
             </div>
             <template #tip>
               <div class="el-upload__tip">
-                支持 PDF、Word、TXT、图片格式，AI将自动识别内容并创建待办事项、任务、日程或工作日志
+                文件在本地识别，确认案件与目录后才会归案
               </div>
             </template>
           </el-upload>
@@ -253,14 +253,14 @@
             <el-alert type="success" :closable="false" class="result-alert">
               <template #title>
                 <div class="result-title">
-                  <span>✅ AI识别成功（{{ aiResult.documentType || '未知文书' }}）</span>
+                  <span>文书识别完成（{{ aiResult.documentType || '未知文书' }}）</span>
                   <el-button text type="primary" size="small" @click="aiResult = null">关闭</el-button>
                 </div>
               </template>
               <div class="result-content">
                 <!-- 识别结果 -->
                 <div class="result-section">
-                  <h4>📄 识别信息</h4>
+                  <h4>识别信息</h4>
                   <div class="result-grid">
                     <div v-if="aiResult.caseNumber" class="result-item">
                       <span class="label">案号：</span>
@@ -299,19 +299,19 @@
 
                 <!-- 业务逻辑执行结果 -->
                 <div class="result-section" v-if="aiResult.businessLogic">
-                  <h4>🚀 自动执行</h4>
+                  <h4>处理结果</h4>
                   <div class="business-logic">
                     <el-tag v-if="aiResult.businessLogic.caseCreated" type="success" size="small">
-                      ✅ 案件已创建
+                      案件已创建
                     </el-tag>
                     <el-tag v-if="aiResult.businessLogic.todoCreated" type="success" size="small">
-                      ✅ 待办已创建
+                      待办已创建
                     </el-tag>
                     <el-tag v-if="aiResult.businessLogic.calendarCreated" type="success" size="small">
-                      ✅ 日程已创建
+                      日程已创建
                     </el-tag>
                     <el-tag v-if="aiResult.businessLogic.workReportCreated" type="success" size="small">
-                      ✅ 工作日志已创建
+                      工作日志已创建
                     </el-tag>
                   </div>
                   <div class="quick-links" v-if="aiResult.caseNumber">
@@ -392,12 +392,12 @@
         <span>上传文书</span>
       </div>
       <!-- 外部工具 -->
-      <div class="action-item tool-card-ssb" @click="handleQuickAction('ssb')">
+      <div v-if="externalToolsEnabled" class="action-item tool-card-ssb" @click="handleQuickAction('ssb')">
         <el-icon :size="36" color="#eb2f96"><Timer /></el-icon>
         <span class="tool-badge">⏱ 省时宝</span>
         <small class="tool-desc">法律文书生成</small>
       </div>
-      <div class="action-item tool-card-ac" @click="handleQuickAction('acCalc')">
+      <div v-if="externalToolsEnabled" class="action-item tool-card-ac" @click="handleQuickAction('acCalc')">
         <el-icon :size="36" color="#fa541c"><DataAnalysis /></el-icon>
         <span class="tool-badge">📊 AC精算</span>
         <small class="tool-desc">债权利息计算</small>
@@ -462,7 +462,6 @@
       :approval-id="selectedApprovalId"
       @handled="handleApprovalHandled"
     />
-    <AIAssistant v-model:visible="showAIAssistant" />
   </div>
 </template>
 
@@ -483,7 +482,6 @@ import { getClientList } from '@/api/client'
 import { getInvoices } from '@/api/finance'
 import { useUserStore } from '@/stores'
 import { resolveExternalAppUrl } from '@/utils/external-app-url'
-import AIAssistant from '@/views/ai/assistant.vue'
 import ApprovalDetailDrawer from '@/components/ApprovalDetailDrawer.vue'
 const userStore = useUserStore()
 const router = useRouter()
@@ -515,7 +513,7 @@ const canViewAllApprovals = computed(() => {
 })
 
 // AI助手控制
-const showAIAssistant = ref(false)
+const externalToolsEnabled = import.meta.env.VITE_ENABLE_EXTERNAL_TOOLS === 'true'
 const approvalDrawerVisible = ref(false)
 const selectedApprovalId = ref(null)
 
@@ -578,68 +576,9 @@ const aiResult = ref(null)
 
 // 自定义上传处理
 const handleCustomUpload = async (options) => {
-  const { file } = options
-
-  // 校验文件类型
-  const isValidType = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'image/jpeg', 'image/png'].includes(file.type)
-  const isValidSize = file.size / 1024 / 1024 < 10
-
-  if (!isValidType) {
-    ElMessage.error('只支持PDF、Word、TXT、图片格式文件')
-    return
-  }
-  if (!isValidSize) {
-    ElMessage.error('文件大小不能超过10MB')
-    return
-  }
-
-  aiProcessing.value = true
-  aiResult.value = null
-
-  try {
-    ElMessage.info('正在上传文档并调用AI识别，请耐心等待...')
-    const response = await uploadDocForAIRecognition(file)
-    aiProcessing.value = false
-
-    if (response.success || response.code === 200) {
-      const data = response.data
-      // 保存完整的识别结果
-      aiResult.value = {
-        success: true,
-        documentType: data.documentType,
-        caseNumber: data.caseNumber,
-        courtName: data.courtName,
-        plaintiffName: data.plaintiffName,
-        defendantName: data.defendantName,
-        caseReason: data.caseReason,
-        judgmentDate: data.judgmentDate,
-        hearingDate: data.hearingDate,
-        processingTime: data.processingTime,
-        // 只展示后端明确返回的执行结果，不根据识别字段推断业务已创建。
-        businessLogic: data.businessLogic || null
-      }
-
-      ElMessage.success(`AI识别成功！文书类型：${data.documentType || '未知'}\n案号：${data.caseNumber || '无'}\n处理时间：${data.processingTime || 0}ms`)
-      // 刷新待办列表
-      fetchTodos()
-      // 刷新日程列表
-      fetchCalendarEvents()
-      // 刷新统计数据
-      fetchStats()
-    } else {
-      ElMessage.error(response.message || 'AI识别失败')
-    }
-  } catch (error) {
-    aiProcessing.value = false
-    console.error('上传失败:', error)
-
-    // 更友好的超时错误提示
-    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-      ElMessage.error('AI识别超时（文档可能较大），请稍后在待办事项中查看结果')
-    } else {
-      ElMessage.error('文档上传失败：' + (error.message || '未知错误'))
-    }
-  }
+  if (!options?.file) return
+  ElMessage.info('请在案件 AI 助手中选择案件并核对归案结果')
+  router.push('/ai/case-workbench?tab=intake')
 }
 
 // 获取统计数据
@@ -967,7 +906,7 @@ const formatShortDate = (value) => {
 // 快捷操作
 const handleQuickAction = (action) => {
   if (action === 'aiAssistant') {
-    showAIAssistant.value = true
+    router.push('/ai/case-workbench')
     return
   }
 
@@ -1358,7 +1297,7 @@ onMounted(() => {
     gap: 20px;
 
     .ai-upload-section {
-      background: linear-gradient(135deg, #8e9eab 0%, #eef2f3 100%);
+      background: #edf2f5;
       border-radius: 8px;
       padding: 20px;
 
@@ -1712,6 +1651,71 @@ onMounted(() => {
           border-color: #fa541c;
           background: linear-gradient(135deg, #fff7e6 0%, #ffe6d5 100%);
         }
+      }
+    }
+  }
+
+  @media (max-width: 768px) {
+    .stats-cards {
+      grid-template-columns: 1fr;
+      gap: 12px;
+
+      .stat-card {
+        min-height: 98px;
+      }
+    }
+
+    .dashboard-content {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14px;
+
+      .calendar-section,
+      .todo-section {
+        min-width: 0;
+        padding: 14px;
+      }
+
+      .section-header {
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .calendar-view :deep(.el-calendar) {
+        .el-calendar__header {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: 10px;
+          padding: 10px 0;
+        }
+
+        .el-calendar__body {
+          padding: 8px 0 0;
+        }
+
+        .el-calendar-day {
+          height: 58px;
+          padding: 4px;
+        }
+
+        .calendar-day {
+          height: 48px;
+          padding: 0;
+        }
+      }
+
+      .ai-upload-section {
+        padding: 14px;
+      }
+    }
+
+    .quick-actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      padding: 14px;
+
+      .action-item {
+        min-width: 0;
+        padding: 14px 8px;
       }
     }
   }

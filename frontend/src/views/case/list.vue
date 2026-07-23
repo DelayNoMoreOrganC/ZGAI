@@ -2,7 +2,7 @@
   <div class="case-list">
     <PageHeader title="案件列表">
       <template #extra>
-        <el-button type="primary" @click="handleCreate">
+        <el-button v-if="canCreate" type="primary" @click="handleCreate">
           <el-icon><Plus /></el-icon>
           新建案件
         </el-button>
@@ -11,20 +11,35 @@
 
     <!-- 筛选条件区 -->
     <div class="filter-section">
-      <el-form :model="filterForm" inline>
+      <el-form
+        :model="filterForm"
+        class="filter-form"
+        :class="{ 'show-advanced': advancedFiltersVisible }"
+        label-position="top"
+      >
+        <el-form-item label="案件/案号">
+          <el-input
+            v-model="filterForm.keyword"
+            placeholder="输入案件名称或案号"
+            clearable
+            class="filter-control"
+            @keyup.enter="handleSearch"
+          />
+        </el-form-item>
+
         <el-form-item label="案件类型">
-          <el-select v-model="filterForm.caseType" placeholder="请选择" clearable style="width: 150px">
-            <el-option label="民事" value="CIVIL" />
-            <el-option label="商事" value="COMMERCIAL" />
-            <el-option label="仲裁" value="ARBITRATION" />
-            <el-option label="刑事" value="CRIMINAL" />
-            <el-option label="行政" value="ADMINISTRATIVE" />
-            <el-option label="非诉" value="NON_LITIGATION" />
+          <el-select v-model="filterForm.caseType" placeholder="请选择" clearable class="filter-control">
+            <el-option
+              v-for="option in CASE_TYPE_OPTIONS"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
           </el-select>
         </el-form-item>
 
         <el-form-item label="案件状态">
-          <el-select v-model="filterForm.status" placeholder="请选择" clearable style="width: 150px">
+          <el-select v-model="filterForm.status" placeholder="请选择" clearable class="filter-control">
             <el-option label="待审批" value="PENDING_APPROVAL" />
             <el-option label="立案驳回" value="FILING_REJECTED" />
             <el-option label="待立案" value="PENDING_FILING" />
@@ -34,18 +49,18 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="案由">
+        <el-form-item label="案由" class="advanced-filter">
           <el-input
             v-model="filterForm.caseReason"
             placeholder="输入案由关键词"
             clearable
-            style="width: 180px"
+            class="filter-control"
             @keyup.enter="handleSearch"
           />
         </el-form-item>
 
-        <el-form-item label="部门">
-          <el-select v-model="filterForm.departmentId" placeholder="请选择部门" clearable filterable style="width: 180px">
+        <el-form-item label="部门" class="advanced-filter">
+          <el-select v-model="filterForm.departmentId" placeholder="请选择部门" clearable filterable class="filter-control">
             <el-option
               v-for="department in departmentList"
               :key="department.id"
@@ -55,8 +70,8 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="主办律师">
-          <el-select v-model="filterForm.ownerId" placeholder="请选择" clearable filterable style="width: 150px">
+        <el-form-item label="主办律师" class="advanced-filter">
+          <el-select v-model="filterForm.ownerId" placeholder="请选择" clearable filterable class="filter-control">
             <el-option
               v-for="lawyer in lawyerList"
               :key="lawyer.id"
@@ -66,15 +81,17 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="管辖法院">
+        <el-form-item label="审理机构" class="advanced-filter">
           <el-select
             v-model="filterForm.court"
-            placeholder="请选择法院"
+            placeholder="法院或仲裁机构"
             clearable
             filterable
             remote
+            allow-create
+            default-first-option
             :remote-method="searchCourt"
-            style="width: 200px"
+            class="filter-control"
           >
             <el-option
               v-for="court in courtList"
@@ -85,7 +102,7 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="时间范围">
+        <el-form-item label="立案日期" class="advanced-filter">
           <el-date-picker
             v-model="filterForm.dateRange"
             type="daterange"
@@ -93,13 +110,17 @@
             start-placeholder="开始日期"
             end-placeholder="结束日期"
             value-format="YYYY-MM-DD"
-            style="width: 280px"
+            class="date-filter"
           />
         </el-form-item>
 
-        <el-form-item>
+        <el-form-item class="filter-actions">
           <el-button type="primary" @click="handleSearch">搜索</el-button>
           <el-button @click="handleReset">重置</el-button>
+          <el-button class="advanced-toggle" @click="advancedFiltersVisible = !advancedFiltersVisible">
+            <el-icon><Filter /></el-icon>
+            {{ advancedFiltersVisible ? '收起筛选' : '更多筛选' }}
+          </el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -114,21 +135,20 @@
           </el-radio-button>
           <el-radio-button value="kanban">
             <el-icon><Grid /></el-icon>
-            看板视图
+            本页看板
           </el-radio-button>
         </el-radio-group>
 
-        <el-dropdown v-if="selectedCases.length > 0" trigger="click" @command="handleBatchAction">
+        <el-dropdown v-if="selectedCases.length > 0 && canUseBatchActions" trigger="click" @command="handleBatchAction">
           <el-button type="primary">
             批量操作 ({{ selectedCases.length }})
             <el-icon><ArrowDown /></el-icon>
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="close">批量结案</el-dropdown-item>
-              <el-dropdown-item command="archive">批量归档</el-dropdown-item>
-              <el-dropdown-item command="changeOwner">修改主办律师</el-dropdown-item>
-              <el-dropdown-item command="delete" divided>批量删除</el-dropdown-item>
+              <el-dropdown-item v-if="canEdit" command="close" :disabled="!canBatchClose">批量结案</el-dropdown-item>
+              <el-dropdown-item v-if="canEdit" command="changeOwner" :disabled="!canBatchChangeOwner">修改主办律师</el-dropdown-item>
+              <el-dropdown-item v-if="canDelete" command="delete" :disabled="!canBatchDelete" divided>批量删除</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -150,10 +170,17 @@
         :total="total"
         :current-page="currentPage"
         :page-size="pageSize"
-        :show-selection="true"
+        :show-selection="canUseBatchActions"
+        :selection-selectable="canSelectForBatch"
+        :show-actions="true"
+        :action-width="actionWidth"
+        :show-empty-action="canCreate && !hasActiveFilters"
+        empty-action-text="新建案件"
+        empty-text="暂无符合条件的案件"
         @selection-change="handleSelectionChange"
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
+        @empty-action="handleCreate"
       >
         <el-table-column prop="caseTypeDesc" label="类型" width="80" sortable />
 
@@ -175,50 +202,44 @@
 
         <el-table-column prop="caseNumber" label="案号" width="150" sortable />
 
-        <el-table-column prop="parties" label="当事人" width="150">
+        <el-table-column prop="parties" label="案件主体" width="180">
           <template #default="{ row }">
-            <span v-if="row.parties">{{ row.parties }}</span>
-            <div v-else class="parties-cell">
-              <div class="party">{{ row.plaintiff }}</div>
-              <div class="vs">vs</div>
-              <div class="party">{{ row.defendant }}</div>
-            </div>
+            <span>{{ row.parties || '-' }}</span>
           </template>
         </el-table-column>
 
         <el-table-column prop="currentStage" label="当前阶段" width="100">
           <template #default="{ row }">
-            <el-progress
-              :percentage="getStageProgress(row.currentStage)"
-              :color="getStageColor(row.currentStage)"
-              :show-text="false"
-              :stroke-width="6"
-            />
-            <div class="stage-text">{{ row.currentStage }}</div>
+            <el-tag size="small" type="info" effect="plain">
+              {{ row.currentStage || '待登记' }}
+            </el-tag>
           </template>
         </el-table-column>
 
         <el-table-column prop="ownerName" label="主办律师" width="80" sortable />
 
-        <el-table-column prop="court" label="管辖法院" width="120" />
+        <el-table-column prop="court" label="审理机构" width="150" />
 
-        <el-table-column prop="nextHearing" label="下次开庭" width="110" sortable>
+        <el-table-column prop="nextHearingDate" label="下次开庭" width="110" sortable>
           <template #default="{ row }">
-            <div v-if="row.nextHearing" :class="getHearingClass(row.nextHearing)">
-              {{ formatDate(row.nextHearing) }}
+            <div v-if="row.nextHearingDate || row.hearingDate" :class="getHearingClass(row.nextHearingDate || row.hearingDate)">
+              {{ formatDate(row.nextHearingDate || row.hearingDate) }}
             </div>
             <span v-else class="text-muted">-</span>
           </template>
         </el-table-column>
 
         <template #actions="{ row }">
-          <el-button link type="primary" size="small" @click="handleEdit(row)">
+          <el-button link type="primary" size="small" @click="handleViewDetail(row)">
+            详情
+          </el-button>
+          <el-button v-if="canEditRow(row)" link type="primary" size="small" @click="handleEdit(row)">
             编辑
           </el-button>
-          <el-button link type="warning" size="small" @click="handleArchive(row)">
+          <el-button v-if="canArchiveRow(row)" link type="warning" size="small" @click="handleArchive(row)">
             归档
           </el-button>
-          <el-button link type="danger" size="small" @click="handleDelete(row)">
+          <el-button v-if="canDeleteRow(row)" link type="danger" size="small" @click="handleDelete(row)">
             删除
           </el-button>
         </template>
@@ -242,17 +263,11 @@
               v-for="caseItem in getCasesByStage(stage.key)"
               :key="caseItem.id"
               class="case-card"
-              :class="`level-${caseItem.level}`"
               @click="handleViewDetail(caseItem)"
             >
               <div class="card-header">
-                <span class="level-indicator" :class="caseItem.level">
-                  <el-icon v-if="caseItem.level === '重要'" color="#f56c6c"><Star /></el-icon>
-                  <el-icon v-else-if="caseItem.level === '一般'" color="#e6a23c"><Warning /></el-icon>
-                  <el-icon v-else color="#909399"><CircleCheck /></el-icon>
-                </span>
                 <el-tag size="small" :type="getTypeTagType(caseItem.caseType)">
-                  {{ caseItem.caseType }}
+                  {{ caseItem.caseTypeDesc || getCaseTypeLabel(caseItem.caseType) }}
                 </el-tag>
               </div>
               <div class="card-title">{{ caseItem.caseName }}</div>
@@ -261,9 +276,9 @@
                   <el-icon><User /></el-icon>
                   {{ caseItem.ownerName }}
                 </div>
-                <div class="meta-item" v-if="caseItem.nextHearing">
+                <div class="meta-item" v-if="caseItem.nextHearingDate || caseItem.hearingDate">
                   <el-icon><Calendar /></el-icon>
-                  {{ formatDate(caseItem.nextHearing) }}
+                  {{ formatDate(caseItem.nextHearingDate || caseItem.hearingDate) }}
                 </div>
               </div>
               <div class="card-footer">
@@ -274,6 +289,25 @@
         </div>
       </div>
     </div>
+
+    <el-dialog v-model="ownerDialogVisible" title="修改主办律师" width="min(440px, calc(100vw - 32px))">
+      <el-form label-position="top">
+        <el-form-item label="新主办律师" required>
+          <el-select v-model="newOwnerId" filterable placeholder="请选择主办律师" style="width: 100%">
+            <el-option
+              v-for="lawyer in lawyerList"
+              :key="lawyer.id"
+              :label="lawyer.name"
+              :value="lawyer.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="ownerDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="batchSubmitting" @click="confirmOwnerChange">确认修改</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -282,26 +316,29 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Plus, List, Grid, ArrowDown, Refresh, User, Calendar, Star, Warning, CircleCheck
+  Plus, List, Grid, ArrowDown, Refresh, User, Calendar, Filter
 } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import DataTable from '@/components/DataTable.vue'
 import {
   getCaseList,
   deleteCase,
-  archiveCase,
   batchCloseCases,
-  batchArchiveCases,
   batchDeleteCases,
   batchChangeOwner
 } from '@/api/case'
 import { getDepartmentList } from '@/api/department'
+import { getUserList } from '@/api/user'
+import { useUserStore } from '@/stores/user'
+import { CASE_TYPE_OPTIONS, getCaseTypeLabel, getCaseTypeWorkflow } from '@/utils/caseTypeProfiles'
 
 const router = useRouter()
 const route = useRoute()
+const userStore = useUserStore()
 
 // 筛选表单
 const filterForm = reactive({
+  keyword: '',
   caseType: '',
   status: '',
   caseReason: '',
@@ -323,27 +360,76 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const selectedCases = ref([])
 const departmentList = ref([])
+const ownerDialogVisible = ref(false)
+const newOwnerId = ref(null)
+const batchSubmitting = ref(false)
+const advancedFiltersVisible = ref(false)
 
-// 律师列表
-const lawyerList = ref([
-  { id: 1, name: '张律师' },
-  { id: 2, name: '李律师' },
-  { id: 3, name: '王律师' }
-])
+const lawyerList = ref([])
+
+const canCreate = computed(() => userStore.hasPermission('CASE_CREATE'))
+const canEdit = computed(() => userStore.hasPermission('CASE_EDIT'))
+const canArchive = computed(() => userStore.hasPermission('CASE_ARCHIVE'))
+const canDelete = computed(() => userStore.hasPermission('CASE_DELETE'))
+const canUseBatchActions = computed(() => canEdit.value || canArchive.value || canDelete.value)
+const actionWidth = computed(() => 72
+  + (canEdit.value ? 52 : 0)
+  + (canArchive.value ? 52 : 0)
+  + (canDelete.value ? 52 : 0))
+const hasActiveFilters = computed(() => Boolean(
+  filterForm.keyword.trim()
+  || filterForm.caseType
+  || filterForm.status
+  || filterForm.caseReason.trim()
+  || filterForm.departmentId
+  || filterForm.ownerId
+  || filterForm.court
+  || filterForm.clientId
+  || filterForm.dateRange?.length
+))
+const selectedStatusesMatch = (status) => selectedCases.value.length > 0
+  && selectedCases.value.every(item => item.status === status)
+const selectedRowsAllow = (field) => selectedCases.value.length > 0
+  && selectedCases.value.every(item => item[field] === true)
+const canBatchClose = computed(() => selectedRowsAllow('canEdit') && selectedStatusesMatch('ACTIVE'))
+const canBatchChangeOwner = computed(() => selectedRowsAllow('canEdit')
+  && selectedCases.value.every(item => !['CLOSED', 'ARCHIVED'].includes(item.status)))
+const canBatchDelete = computed(() => selectedRowsAllow('canDelete'))
+const canEditRow = (row) => row.canEdit === true
+const canArchiveRow = (row) => row.canArchive === true
+const canDeleteRow = (row) => row.canDelete === true
+const canSelectForBatch = (row) => canEditRow(row) || canArchiveRow(row) || canDeleteRow(row)
 
 // 法院列表
 const courtList = ref([])
 
-// 案件阶段
-const caseStages = [
-  { key: 'consult', label: '咨询' },
-  { key: 'contract', label: '签约' },
-  { key: 'filing', label: '立案' },
-  { key: 'trial1', label: '一审' },
-  { key: 'trial2', label: '二审' },
-  { key: 'execution', label: '执行' },
-  { key: 'closed', label: '结案' }
-]
+const caseStages = computed(() => {
+  if (filterForm.caseType) {
+    return getCaseTypeWorkflow(filterForm.caseType).map(stage => ({ key: stage, label: stage, mode: 'stage' }))
+  }
+  return [
+    { key: 'PENDING_APPROVAL', label: '待审批', mode: 'status' },
+    { key: 'ACTIVE', label: '办理中', mode: 'status' },
+    { key: 'CLOSED', label: '已结案', mode: 'status' },
+    { key: 'ARCHIVED', label: '已归档', mode: 'status' }
+  ]
+})
+
+const fetchLawyerList = async () => {
+  try {
+    const res = await getUserList({ page: 0, size: 300, status: 1 })
+    const data = res.data || {}
+    const users = data.content || data.records || data || []
+    const handlerPositions = ['主任', '部门主管', '合伙人', '律师', '实习律师', '助理', '律师助理']
+    lawyerList.value = users
+      .filter(user => (user.status === undefined || user.status === 1)
+        && handlerPositions.some(position => (user.position || '').includes(position)))
+      .map(user => ({ id: user.id, name: user.realName || user.username }))
+  } catch (error) {
+    console.error('获取主办律师列表失败', error)
+    lawyerList.value = []
+  }
+}
 
 // 获取案件列表
 const fetchCaseList = async () => {
@@ -352,6 +438,7 @@ const fetchCaseList = async () => {
     const params = {
       page: currentPage.value,
       size: pageSize.value,
+      keyword: filterForm.keyword.trim() || undefined,
       caseType: filterForm.caseType || undefined,
       status: filterForm.status || undefined,
       caseReason: filterForm.caseReason || undefined,
@@ -366,6 +453,8 @@ const fetchCaseList = async () => {
     caseList.value = res.data?.records || []  // 后端PageResult的data字段包含records
     total.value = res.data?.total || 0
   } catch (error) {
+    caseList.value = []
+    total.value = 0
     ElMessage.error('获取案件列表失败')
     console.error(error)
   } finally {
@@ -411,40 +500,12 @@ const searchCourt = async (query) => {
   courtList.value = majorCourts.filter(court => court.includes(query))
 }
 
-// 获取阶段进度
-const getStageProgress = (stage) => {
-  const stageMap = {
-    '咨询': 10,
-    '签约': 20,
-    '立案': 35,
-    '一审': 60,
-    '二审': 80,
-    '执行': 90,
-    '结案': 100
-  }
-  return stageMap[stage] || 0
-}
-
-// 获取阶段颜色
-const getStageColor = (stage) => {
-  const colorMap = {
-    '咨询': '#909399',
-    '签约': '#409eff',
-    '立案': '#67c23a',
-    '一审': '#e6a23c',
-    '二审': '#f56c6c',
-    '执行': '#ff6600',
-    '结案': '#303133'
-  }
-  return colorMap[stage] || '#909399'
-}
-
 // 获取开庭日期样式
 const getHearingClass = (date) => {
   const days = Math.ceil((new Date(date) - new Date()) / (1000 * 60 * 60 * 24))
   if (days < 0) return 'hearing-overdue'
   if (days <= 3) return 'hearing-urgent'
-  if (days <= 7) return 'hearning-soon'
+  if (days <= 7) return 'hearing-soon'
   return 'hearing-normal'
 }
 
@@ -459,17 +520,17 @@ const formatDate = (date) => {
 const getTypeTagType = (type) => {
   const typeMap = {
     CIVIL: 'primary',
-    COMMERCIAL: 'success',
     ARBITRATION: 'warning',
     CRIMINAL: 'danger',
     ADMINISTRATIVE: 'info',
     NON_LITIGATION: '',
+    CONSULTANT: 'success',
     '民事': 'primary',
-    '商事': 'success',
     '仲裁': 'warning',
     '刑事': 'danger',
     '行政': 'info',
-    '非诉': ''
+    '非诉': '',
+    '法律顾问': 'success'
   }
   return typeMap[type] || ''
 }
@@ -488,18 +549,11 @@ const getStatusTagType = (status) => {
 
 // 看板视图：根据阶段筛选案件
 const getCasesByStage = (stageKey) => {
-  return caseList.value.filter(item => {
-    const stageMap = {
-      'consult': '咨询',
-      'contract': '签约',
-      'filing': '立案',
-      'trial1': '一审',
-      'trial2': '二审',
-      'execution': '执行',
-      'closed': '结案'
-    }
-    return item.currentStage === stageMap[stageKey]
-  })
+  const column = caseStages.value.find(item => item.key === stageKey)
+  if (column?.mode === 'status') {
+    return caseList.value.filter(item => item.status === stageKey)
+  }
+  return caseList.value.filter(item => item.currentStage === stageKey)
 }
 
 // 看板视图：获取阶段案件数
@@ -516,6 +570,7 @@ const handleSearch = () => {
 // 重置
 const handleReset = () => {
   Object.assign(filterForm, {
+    keyword: '',
     caseType: '',
     status: '',
     caseReason: '',
@@ -525,6 +580,7 @@ const handleReset = () => {
     clientId: null,
     dateRange: []
   })
+  advancedFiltersVisible.value = false
   handleSearch()
 }
 
@@ -570,23 +626,7 @@ const handleEdit = (row) => {
   router.push(`/case/${row.id}/edit`)
 }
 
-// 归档
-const handleArchive = async (row) => {
-  try {
-    await ElMessageBox.confirm('确定要归档该案件吗?', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-    await archiveCase(row.id)
-    ElMessage.success('归档成功')
-    fetchCaseList()
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('归档失败')
-    }
-  }
-}
+const handleArchive = row => router.push(`/case/${row.id}/archive`)
 
 // 删除
 const handleDelete = async (row) => {
@@ -608,6 +648,12 @@ const handleDelete = async (row) => {
 
 // 批量操作
 const handleBatchAction = async (command) => {
+  if ((command === 'close' && !canBatchClose.value)
+    || (command === 'changeOwner' && !canBatchChangeOwner.value)
+    || (command === 'delete' && !canBatchDelete.value)) {
+    ElMessage.warning('所选案件的状态或操作权限不满足该批量操作条件')
+    return
+  }
   switch (command) {
     case 'close':
       try {
@@ -627,72 +673,20 @@ const handleBatchAction = async (command) => {
 
         ElMessage.success(`成功结案 ${selectedCases.value.length} 个案件`)
         selectedCases.value = []
-        await loadCases()
+        await fetchCaseList()
       } catch (error) {
         if (error !== 'cancel') {
           ElMessage.error('批量结案失败: ' + (error.message || '未知错误'))
         }
       }
       break
-    case 'archive':
-      try {
-        const { value } = await ElMessageBox.prompt(
-          `将为选中的 ${selectedCases.value.length} 个案件归档，请输入档案保管地`,
-          '批量归档',
-          {
-            confirmButtonText: '确定',
-            cancelButtonText: '取消',
-            inputPattern: /^.{1,100}$/,
-            inputErrorMessage: '请输入档案保管地（1-100字符）'
-          }
-        )
-
-        if (!value) return
-
-        // 使用批量操作API
-        const caseIds = selectedCases.value.map(c => c.id)
-        await batchArchiveCases(caseIds)
-
-        ElMessage.success(`成功归档 ${selectedCases.value.length} 个案件`)
-        selectedCases.value = []
-        await loadCases()
-      } catch (error) {
-        if (error !== 'cancel') {
-          ElMessage.error('批量归档失败: ' + (error.message || '未知错误'))
-        }
-      }
-      break
     case 'changeOwner':
-      try {
-        const { value } = await ElMessageBox.prompt(
-          `将修改选中的 ${selectedCases.value.length} 个案件的主办律师，请输入新主办律师ID`,
-          '修改主办律师',
-          {
-            confirmButtonText: '确定',
-            cancelButtonText: '取消',
-            inputPattern: /^\d+$/,
-            inputErrorMessage: '请输入有效的律师ID'
-          }
-        )
-
-        if (!value) return
-
-        // 使用批量操作API
-        const caseIds = selectedCases.value.map(c => c.id)
-        await batchChangeOwner(caseIds, parseInt(value))
-
-        ElMessage.success(`成功修改 ${selectedCases.value.length} 个案件的主办律师`)
-        selectedCases.value = []
-        await loadCases()
-      } catch (error) {
-        if (error !== 'cancel') {
-          ElMessage.error('修改主办律师失败: ' + (error.message || '未知错误'))
-        }
-      }
+      newOwnerId.value = null
+      ownerDialogVisible.value = true
       break
     case 'delete':
       try {
-        await ElMessageBox.confirm(`确定要删除选中的 ${selectedCases.value.length} 个案件吗？此操作不可恢复！`, '批量删除', {
+        await ElMessageBox.confirm(`确定要删除选中的 ${selectedCases.value.length} 个案件吗？删除后可在回收站恢复。`, '批量删除', {
           confirmButtonText: '确定',
           cancelButtonText: '取消',
           type: 'warning'
@@ -714,6 +708,26 @@ const handleBatchAction = async (command) => {
   }
 }
 
+const confirmOwnerChange = async () => {
+  if (!newOwnerId.value) {
+    ElMessage.warning('请选择主办律师')
+    return
+  }
+  try {
+    batchSubmitting.value = true
+    const caseIds = selectedCases.value.map(item => item.id)
+    await batchChangeOwner(caseIds, Number(newOwnerId.value))
+    ElMessage.success(`成功修改 ${caseIds.length} 个案件的主办律师`)
+    selectedCases.value = []
+    ownerDialogVisible.value = false
+    await fetchCaseList()
+  } catch (error) {
+    ElMessage.error('修改主办律师失败: ' + (error.message || '未知错误'))
+  } finally {
+    batchSubmitting.value = false
+  }
+}
+
 onMounted(() => {
   // 检查是否有客户筛选参数
   if (route.query.clientId) {
@@ -726,21 +740,52 @@ onMounted(() => {
 
   fetchCaseList()
   fetchDepartmentList()
+  fetchLawyerList()
 })
 </script>
 
 <style scoped lang="scss">
 .case-list {
   .filter-section {
-    background-color: #fff;
-    padding: 20px;
-    margin-bottom: 20px;
-    border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    margin-bottom: 12px;
+    padding: 16px;
+    background: #fff;
+    border: 1px solid var(--zg-border-color, #e5e7eb);
+    border-radius: 8px;
 
-    :deep(.el-form--inline .el-form-item) {
-      margin-right: 15px;
-      margin-bottom: 10px;
+    .filter-form {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(150px, 1fr));
+      gap: 12px;
+
+      :deep(.el-form-item) {
+        min-width: 0;
+        margin: 0;
+      }
+
+      :deep(.el-form-item__label) {
+        height: auto;
+        margin-bottom: 6px;
+        color: #60646c;
+        line-height: 20px;
+      }
+
+      .filter-control,
+      .date-filter {
+        width: 100%;
+      }
+
+      .filter-actions {
+        align-self: end;
+
+        :deep(.el-form-item__content) {
+          flex-wrap: nowrap;
+        }
+      }
+
+      .advanced-toggle {
+        display: none;
+      }
     }
   }
 
@@ -748,20 +793,23 @@ onMounted(() => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
-    padding: 15px 20px;
-    background-color: #fff;
-    border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    gap: 12px;
+    margin-bottom: 12px;
+    min-height: 40px;
 
     .toolbar-left {
       display: flex;
-      gap: 15px;
+      flex-wrap: wrap;
+      gap: 10px;
       align-items: center;
     }
   }
 
   .list-view {
+    :deep(.data-table) {
+      padding: 0;
+    }
+
     .parties-cell {
       display: flex;
       align-items: center;
@@ -781,12 +829,6 @@ onMounted(() => {
       }
     }
 
-    .stage-text {
-      font-size: 12px;
-      color: #666;
-      margin-top: 4px;
-    }
-
     .hearing-overdue {
       color: #f56c6c;
       font-weight: bold;
@@ -796,7 +838,7 @@ onMounted(() => {
       color: #f56c6c;
     }
 
-    .hearning-soon {
+    .hearing-soon {
       color: #e6a23c;
     }
 
@@ -813,15 +855,16 @@ onMounted(() => {
     .kanban-board {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 20px;
+      gap: 12px;
       overflow-x: auto;
-      padding-bottom: 20px;
+      padding-bottom: 12px;
 
       .kanban-column {
-        background-color: #f5f7fa;
+        background-color: #f7f8fa;
+        border: 1px solid var(--zg-border-color, #e5e7eb);
         border-radius: 8px;
-        padding: 15px;
-        min-height: 600px;
+        padding: 12px;
+        min-height: 420px;
         display: flex;
         flex-direction: column;
 
@@ -831,7 +874,7 @@ onMounted(() => {
           align-items: center;
           margin-bottom: 15px;
           padding-bottom: 10px;
-          border-bottom: 2px solid #e4e7ed;
+          border-bottom: 1px solid #e4e7ed;
 
           h3 {
             margin: 0;
@@ -852,37 +895,20 @@ onMounted(() => {
             background-color: #fff;
             border-radius: 6px;
             padding: 12px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e5e7eb;
             cursor: pointer;
-            transition: all 0.3s;
-            border-left: 3px solid transparent;
+            transition: border-color 0.2s, box-shadow 0.2s;
 
             &:hover {
-              box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-              transform: translateY(-2px);
-            }
-
-            &.level-重要 {
-              border-left-color: #f56c6c;
-            }
-
-            &.level-一般 {
-              border-left-color: #e6a23c;
-            }
-
-            &.level-次要 {
-              border-left-color: #909399;
+              border-color: #b8c7dc;
+              box-shadow: 0 2px 8px rgba(31, 41, 55, 0.08);
             }
 
             .card-header {
               display: flex;
-              justify-content: space-between;
+              justify-content: flex-end;
               align-items: center;
               margin-bottom: 8px;
-
-              .level-indicator {
-                font-size: 16px;
-              }
             }
 
             .card-title {
@@ -921,6 +947,75 @@ onMounted(() => {
             }
           }
         }
+      }
+    }
+  }
+
+  @media (max-width: 1100px) {
+    .filter-section .filter-form {
+      grid-template-columns: repeat(3, minmax(150px, 1fr));
+    }
+  }
+
+  @media (max-width: 820px) {
+    .filter-section .filter-form {
+      grid-template-columns: repeat(2, minmax(140px, 1fr));
+    }
+  }
+
+  @media (max-width: 600px) {
+    .filter-section {
+      padding: 12px;
+
+      .filter-form {
+        grid-template-columns: minmax(0, 1fr);
+
+        .advanced-filter {
+          display: none;
+        }
+
+        &.show-advanced .advanced-filter {
+          display: flex;
+        }
+
+        .advanced-toggle {
+          display: inline-flex;
+        }
+
+        .filter-actions :deep(.el-form-item__content) {
+          flex-wrap: wrap;
+          gap: 8px;
+
+          .el-button {
+            flex: 1;
+            min-width: 92px;
+            margin: 0;
+          }
+        }
+      }
+    }
+
+    .toolbar {
+      align-items: stretch;
+      flex-direction: column;
+
+      .toolbar-left,
+      .toolbar-right,
+      :deep(.el-radio-group) {
+        width: 100%;
+      }
+
+      :deep(.el-radio-button) {
+        flex: 1;
+      }
+
+      :deep(.el-radio-button__inner) {
+        width: 100%;
+      }
+
+      .toolbar-right .el-button {
+        width: 100%;
+        margin: 0;
       }
     }
   }

@@ -2,24 +2,26 @@
   <div class="approval-filter">
     <el-form :inline="true" :model="filterForm" class="filter-form">
       <el-form-item label="审批类型">
-        <el-select v-model="filterForm.type" placeholder="全部" clearable style="width: 150px">
+        <el-select v-model="filterForm.approvalType" placeholder="全部" clearable style="width: 150px">
           <el-option label="全部" value="" />
-          <el-option label="用印申请" value="用印申请" />
-          <el-option label="费用报销" value="费用报销" />
-          <el-option label="开票申请" value="开票申请" />
-          <el-option label="请假出差" value="请假出差" />
-          <el-option label="采购申请" value="采购申请" />
-          <el-option label="证照借用" value="证照借用" />
+          <el-option label="立案审批" value="CASE_FILING" />
+          <el-option label="主任终审" value="CASE_FILING_DIRECTOR" />
+          <el-option label="用印申请" value="SEAL" />
+          <el-option label="费用报销" value="REIMBURSEMENT" />
+          <el-option label="开票申请" value="INVOICE" />
+          <el-option label="请假出差" value="LEAVE" />
+          <el-option label="采购申请" value="PURCHASE" />
+          <el-option label="证照借用" value="LICENSE" />
         </el-select>
       </el-form-item>
 
       <el-form-item label="状态">
         <el-select v-model="filterForm.status" placeholder="全部" clearable style="width: 120px">
           <el-option label="全部" value="" />
-          <el-option label="审批中" value="审批中" />
-          <el-option label="已同意" value="已同意" />
-          <el-option label="已驳回" value="已驳回" />
-          <el-option label="已撤回" value="已撤回" />
+          <el-option label="待审批" value="PENDING" />
+          <el-option label="已同意" value="APPROVED" />
+          <el-option label="已驳回" value="REJECTED" />
+          <el-option label="已撤回" value="WITHDRAWN" />
         </el-select>
       </el-form-item>
 
@@ -38,7 +40,7 @@
       <el-form-item label="关键词">
         <el-input
           v-model="filterForm.keyword"
-          placeholder="搜索标题/申请人"
+          placeholder="搜索标题/内容/申请人"
           clearable
           style="width: 200px"
         >
@@ -68,7 +70,7 @@ import { ref } from 'vue'
 const emit = defineEmits(['search', 'reset'])
 
 const filterForm = ref({
-  type: '',
+  approvalType: '',
   status: '',
   dateRange: null,
   keyword: ''
@@ -80,7 +82,7 @@ const handleSearch = () => {
 
 const handleReset = () => {
   filterForm.value = {
-    type: '',
+    approvalType: '',
     status: '',
     dateRange: null,
     keyword: ''

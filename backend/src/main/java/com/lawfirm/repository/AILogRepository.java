@@ -6,6 +6,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
+import java.util.Optional;
+
 /**
  * AI日志Repository
  */
@@ -26,4 +29,10 @@ public interface AILogRepository extends JpaRepository<AILog, Long> {
      * 查询所有AI使用日志（按创建时间倒序）
      */
     Page<AILog> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
+    long countByPrivacySanitizedAtIsNull();
+
+    List<AILog> findAllByPrivacySanitizedAtIsNullOrderByIdAsc();
+
+    Optional<AILog> findFirstByPrivacySanitizedAtIsNullOrderByCreatedAtDesc();
 }

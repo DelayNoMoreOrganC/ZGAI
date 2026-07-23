@@ -5,45 +5,35 @@
       <div class="info-section">
         <div class="section-title">
           <h3>案件信息</h3>
-          <el-button text type="primary" size="small" @click="handleEditSection('info')">
+          <el-button v-if="canEdit" text type="primary" size="small" @click="handleEditSection('info')">
             编辑
           </el-button>
         </div>
-        <el-descriptions :column="3" border>
+        <el-descriptions :column="basicColumns" border>
           <el-descriptions-item label="案件类型">
             <el-tag :type="getTypeTagType(caseData.caseType)">
-              {{ caseData.caseType }}
+              {{ getCaseTypeLabel(caseData.caseType) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="案件程序">
-            {{ caseData.procedure }}
+          <el-descriptions-item :label="currentCaseProfile.procedureLabel">
+            {{ procedureDisplay }}
           </el-descriptions-item>
-          <el-descriptions-item label="案由">
+          <el-descriptions-item :label="currentCaseProfile.reasonLabel">
             {{ caseData.caseReason }}
           </el-descriptions-item>
-          <el-descriptions-item label="案号">
+          <el-descriptions-item label="案件编号">
             {{ caseData.caseNumber }}
           </el-descriptions-item>
-          <el-descriptions-item label="管辖法院">
+          <el-descriptions-item v-if="caseData.caseType !== 'CONSULTANT'" :label="currentCaseProfile.organizationLabel">
             {{ caseData.court }}
           </el-descriptions-item>
           <el-descriptions-item label="委托客户">
-            <div v-if="primaryClientId">
-              <el-tag type="success" size="small">有委托客户</el-tag>
-              <el-button
-                type="primary"
-                size="small"
-                text
-                @click="handleViewClient"
-                style="margin-left: 8px"
-              >
-                查看客户详情
-              </el-button>
-            </div>
+            <el-tag v-if="primaryClientName" type="success" size="small">{{ primaryClientName }}</el-tag>
             <span v-else class="text-muted">未关联客户</span>
           </el-descriptions-item>
           <el-descriptions-item label="立案时间">
-            {{ formatDate(caseData.filingDate) }}
+            <span v-if="caseData.filingDate">{{ formatDate(caseData.filingDate) }}</span>
+            <span v-else class="text-muted">审批通过后生成</span>
           </el-descriptions-item>
           <el-descriptions-item label="审限时间">
             <span :class="getDeadlineClass(caseData.deadlineDate)">
@@ -75,27 +65,130 @@
         </el-descriptions>
       </div>
 
-      <!-- 区块2: 当事人及关联方 -->
+      <div class="info-section conflict-status-section">
+        <div class="section-title">
+          <h3>立案利冲审查</h3>
+          <el-tag v-if="caseData.conflictChecks?.length" type="info">
+            {{ caseData.conflictChecks.length }} 个委托方
+          </el-tag>
+        </div>
+        <el-empty
+          v-if="!caseData.conflictChecks?.length"
+          description="该案件尚未关联结构化利冲记录"
+          :image-size="64"
+        />
+        <el-table v-else :data="caseData.conflictChecks" border size="small">
+          <el-table-column prop="subjectName" label="检查对象" min-width="160" />
+          <el-table-column prop="reportNo" label="报告编号" width="190" />
+          <el-table-column label="系统初筛" width="140">
+            <template #default="{ row }">
+              <el-tag :type="conflictRiskTagType(row.conflictLevel)" size="small">
+                {{ conflictRiskLabel(row.conflictLevel) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="正式结论" min-width="180">
+            <template #default="{ row }">
+              <el-tag :type="conflictDecisionTagType(row.reviewDecision)" size="small">
+                {{ row.reviewStatus === 'COMPLETED' ? conflictDecisionLabel(row.reviewDecision) : '待行政审查' }}
+              </el-tag>
+              <div v-if="row.reviewedAt" class="conflict-review-meta">
+                {{ row.reviewedByName || '-' }} · {{ formatDateTime(row.reviewedAt) }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="书面依据" min-width="180">
+            <template #default="{ row }">
+              <div v-if="row.waiverAttachments?.length" class="conflict-attachment-list">
+                <el-button
+                  v-for="attachment in row.waiverAttachments"
+                  :key="attachment.id"
+                  link
+                  type="primary"
+                  size="small"
+                  @click="handleDownloadWaiver(row, attachment)"
+                >
+                  {{ attachment.originalFileName }}
+                </el-button>
+              </div>
+              <span v-else class="text-muted">无</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="归档" width="110" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.archivedAt" type="success" size="small">已归档</el-tag>
+              <span v-else class="text-muted">未归档</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <div class="info-section type-workflow-section">
+        <div class="section-title">
+          <h3>{{ getCaseTypeLabel(caseData.caseType) }}办理要素</h3>
+        </div>
+        <div class="workflow-strip">
+          <span
+            v-for="(step, index) in currentWorkflow"
+            :key="step"
+            class="workflow-step"
+            :class="`is-${getWorkflowStepStatus(step)}`"
+          >
+            <b>{{ index + 1 }}</b>{{ step }}
+          </span>
+        </div>
+
+        <el-descriptions v-if="caseData.caseType === 'CONSULTANT'" :column="compactColumns" border class="type-details">
+          <el-descriptions-item label="顾问单位">{{ consultantUnitDisplayName }}</el-descriptions-item>
+          <el-descriptions-item label="服务期限">{{ formatDate(caseData.serviceStartDate) }} 至 {{ formatDate(caseData.serviceEndDate) }}</el-descriptions-item>
+          <el-descriptions-item label="主要联系人">{{ consultantContactSummary }}</el-descriptions-item>
+          <el-descriptions-item label="续签提醒">{{ formatDate(caseData.renewalReminderDate) }}</el-descriptions-item>
+          <el-descriptions-item label="服务范围" :span="2">{{ caseData.consultantServiceScope || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="响应约定" :span="2">{{ caseData.consultantResponseRequirement || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="包含服务">{{ caseData.consultantIncludedServices || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="除外服务">{{ caseData.consultantExcludedServices || '-' }}</el-descriptions-item>
+        </el-descriptions>
+        <el-descriptions v-else :column="basicColumns" border class="type-details">
+          <el-descriptions-item :label="currentCaseProfile.organizationLabel">{{ caseData.court || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="currentCaseProfile.externalNumberLabel">{{ caseData.courtCaseNumber || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="currentCaseProfile.procedureLabel">{{ caseData.trialStages || procedureDisplay }}</el-descriptions-item>
+          <el-descriptions-item v-if="caseData.caseType === 'CRIMINAL'" label="犯罪嫌疑人/被告人">{{ caseData.suspectName || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="caseData.caseType === 'CRIMINAL'" label="代理类型">{{ caseData.agencyType || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="caseData.caseType === 'NON_LITIGATION'" label="项目标的">{{ caseData.subjectMatter || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="业务类型">{{ caseData.businessType || '-' }}</el-descriptions-item>
+        </el-descriptions>
+
+        <div class="attention-panel">
+          <div class="attention-title">律师办理重点</div>
+          <ul>
+            <li v-for="item in currentCaseProfile.attentionItems" :key="item">{{ item }}</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- 区块2: 类型化主体及关联方 -->
       <div class="info-section">
         <div class="section-title">
-          <h3>当事人及关联方</h3>
-          <el-button type="primary" size="small" @click="handleAddParty">
+          <h3>{{ currentCaseProfile.partyTitle }}</h3>
+          <el-button v-if="canEdit" type="primary" size="small" @click="handleAddParty">
             <el-icon><Plus /></el-icon>
             添加当事人
           </el-button>
         </div>
-        <el-tabs type="card" class="party-tabs">
+        <el-empty v-if="uniqueAttributes.length === 0" :description="currentCaseProfile.partyEmpty" :image-size="64" />
+        <el-tabs v-else type="card" class="party-tabs">
           <el-tab-pane
             v-for="attr in uniqueAttributes"
             :key="attr"
+            :name="attr"
             :label="getAttributeLabel(attr)"
           >
             <el-table :data="getPartiesByAttribute(attr)" border>
               <el-table-column prop="name" label="姓名/单位名称" width="150" />
               <el-table-column prop="type" label="类型" width="80">
                 <template #default="{ row }">
-                  <el-tag :type="row.type === '个人' ? 'primary' : 'success'" size="small">
-                    {{ row.type }}
+                  <el-tag :type="row.partyType === 'INDIVIDUAL' ? 'primary' : 'success'" size="small">
+                    {{ row.partyTypeDesc || row.type || row.partyType }}
                   </el-tag>
                 </template>
               </el-table-column>
@@ -103,7 +196,7 @@
               <el-table-column prop="address" label="地址" show-overflow-tooltip />
               <el-table-column prop="idCard" label="身份证号/信用代码" width="180" />
               <el-table-column prop="opposingLawyer" label="代理律师" width="120" />
-              <el-table-column label="操作" width="120" fixed="right">
+              <el-table-column v-if="canEdit" label="操作" width="120" fixed="right">
                 <template #default="{ row }">
                   <el-button link type="primary" size="small" @click="handleEditParty(row)">
                     编辑
@@ -122,7 +215,7 @@
       <div class="info-section">
         <div class="section-title">
           <h3>办理人员</h3>
-          <el-button text type="primary" size="small" @click="handleEditTeam">
+          <el-button v-if="canEdit" text type="primary" size="small" @click="handleEditTeam">
             编辑团队
           </el-button>
         </div>
@@ -165,11 +258,11 @@
       <div class="info-section">
         <div class="section-title">
           <h3>代理律师费</h3>
-          <el-button text type="primary" size="small" @click="handleEditFee">
+          <el-button v-if="canEdit" text type="primary" size="small" @click="handleEditFee">
             编辑
           </el-button>
         </div>
-        <el-descriptions :column="2" border>
+        <el-descriptions :column="compactColumns" border>
           <el-descriptions-item label="收费方式">
             <el-tag
               v-for="feeType in displayFeeTypes"
@@ -215,7 +308,7 @@
       <div class="info-section">
         <div class="section-title">
           <h3>案件程序</h3>
-          <el-button type="primary" size="small" @click="handleAddProcedure">
+          <el-button v-if="canEdit" type="primary" size="small" @click="handleAddProcedure">
             <el-icon><Plus /></el-icon>
             添加程序
           </el-button>
@@ -230,12 +323,12 @@
             <template #header>
               <div class="procedure-header">
                 <span>{{ procedure.name }}</span>
-                <el-button text type="primary" size="small" @click="handleEditProcedure(procedure)">
+                <el-button v-if="canEdit" text type="primary" size="small" @click="handleEditProcedure(procedure)">
                   编辑
                 </el-button>
               </div>
             </template>
-            <el-descriptions :column="2" size="small">
+            <el-descriptions :column="compactColumns" size="small">
               <el-descriptions-item label="案号">
                 {{ procedure.caseNumber || '-' }}
               </el-descriptions-item>
@@ -268,24 +361,19 @@
               <el-tag
                 v-for="file in procedure.attachments"
                 :key="file.id"
-                closable
-                @close="handleDeleteAttachment(procedure, file)"
               >
                 {{ file.name }}
               </el-tag>
             </div>
           </el-card>
         </div>
+        <el-empty v-if="!caseData.procedures?.length" description="尚未登记案件程序" :image-size="64" />
       </div>
 
       <!-- 区块6: 关联案件 -->
       <div class="info-section">
         <div class="section-title">
           <h3>关联案件</h3>
-          <el-button type="primary" size="small" @click="handleAddRelatedCase">
-            <el-icon><Plus /></el-icon>
-            添加关联
-          </el-button>
         </div>
         <el-table :data="caseData.relatedCases || []" border>
           <el-table-column prop="name" label="案件名称" />
@@ -301,13 +389,14 @@
             </template>
           </el-table-column>
         </el-table>
+        <el-empty v-if="!caseData.relatedCases?.length" description="暂无关联案件" :image-size="64" />
       </div>
 
       <!-- 区块7: 办案策略 -->
       <div class="info-section">
         <div class="section-title">
           <h3>办案策略</h3>
-          <el-button type="primary" size="small" @click="handleAddStrategy">
+          <el-button v-if="canEdit" type="primary" size="small" @click="handleAddStrategy">
             <el-icon><Plus /></el-icon>
             添加策略
           </el-button>
@@ -320,7 +409,7 @@
           >
             <div class="strategy-header">
               <span class="strategy-title">{{ strategy.title }}</span>
-              <div class="strategy-actions">
+              <div v-if="canEdit" class="strategy-actions">
                 <el-button text type="primary" size="small" @click="handleEditStrategy(strategy)">
                   编辑
                 </el-button>
@@ -337,18 +426,10 @@
                 <span class="comment-text">{{ comment.text }}</span>
                 <span class="comment-time">{{ comment.time }}</span>
               </div>
-              <el-input
-                v-model="strategy.newComment"
-                placeholder="输入评论..."
-                @keyup.enter="handleAddComment(strategy, index)"
-              >
-                <template #append>
-                  <el-button @click="handleAddComment(strategy, index)">发送</el-button>
-                </template>
-              </el-input>
             </div>
           </div>
         </div>
+        <el-empty v-if="!caseData.strategies?.length" description="暂无办案策略" :image-size="64" />
       </div>
     </div>
 
@@ -356,7 +437,7 @@
     <el-dialog
       v-model="partyDialogVisible"
       :title="partyForm.id ? '编辑当事人' : '添加当事人'"
-      width="700px"
+      :width="dialogWidth"
     >
       <el-form :model="partyForm" label-width="100px">
         <el-row :gutter="20">
@@ -371,11 +452,7 @@
           <el-col :span="12">
             <el-form-item label="当事人角色" required>
               <el-select v-model="partyForm.partyRole" placeholder="请选择">
-                <el-option label="原告" value="PLAINTIFF" />
-                <el-option label="被告" value="DEFENDANT" />
-                <el-option label="申请人" value="APPLICANT" />
-                <el-option label="被申请人" value="RESPONDENT" />
-                <el-option label="第三人" value="THIRD_PARTY" />
+                <el-option v-for="role in currentPartyRoleOptions" :key="role.value" :label="role.label" :value="role.value" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -433,14 +510,14 @@
     </el-dialog>
 
     <!-- 团队编辑对话框 -->
-    <el-dialog v-model="teamDialogVisible" title="编辑团队" width="600px">
+    <el-dialog v-model="teamDialogVisible" title="编辑团队" :width="dialogWidth">
       <el-form :model="teamForm" label-width="100px">
         <el-form-item label="主办律师" required>
           <el-select v-model="teamForm.ownerId" placeholder="请选择主办律师" style="width: 100%">
             <el-option
               v-for="lawyer in lawyerList"
               :key="lawyer.id"
-              :label="lawyer.name"
+              :label="lawyer.label"
               :value="lawyer.id"
             />
           </el-select>
@@ -456,7 +533,7 @@
             <el-option
               v-for="lawyer in lawyerList"
               :key="lawyer.id"
-              :label="lawyer.name"
+              :label="lawyer.label"
               :value="lawyer.id"
             />
           </el-select>
@@ -472,7 +549,7 @@
             <el-option
               v-for="assistant in assistantList"
               :key="assistant.id"
-              :label="assistant.name"
+              :label="assistant.label"
               :value="assistant.id"
             />
           </el-select>
@@ -486,7 +563,7 @@
     </el-dialog>
 
     <!-- 费用编辑对话框 -->
-    <el-dialog v-model="feeDialogVisible" title="编辑费用信息" width="600px">
+    <el-dialog v-model="feeDialogVisible" title="编辑费用信息" :width="dialogWidth">
       <el-form :model="feeForm" label-width="100px">
         <el-form-item label="律师费">
           <el-input-number
@@ -500,11 +577,12 @@
 
         <el-form-item label="费用方式">
           <el-select v-model="feeForm.feeMethod" placeholder="请选择" style="width: 100%">
-            <el-option label="固定收费" value="FIXED" />
-            <el-option label="按比例收费" value="PERCENTAGE" />
-            <el-option label="风险代理" value="RISK" />
-            <el-option label="计时收费" value="HOURLY" />
-            <el-option label="协商收费" value="NEGOTIATED" />
+            <el-option
+              v-for="option in FEE_METHOD_OPTIONS"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
           </el-select>
         </el-form-item>
 
@@ -549,7 +627,7 @@
     <el-dialog
       v-model="procedureDialogVisible"
       :title="procedureForm.id ? '编辑程序' : '添加程序'"
-      width="700px"
+      :width="dialogWidth"
     >
       <el-form :model="procedureForm" label-width="100px">
         <el-row :gutter="20">
@@ -648,7 +726,7 @@
     <el-dialog
       v-model="strategyDialogVisible"
       :title="strategyForm.index !== null ? '编辑策略' : '添加策略'"
-      width="700px"
+      :width="dialogWidth"
     >
       <el-form :model="strategyForm" label-width="80px">
         <el-form-item label="策略标题" required>
@@ -680,36 +758,26 @@
     </el-dialog>
 
     <!-- 案件信息编辑对话框 -->
-    <el-dialog v-model="infoDialogVisible" title="编辑案件信息" width="700px">
+    <el-dialog v-model="infoDialogVisible" title="编辑案件信息" :width="dialogWidth">
       <el-form :model="infoForm" label-width="100px">
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="案件类型">
-              <el-select v-model="infoForm.caseType" placeholder="请选择案件类型" style="width: 100%">
-                <el-option label="民事" value="民事" />
-                <el-option label="商事" value="商事" />
-                <el-option label="仲裁" value="仲裁" />
-                <el-option label="刑事" value="刑事" />
-                <el-option label="行政" value="行政" />
-                <el-option label="非诉" value="非诉" />
+              <el-select v-model="infoForm.caseType" disabled style="width: 100%">
+                <el-option v-for="item in CASE_TYPE_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
             </el-form-item>
           </el-col>
 
           <el-col :span="12">
-            <el-form-item label="案件程序">
-              <el-select v-model="infoForm.procedure" placeholder="请选择案件程序" style="width: 100%">
-                <el-option label="一审" value="一审" />
-                <el-option label="二审" value="二审" />
-                <el-option label="再审" value="再审" />
-                <el-option label="执行" value="执行" />
-              </el-select>
+            <el-form-item :label="editCaseProfile.procedureLabel">
+              <el-input v-model="infoForm.procedure" placeholder="请输入当前程序或阶段" />
             </el-form-item>
           </el-col>
 
           <el-col :span="12">
-            <el-form-item label="案由">
-              <el-input v-model="infoForm.caseReason" placeholder="请输入案由" />
+            <el-form-item :label="editCaseProfile.reasonLabel">
+              <el-input v-model="infoForm.caseReason" placeholder="请输入案件或项目事项" />
             </el-form-item>
           </el-col>
 
@@ -719,25 +787,82 @@
             </el-form-item>
           </el-col>
 
+          <el-col v-if="infoForm.caseType !== 'CONSULTANT'" :span="12">
+            <el-form-item :label="editCaseProfile.organizationLabel">
+              <el-input v-model="infoForm.court" :placeholder="`请输入${editCaseProfile.organizationLabel}`" />
+            </el-form-item>
+          </el-col>
+
+          <el-col v-if="infoForm.caseType !== 'CONSULTANT'" :span="12">
+            <el-form-item :label="editCaseProfile.externalNumberLabel">
+              <el-input v-model="infoForm.courtCaseNumber" :placeholder="`请输入${editCaseProfile.externalNumberLabel}`" />
+            </el-form-item>
+          </el-col>
+
+          <el-col v-if="infoForm.caseType !== 'CONSULTANT'" :span="12">
+            <el-form-item label="业务类型">
+              <el-input v-model="infoForm.businessType" placeholder="请输入业务类型" />
+            </el-form-item>
+          </el-col>
+
+          <el-col v-if="['CIVIL', 'ARBITRATION', 'CRIMINAL', 'ADMINISTRATIVE'].includes(infoForm.caseType)" :span="12">
+            <el-form-item :label="editCaseProfile.procedureLabel">
+              <el-input v-model="infoForm.trialStages" placeholder="多个程序可用逗号分隔" />
+            </el-form-item>
+          </el-col>
+
+          <el-col v-if="infoForm.caseType === 'CRIMINAL'" :span="12">
+            <el-form-item label="犯罪嫌疑人/被告人">
+              <el-input v-model="infoForm.suspectName" placeholder="请输入姓名" />
+            </el-form-item>
+          </el-col>
+
+          <el-col v-if="infoForm.caseType === 'CRIMINAL'" :span="12">
+            <el-form-item label="代理类型">
+              <el-input v-model="infoForm.agencyType" placeholder="请输入代理或辩护类型" />
+            </el-form-item>
+          </el-col>
+
+          <el-col v-if="infoForm.caseType === 'NON_LITIGATION'" :span="24">
+            <el-form-item label="项目标的">
+              <el-input v-model="infoForm.subjectMatter" placeholder="请输入项目标的或目标" />
+            </el-form-item>
+          </el-col>
+
+          <template v-if="infoForm.caseType === 'CONSULTANT'">
+            <el-col :span="12">
+              <el-form-item label="顾问单位" required>
+                <el-input v-model="infoForm.consultantUnitName" placeholder="请输入顾问单位" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="主要联系人">
+                <el-input v-model="infoForm.consultantContactName" placeholder="请输入联系人" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="服务开始" required>
+                <el-date-picker v-model="infoForm.serviceStartDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="服务结束" required>
+                <el-date-picker v-model="infoForm.serviceEndDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="24">
+              <el-form-item label="服务范围">
+                <el-input v-model="infoForm.consultantServiceScope" type="textarea" :rows="2" placeholder="请输入服务范围" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="24">
+              <el-form-item label="响应约定">
+                <el-input v-model="infoForm.consultantResponseRequirement" placeholder="请输入响应时间和方式" />
+              </el-form-item>
+            </el-col>
+          </template>
+
           <el-col :span="12">
-            <el-form-item label="管辖法院">
-              <el-input v-model="infoForm.court" placeholder="请输入管辖法院" />
-            </el-form-item>
-          </el-col>
-
-          <el-col :span="8">
-            <el-form-item label="立案时间">
-              <el-date-picker
-                v-model="infoForm.filingDate"
-                type="date"
-                placeholder="选择日期"
-                value-format="YYYY-MM-DD"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-
-          <el-col :span="8">
             <el-form-item label="审限时间">
               <el-date-picker
                 v-model="infoForm.deadlineDate"
@@ -749,7 +874,7 @@
             </el-form-item>
           </el-col>
 
-          <el-col :span="8">
+          <el-col :span="12">
             <el-form-item label="委托时间">
               <el-date-picker
                 v-model="infoForm.commissionDate"
@@ -801,12 +926,16 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { createParty, updateParty, deleteParty, updateCase } from '@/api/case'
 import { getCaseProcedures, createCaseProcedure, updateCaseProcedure, deleteCaseProcedure } from '@/api/case'
+import { getUserList } from '@/api/user'
+import { downloadConflictWaiverAttachment } from '@/api/client'
+import { CASE_TYPE_OPTIONS, getCaseTypeLabel, getCaseTypeProfile, getPartyRoleOptions, PARTY_ROLE_LABELS } from '@/utils/caseTypeProfiles'
+import { FEE_METHOD_OPTIONS, formatFeeMethod } from '@/utils/feeMethod'
 
 const props = defineProps({
   caseData: {
@@ -818,6 +947,52 @@ const props = defineProps({
 const emit = defineEmits(['refresh'])
 
 const router = useRouter()
+const viewportWidth = ref(window.innerWidth)
+const canEdit = computed(() => props.caseData.canEdit === true)
+const basicColumns = computed(() => viewportWidth.value < 760 ? 1 : 3)
+const compactColumns = computed(() => viewportWidth.value < 760 ? 1 : 2)
+const dialogWidth = computed(() => viewportWidth.value < 760 ? 'calc(100vw - 24px)' : '700px')
+const updateViewportWidth = () => {
+  viewportWidth.value = window.innerWidth
+}
+
+window.addEventListener('resize', updateViewportWidth)
+onBeforeUnmount(() => window.removeEventListener('resize', updateViewportWidth))
+
+const currentCaseProfile = computed(() => getCaseTypeProfile(props.caseData.caseType))
+const currentWorkflow = computed(() => currentCaseProfile.value.workflow || [])
+const currentPartyRoleOptions = computed(() => getPartyRoleOptions(props.caseData.caseType))
+const consultantContactSummary = computed(() => [
+  props.caseData.consultantContactName,
+  props.caseData.consultantContactDepartment,
+  props.caseData.consultantContactTitle,
+  props.caseData.consultantContactPhone,
+  props.caseData.consultantContactEmail
+].filter(Boolean).join(' / ') || '-')
+const consultantUnitDisplayName = computed(() => {
+  if (props.caseData.consultantUnitName) return props.caseData.consultantUnitName
+  const parties = props.caseData.parties || []
+  const party = parties.find(item =>
+    ['CONSULTANT_UNIT', '顾问单位', 'CLIENT', '委托人'].includes(item.partyRole || item.attribute)
+  ) || parties.find(item => item.isClient) || parties.find(item =>
+    ['ORGANIZATION', '单位'].includes(item.partyType || item.type)
+  )
+  return party?.name || '-'
+})
+const procedureDisplay = computed(() => {
+  if (props.caseData.caseType === 'CONSULTANT' && props.caseData.currentStage) {
+    return props.caseData.currentStage
+  }
+  const labels = { FILING_REVIEW: '立案审批', FILING: '立案', ACTIVE: '办理中' }
+  return props.caseData.trialStages || labels[props.caseData.procedure] || props.caseData.procedure || '-'
+})
+
+const getWorkflowStepStatus = (step) => {
+  const progress = (props.caseData.stageProgress || []).find(item => item.stageName === step)
+  if (progress?.status === 'COMPLETED') return 'completed'
+  if (progress?.status === 'IN_PROGRESS' || props.caseData.currentStage === step) return 'active'
+  return 'pending'
+}
 
 // ==================== 案件信息对话框 ====================
 const infoDialogVisible = ref(false)
@@ -827,7 +1002,18 @@ const infoForm = ref({
   caseReason: '',
   caseNumber: '',
   court: '',
-  filingDate: '',
+  courtCaseNumber: '',
+  trialStages: '',
+  businessType: '',
+  suspectName: '',
+  agencyType: '',
+  subjectMatter: '',
+  consultantUnitName: '',
+  consultantContactName: '',
+  serviceStartDate: '',
+  serviceEndDate: '',
+  consultantServiceScope: '',
+  consultantResponseRequirement: '',
   deadlineDate: '',
   commissionDate: '',
   wonAmount: null,
@@ -835,6 +1021,7 @@ const infoForm = ref({
   tags: [],
   summary: ''
 })
+const editCaseProfile = computed(() => getCaseTypeProfile(infoForm.value.caseType))
 
 // 当事人对话框
 const partyDialogVisible = ref(false)
@@ -861,17 +1048,35 @@ const teamForm = ref({
   assistantIds: []
 })
 
-// 模拟律师和助理列表（实际应该从API获取）
-const lawyerList = ref([
-  { id: 1, name: '张律师' },
-  { id: 2, name: '李律师' },
-  { id: 3, name: '王律师' }
-])
+const userOptions = ref([])
+const caseHandlerPositions = ['主任', '部门主管', '合伙人', '律师', '实习律师', '助理', '律师助理']
+const assistantPositions = ['实习律师', '助理', '律师助理']
+const isPositionMatched = (user, positions) => positions.some(item => (user.position || '').includes(item))
+const lawyerList = computed(() => userOptions.value.filter(user => isPositionMatched(user, caseHandlerPositions)))
+const assistantList = computed(() => userOptions.value.filter(user => isPositionMatched(user, assistantPositions)))
 
-const assistantList = ref([
-  { id: 4, name: '助理小赵' },
-  { id: 5, name: '助理小钱' }
-])
+const loadUserOptions = async () => {
+  try {
+    const response = await getUserList({ page: 0, size: 300, status: 1 })
+    const data = response.data || {}
+    const users = data.content || data.records || data || []
+    userOptions.value = users
+      .filter(user => user.status === undefined || user.status === 1)
+      .map(user => ({
+        id: user.id,
+        name: user.realName || user.username,
+        label: `${user.realName || user.username}${user.position ? `（${user.position}）` : ''}${user.departmentName ? ` - ${user.departmentName}` : ''}`,
+        position: user.position || '',
+        departmentName: user.departmentName || ''
+      }))
+  } catch (error) {
+    console.error('加载案件办理人员失败:', error)
+    userOptions.value = []
+    ElMessage.error('加载办理人员失败，请检查员工账号数据')
+  }
+}
+
+onMounted(loadUserOptions)
 
 // 费用对话框
 const feeDialogVisible = ref(false)
@@ -911,12 +1116,12 @@ const strategyForm = ref({
 // 获取案件类型标签颜色
 const getTypeTagType = (type) => {
   const typeMap = {
-    '民事': 'primary',
-    '商事': 'success',
-    '仲裁': 'warning',
-    '刑事': 'danger',
-    '行政': 'info',
-    '非诉': undefined
+    CIVIL: 'primary',
+    ARBITRATION: 'warning',
+    CRIMINAL: 'danger',
+    ADMINISTRATIVE: 'info',
+    NON_LITIGATION: 'success',
+    CONSULTANT: 'success'
   }
   return typeMap[type]
 }
@@ -931,15 +1136,57 @@ const normalizeDate = (value) => {
 }
 
 const formatDate = (value) => normalizeDate(value) || '-'
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  if (Array.isArray(value)) {
+    const [year, month, day, hour = 0, minute = 0] = value
+    const pad = number => String(number).padStart(2, '0')
+    return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(minute)}`
+  }
+  return String(value).replace('T', ' ').slice(0, 16)
+}
+
+const handleDownloadWaiver = async (record, attachment) => {
+  try {
+    const response = await downloadConflictWaiverAttachment(record.id, attachment.id)
+    const url = URL.createObjectURL(response.data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = attachment.originalFileName || '利冲豁免依据'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    ElMessage.error(error?.message || '下载书面依据失败')
+  }
+}
+
+const conflictRiskLabel = (level) => ({
+  DIRECT: '直接冲突线索', CASE_PARTY: '案件主体命中', EXISTING: '既有客户命中', RELATED: '关联主体命中',
+  SIMILAR: '相似名称', NONE: '未发现线索'
+}[level] || '待人工核对')
+const conflictRiskTagType = (level) => ({
+  DIRECT: 'danger', CASE_PARTY: 'warning', EXISTING: 'warning', RELATED: 'warning', SIMILAR: 'warning', NONE: 'success'
+}[level] || 'info')
+const conflictDecisionLabel = (decision) => ({
+  PASSED: '无冲突，通过', REJECTED: '存在冲突，不通过', CONDITIONAL: '附条件通过'
+}[decision] || '待行政审查')
+const conflictDecisionTagType = (decision) => ({
+  PASSED: 'success', REJECTED: 'danger', CONDITIONAL: 'warning'
+}[decision] || 'info')
 
 const formatMoney = (value) => {
   const amount = Number(value ?? 0)
   return Number.isFinite(amount) ? amount.toLocaleString('zh-CN') : '0'
 }
 
-const primaryClientId = computed(() => {
-  if (props.caseData.clientId) return props.caseData.clientId
-  return props.caseData.clientIds?.[0] || null
+const primaryClientName = computed(() => {
+  if (props.caseData.clientName) return props.caseData.clientName
+  if (props.caseData.caseType === 'CONSULTANT' && props.caseData.consultantUnitName) {
+    return props.caseData.consultantUnitName
+  }
+  return (props.caseData.parties || []).find(p => p.isClient)?.name || ''
 })
 
 const displayTags = computed(() => {
@@ -952,8 +1199,10 @@ const displayTags = computed(() => {
 })
 
 const displayFeeTypes = computed(() => {
-  if (Array.isArray(props.caseData.feeTypes)) return props.caseData.feeTypes.filter(Boolean)
-  if (props.caseData.feeMethod) return [props.caseData.feeMethod]
+  if (Array.isArray(props.caseData.feeTypes)) {
+    return props.caseData.feeTypes.filter(Boolean).map(formatFeeMethod)
+  }
+  if (props.caseData.feeMethod) return [formatFeeMethod(props.caseData.feeMethod)]
   return []
 })
 
@@ -979,28 +1228,20 @@ const getJudgmentTagType = (result) => {
 // 获取当事人唯一属性
 const uniqueAttributes = computed(() => {
   const parties = props.caseData.parties || []
-  const attributes = parties.map(p => p.attribute)
+  const attributes = parties.map(p => p.partyRole || p.attribute).filter(Boolean)
   return [...new Set(attributes)]
 })
 
 // 获取属性标签
 const getAttributeLabel = (attr) => {
-  const labelMap = {
-    '原告': '原告',
-    '被告': '被告',
-    '第三人': '第三人',
-    '共同原告': '共同原告',
-    '共同被告': '共同被告',
-    '申请人': '申请人',
-    '被申请人': '被申请人'
-  }
-  return labelMap[attr] || attr
+  const party = (props.caseData.parties || []).find(item => (item.partyRole || item.attribute) === attr)
+  return party?.partyRoleDesc || PARTY_ROLE_LABELS[attr] || attr
 }
 
 // 根据属性筛选当事人
 const getPartiesByAttribute = (attr) => {
   const parties = props.caseData.parties || []
-  return parties.filter(p => p.attribute === attr)
+  return parties.filter(p => (p.partyRole || p.attribute) === attr)
 }
 
 // 编辑区块
@@ -1012,7 +1253,18 @@ const handleEditSection = (section) => {
     caseReason: props.caseData.caseReason || '',
     caseNumber: props.caseData.caseNumber || '',
     court: props.caseData.court || '',
-    filingDate: normalizeDate(props.caseData.filingDate),
+    courtCaseNumber: props.caseData.courtCaseNumber || '',
+    trialStages: props.caseData.trialStages || '',
+    businessType: props.caseData.businessType || '',
+    suspectName: props.caseData.suspectName || '',
+    agencyType: props.caseData.agencyType || '',
+    subjectMatter: props.caseData.subjectMatter || '',
+    consultantUnitName: props.caseData.consultantUnitName || '',
+    consultantContactName: props.caseData.consultantContactName || '',
+    serviceStartDate: normalizeDate(props.caseData.serviceStartDate),
+    serviceEndDate: normalizeDate(props.caseData.serviceEndDate),
+    consultantServiceScope: props.caseData.consultantServiceScope || '',
+    consultantResponseRequirement: props.caseData.consultantResponseRequirement || '',
     deadlineDate: normalizeDate(props.caseData.deadlineDate),
     commissionDate: normalizeDate(props.caseData.commissionDate),
     wonAmount: props.caseData.wonAmount ?? props.caseData.winAmount ?? null,
@@ -1024,6 +1276,16 @@ const handleEditSection = (section) => {
 }
 
 const handleSubmitInfo = async () => {
+  if (infoForm.value.caseType === 'CONSULTANT') {
+    if (!infoForm.value.consultantUnitName?.trim() || !infoForm.value.serviceStartDate || !infoForm.value.serviceEndDate) {
+      ElMessage.warning('顾问案件请完整填写顾问单位和服务期限')
+      return
+    }
+    if (new Date(infoForm.value.serviceStartDate) > new Date(infoForm.value.serviceEndDate)) {
+      ElMessage.warning('服务开始时间不能晚于结束时间')
+      return
+    }
+  }
   try {
     const payload = {
       ...infoForm.value,
@@ -1114,15 +1376,6 @@ const handleSaveParty = async () => {
   } catch (error) {
     console.error('保存当事人失败:', error)
     ElMessage.error('保存失败')
-  }
-}
-
-// 查看客户详情
-const handleViewClient = () => {
-  if (primaryClientId.value) {
-    router.push(`/client/${primaryClientId.value}`)
-  } else {
-    ElMessage.warning('该案件未关联客户')
   }
 }
 
@@ -1238,40 +1491,6 @@ const handleSaveProcedure = async () => {
   }
 }
 
-const handleDeleteAttachment = async (procedure, file) => {
-  try {
-    await ElMessageBox.confirm(
-      `确定要删除附件"${file.name}"吗？`,
-      '删除附件',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-
-    // 从程序中移除附件
-    const index = procedure.attachments?.indexOf(file)
-    if (index > -1) {
-      procedure.attachments.splice(index, 1)
-    }
-
-    ElMessage.success('附件删除成功')
-    emit('refresh')
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('删除附件失败:', error)
-      ElMessage.error('删除失败')
-    }
-  }
-}
-
-// 关联案件操作
-const handleAddRelatedCase = () => {
-  ElMessage.info('添加关联案件功能：请从案件列表选择要关联的案件')
-  // 这里可以打开一个案件选择对话框
-}
-
 const handleViewRelatedCase = (relatedCase) => {
   router.push(`/case/${relatedCase.id}`)
 }
@@ -1358,19 +1577,11 @@ const handleSaveStrategy = async () => {
   }
 }
 
-const handleAddComment = (strategy, index) => {
-  if (!strategy.newComment) return
-
-  // 办案策略的评论功能已迁移到"案件动态"tab
-  // 请切换到"案件动态"tab查看和添加评论
-  ElMessage.info('办案策略讨论请使用"案件动态"tab中的评论功能')
-  strategy.newComment = ''
-}
 </script>
 
 <style scoped lang="scss">
 .case-basic {
-  padding: 30px;
+  padding: 24px;
 
   .basic-content {
     .info-section {
@@ -1386,7 +1597,7 @@ const handleAddComment = (strategy, index) => {
         align-items: center;
         margin-bottom: 15px;
         padding-bottom: 10px;
-        border-bottom: 2px solid #e4e7ed;
+        border-bottom: 1px solid #e4e7ed;
 
         h3 {
           margin: 0;
@@ -1400,6 +1611,106 @@ const handleAddComment = (strategy, index) => {
 
       .party-tabs {
         margin-top: 15px;
+      }
+
+      .conflict-review-meta {
+        margin-top: 5px;
+        color: #6b7280;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .conflict-attachment-list {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+
+        .el-button {
+          height: auto;
+          padding: 2px 0;
+          white-space: normal;
+          text-align: left;
+          overflow-wrap: anywhere;
+        }
+      }
+
+      .workflow-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 16px;
+
+        .workflow-step {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          min-height: 32px;
+          padding: 5px 10px;
+          border: 1px solid #dfe3e8;
+          border-radius: 6px;
+          background: #f7f8fa;
+          color: #4b5563;
+          font-size: 13px;
+
+          b {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #e7eef8;
+            color: #1d4ed8;
+            font-size: 11px;
+          }
+
+          &.is-completed {
+            border-color: #b7d8c4;
+            background: #f1f8f4;
+            color: #25613d;
+
+            b {
+              background: #d7ecdf;
+              color: #25613d;
+            }
+          }
+
+          &.is-active {
+            border-color: #8bb5e8;
+            background: #eef5fd;
+            color: #174f8f;
+            font-weight: 600;
+          }
+        }
+      }
+
+      .type-details {
+        margin-top: 4px;
+      }
+
+      .attention-panel {
+        margin-top: 16px;
+        padding: 14px 16px;
+        border-left: 3px solid #d39a37;
+        background: #fbf8f1;
+
+        .attention-title {
+          margin-bottom: 8px;
+          color: #513f1d;
+          font-size: 14px;
+          font-weight: 600;
+        }
+
+        ul {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 7px 24px;
+          margin: 0;
+          padding-left: 20px;
+          color: #5d5546;
+          font-size: 13px;
+          line-height: 1.55;
+        }
       }
 
       .team-grid {
@@ -1548,6 +1859,47 @@ const handleAddComment = (strategy, index) => {
 
   .deadline-warning {
     color: #e6a23c;
+  }
+
+  @media (max-width: 760px) {
+    padding: 16px;
+
+    .basic-content .info-section {
+      margin-bottom: 24px;
+
+      .section-title {
+        align-items: flex-start;
+        gap: 10px;
+
+        h3 {
+          font-size: 15px;
+        }
+      }
+
+      .attention-panel ul {
+        grid-template-columns: 1fr;
+      }
+
+      .procedure-cards {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .team-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    :deep(.el-dialog .el-row) {
+      margin-left: 0 !important;
+      margin-right: 0 !important;
+    }
+
+    :deep(.el-dialog .el-col-12) {
+      flex: 0 0 100%;
+      max-width: 100%;
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+    }
   }
 }
 </style>

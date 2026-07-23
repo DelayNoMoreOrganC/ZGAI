@@ -1,6 +1,7 @@
 package com.lawfirm.service;
 
 import com.lawfirm.entity.KnowledgeArticle;
+import com.lawfirm.entity.AIConfig;
 import com.lawfirm.repository.KnowledgeArticleRepository;
 import org.junit.jupiter.api.Test;
 
@@ -11,9 +12,79 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class RAGKnowledgeServiceTest {
+
+    @Test
+    void startupSkipsQdrantWhenEmbeddingIsNotConfigured() {
+        EmbeddingService embeddingService = mock(EmbeddingService.class);
+        QdrantVectorService qdrantVectorService = mock(QdrantVectorService.class);
+        when(embeddingService.isConfigured()).thenReturn(false);
+        RAGKnowledgeService service = service(embeddingService, qdrantVectorService);
+
+        service.init();
+
+        verify(qdrantVectorService, never()).initializeCollection();
+        verify(qdrantVectorService, never()).isEnabled();
+    }
+
+    @Test
+    void startupInitializesQdrantOnlyWhenVectorStackIsEnabled() {
+        EmbeddingService embeddingService = mock(EmbeddingService.class);
+        QdrantVectorService qdrantVectorService = mock(QdrantVectorService.class);
+        when(embeddingService.isConfigured()).thenReturn(true);
+        when(qdrantVectorService.isEnabled()).thenReturn(true);
+        RAGKnowledgeService service = service(embeddingService, qdrantVectorService);
+
+        service.init();
+
+        verify(qdrantVectorService).initializeCollection();
+    }
+
+    @Test
+    void configuredEmbeddingDoesNotPretendVectorReadyWhenQdrantIsOffline() {
+        AIConfigService aiConfigService = mock(AIConfigService.class);
+        EmbeddingService embeddingService = mock(EmbeddingService.class);
+        QdrantVectorService qdrantVectorService = mock(QdrantVectorService.class);
+        when(aiConfigService.getUsableDefaultConfigOrNull()).thenReturn(new AIConfig());
+        when(embeddingService.isConfigured()).thenReturn(true);
+        when(embeddingService.healthStatus()).thenReturn(Map.of(
+                "status", "configured", "configuredDimension", 1024));
+        when(qdrantVectorService.healthStatus()).thenReturn(Map.of(
+                "status", "unavailable", "configuredDimension", 1024));
+        RAGKnowledgeService service = new RAGKnowledgeService(
+                aiConfigService, mock(KnowledgeArticleRepository.class), embeddingService,
+                qdrantVectorService, mock(OpenAICompatibleClient.class), mock(AIGenerationGateway.class));
+
+        Map<String, Object> status = service.healthStatus();
+
+        assertEquals("DEGRADED", status.get("status"));
+        assertEquals("KEYWORD", status.get("mode"));
+    }
+
+    @Test
+    void vectorReadyRequiresEmbeddingQdrantAndLlmTogether() {
+        AIConfigService aiConfigService = mock(AIConfigService.class);
+        EmbeddingService embeddingService = mock(EmbeddingService.class);
+        QdrantVectorService qdrantVectorService = mock(QdrantVectorService.class);
+        when(aiConfigService.getUsableDefaultConfigOrNull()).thenReturn(new AIConfig());
+        when(embeddingService.isConfigured()).thenReturn(true);
+        when(embeddingService.healthStatus()).thenReturn(Map.of(
+                "status", "configured", "configuredDimension", 1024));
+        when(qdrantVectorService.healthStatus()).thenReturn(Map.of(
+                "status", "ready", "configuredDimension", 1024));
+        RAGKnowledgeService service = new RAGKnowledgeService(
+                aiConfigService, mock(KnowledgeArticleRepository.class), embeddingService,
+                qdrantVectorService, mock(OpenAICompatibleClient.class), mock(AIGenerationGateway.class));
+
+        Map<String, Object> status = service.healthStatus();
+
+        assertEquals("READY", status.get("status"));
+        assertEquals("VECTOR_READY", status.get("mode"));
+    }
 
     @Test
     void chineseQuestionFallsBackToKeywordRetrievalWithoutPretendingLlmAnswer() {
@@ -22,7 +93,8 @@ class RAGKnowledgeServiceTest {
         EmbeddingService embeddingService = mock(EmbeddingService.class);
         QdrantVectorService qdrantVectorService = mock(QdrantVectorService.class);
         RAGKnowledgeService service = new RAGKnowledgeService(
-                aiConfigService, repository, embeddingService, qdrantVectorService);
+                aiConfigService, repository, embeddingService, qdrantVectorService,
+                mock(OpenAICompatibleClient.class), mock(AIGenerationGateway.class));
         KnowledgeArticle article = publicArticle(1L, "广东省律师防止利益冲突规则",
                 "第一章 总则\n第一条 本规则用于防止利益冲突。\n" +
                 "第二章 利益冲突的认定\n第一节 直接利益冲突\n" +
@@ -37,7 +109,7 @@ class RAGKnowledgeServiceTest {
         assertEquals("KEYWORD", result.get("searchMethod"));
         assertEquals("RETRIEVAL_ONLY", result.get("answerMode"));
         assertEquals(true, result.get("hasAnswer"));
-        assertTrue(String.valueOf(result.get("answer")).contains("尚未接入本地大模型"));
+        assertTrue(String.valueOf(result.get("answer")).contains("本次未生成AI综合回答"));
         assertTrue(String.valueOf(result.get("answer")).contains("第五条"));
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> sources = (List<Map<String, Object>>) result.get("sources");
@@ -51,7 +123,8 @@ class RAGKnowledgeServiceTest {
         EmbeddingService embeddingService = mock(EmbeddingService.class);
         QdrantVectorService qdrantVectorService = mock(QdrantVectorService.class);
         RAGKnowledgeService service = new RAGKnowledgeService(
-                aiConfigService, repository, embeddingService, qdrantVectorService);
+                aiConfigService, repository, embeddingService, qdrantVectorService,
+                mock(OpenAICompatibleClient.class), mock(AIGenerationGateway.class));
         KnowledgeArticle privateCase = publicArticle(2L, "某案件材料", "客户隐私与案件证据");
         privateCase.setKnowledgeSource("CASE_DEPOSIT");
         privateCase.setIsPublic(false);
@@ -72,7 +145,8 @@ class RAGKnowledgeServiceTest {
         EmbeddingService embeddingService = mock(EmbeddingService.class);
         QdrantVectorService qdrantVectorService = mock(QdrantVectorService.class);
         RAGKnowledgeService service = new RAGKnowledgeService(
-                aiConfigService, repository, embeddingService, qdrantVectorService);
+                aiConfigService, repository, embeddingService, qdrantVectorService,
+                mock(OpenAICompatibleClient.class), mock(AIGenerationGateway.class));
         KnowledgeArticle article = publicArticle(3L, "利益冲突规则",
                 "第十二条 委托关系终止后的一定时间内可能构成间接利益冲突：\n" +
                 "（一）其他普通业务关系；\n" +
@@ -107,5 +181,12 @@ class RAGKnowledgeServiceTest {
         article.setDeleted(false);
         article.setIndexStatus("NOT_INDEXED");
         return article;
+    }
+
+    private RAGKnowledgeService service(EmbeddingService embeddingService,
+                                        QdrantVectorService qdrantVectorService) {
+        return new RAGKnowledgeService(
+                mock(AIConfigService.class), mock(KnowledgeArticleRepository.class), embeddingService,
+                qdrantVectorService, mock(OpenAICompatibleClient.class), mock(AIGenerationGateway.class));
     }
 }

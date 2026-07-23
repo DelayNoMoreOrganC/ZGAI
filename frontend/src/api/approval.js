@@ -5,7 +5,9 @@ export function getApprovalList(params) {
   return request({
     url: '/approval',
     method: 'get',
-    params
+    params,
+    // ApprovalQueryRequest is intentionally 1-based; most legacy list APIs are 0-based.
+    skipPageNormalization: true
   })
 }
 
@@ -31,6 +33,26 @@ export function createApproval(data) {
     url: '/approval',
     method: 'post',
     data
+  })
+}
+
+// 发起公章用印审批（上传文件或引用案件文档）
+export function createSealApproval(data) {
+  return request({
+    url: '/approval/seal',
+    method: 'post',
+    data,
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000
+  })
+}
+
+export function downloadApprovalAttachment(approvalId, attachmentId) {
+  return request({
+    url: `/approval/${approvalId}/attachments/${attachmentId}/download`,
+    method: 'get',
+    responseType: 'blob',
+    timeout: 120000
   })
 }
 

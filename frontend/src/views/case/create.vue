@@ -33,11 +33,7 @@
             <el-col :span="12">
               <el-form-item label="案件类型" prop="caseType">
                 <el-select v-model="formData.caseType" placeholder="请选择案件类型">
-                  <el-option label="民事" value="CIVIL" />
-                  <el-option label="刑事" value="CRIMINAL" />
-                  <el-option label="行政" value="ADMINISTRATIVE" />
-                  <el-option label="非诉" value="NON_LITIGATION" />
-                  <el-option label="顾问" value="CONSULTANT" />
+                  <el-option v-for="item in CASE_TYPE_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
                 </el-select>
               </el-form-item>
             </el-col>
@@ -52,6 +48,21 @@
                   style="width: 100%"
                 />
               </el-form-item>
+            </el-col>
+
+            <el-col v-if="formData.caseType" :span="24">
+              <div class="type-guide">
+                <div class="type-guide-row">
+                  <span class="type-guide-label">标准流程</span>
+                  <span v-for="(step, index) in currentCaseProfile.workflow" :key="step" class="type-guide-step">
+                    <b>{{ index + 1 }}</b>{{ step }}
+                  </span>
+                </div>
+                <div class="type-guide-focus">
+                  <span class="type-guide-label">办理重点</span>
+                  <span v-for="item in currentCaseProfile.attentionItems" :key="item">{{ item }}</span>
+                </div>
+              </div>
             </el-col>
 
             <el-col :span="12">
@@ -89,10 +100,10 @@
             </el-col>
 
             <el-col :span="12">
-              <el-form-item label="案由" prop="caseReason">
+              <el-form-item :label="caseReasonLabel" prop="caseReason">
                 <el-input
                   v-model="formData.caseReason"
-                  placeholder="请自由填写案由，如：买卖合同纠纷"
+                  :placeholder="caseReasonPlaceholder"
                   maxlength="80"
                   show-word-limit
                 />
@@ -133,7 +144,7 @@
             </el-col>
 
             <el-col v-if="showTrialStages" :span="24">
-              <el-form-item label="审级" prop="trialStages">
+              <el-form-item :label="trialStageLabel" prop="trialStages">
                 <el-select v-model="formData.trialStages" multiple placeholder="请选择审级" style="width: 100%">
                   <el-option
                     v-for="stage in currentTrialStages"
@@ -184,7 +195,54 @@
               </el-form-item>
             </el-col>
 
-            <el-col v-if="formData.caseType === 'CONSULTANT'" :span="12">
+            <template v-if="formData.caseType === 'CONSULTANT'">
+            <el-col :span="12">
+              <el-form-item label="顾问单位" prop="consultantClientId">
+                <el-select
+                  v-model="formData.consultantClientId"
+                  filterable
+                  remote
+                  :remote-method="searchClient"
+                  placeholder="请从客户库选择顾问单位"
+                  style="width: 100%"
+                  @change="handleConsultantClientChange"
+                >
+                  <el-option v-for="client in consultantClientOptions" :key="client.id" :label="client.name" :value="client.id" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="12">
+              <el-form-item label="主要联系人" prop="consultantContactName">
+                <el-input v-model="formData.consultantContactName" placeholder="请输入顾问单位主要联系人" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="12">
+              <el-form-item label="联系人部门">
+                <el-input v-model="formData.consultantContactDepartment" placeholder="例如：法务部、办公室" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="12">
+              <el-form-item label="联系人职务">
+                <el-input v-model="formData.consultantContactTitle" placeholder="请输入职务" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="12">
+              <el-form-item label="联系人电话">
+                <el-input v-model="formData.consultantContactPhone" placeholder="手机号或区号+固话" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="12">
+              <el-form-item label="联系人邮箱">
+                <el-input v-model="formData.consultantContactEmail" placeholder="请输入邮箱" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="12">
               <el-form-item label="服务开始时间" prop="serviceStartDate">
                 <el-date-picker
                   v-model="formData.serviceStartDate"
@@ -196,7 +254,7 @@
               </el-form-item>
             </el-col>
 
-            <el-col v-if="formData.caseType === 'CONSULTANT'" :span="12">
+            <el-col :span="12">
               <el-form-item label="服务结束时间" prop="serviceEndDate">
                 <el-date-picker
                   v-model="formData.serviceEndDate"
@@ -207,6 +265,39 @@
                 />
               </el-form-item>
             </el-col>
+
+            <el-col :span="12">
+              <el-form-item label="续签提醒日期">
+                <el-date-picker v-model="formData.renewalReminderDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="24">
+              <el-form-item label="服务范围" prop="consultantServiceScopes">
+                <el-select v-model="formData.consultantServiceScopes" multiple allow-create filterable style="width: 100%" placeholder="选择或输入服务范围">
+                  <el-option v-for="scope in consultantScopeOptions" :key="scope" :label="scope" :value="scope" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="24">
+              <el-form-item label="响应约定">
+                <el-input v-model="formData.consultantResponseRequirement" placeholder="例如：普通事项2个工作日内响应，紧急事项4小时内响应" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="12">
+              <el-form-item label="包含服务">
+                <el-input v-model="formData.consultantIncludedServices" type="textarea" :rows="3" placeholder="合同内已包含的服务、工时或次数" />
+              </el-form-item>
+            </el-col>
+
+            <el-col :span="12">
+              <el-form-item label="除外服务">
+                <el-input v-model="formData.consultantExcludedServices" type="textarea" :rows="3" placeholder="诉讼、专项尽调等需另行委托的事项" />
+              </el-form-item>
+            </el-col>
+            </template>
 
             <el-col :span="24">
               <el-form-item label="案件标签" prop="tags">
@@ -304,18 +395,29 @@
           </el-row>
         </div>
 
-        <!-- B. 当事人及关联方 -->
+        <!-- B. 类型化主体及关联方 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>B. 当事人及关联方</h3>
+            <div>
+              <h3>B. {{ currentCaseProfile.partyTitle }}</h3>
+              <p class="section-note">{{ currentCaseProfile.partyEmpty }}</p>
+            </div>
             <el-button type="primary" size="small" @click="handleAddParty">
               <el-icon><Plus /></el-icon>
-              添加当事人
+              添加主体
             </el-button>
           </div>
 
+          <el-alert
+            class="conflict-check-note"
+            type="info"
+            :closable="false"
+            show-icon
+            title="提交立案后，系统会对所有标记为“委托方”的主体自动执行全库利冲初筛，并交由行政管理正式审查。"
+          />
+
           <div v-if="formData.parties.length === 0" class="empty-tip">
-            <el-empty description="暂无当事人，请添加" />
+            <el-empty :description="currentCaseProfile.partyEmpty" />
           </div>
 
           <div v-for="(party, index) in formData.parties" :key="index" class="party-item">
@@ -364,17 +466,7 @@
                   :rules="{ required: true, message: '请选择属性', trigger: 'change' }"
                 >
                   <el-select v-model="party.attribute" placeholder="请选择属性">
-                    <el-option label="原告" value="原告" />
-                    <el-option label="被告" value="被告" />
-                    <el-option label="第三人" value="第三人" />
-                    <el-option label="共同原告" value="共同原告" />
-                    <el-option label="共同被告" value="共同被告" />
-                    <el-option label="申请人" value="申请人" />
-                    <el-option label="被申请人" value="被申请人" />
-                    <el-option label="上诉人" value="上诉人" />
-                    <el-option label="被上诉人" value="被上诉人" />
-                    <el-option label="管理人" value="管理人" />
-                    <el-option label="债权人" value="债权人" />
+                    <el-option v-for="role in currentPartyRoleOptions" :key="role.value" :label="role.label" :value="role.value" />
                   </el-select>
                 </el-form-item>
               </el-col>
@@ -398,9 +490,9 @@
                   >
                     <el-option
                       v-for="client in clientList"
-                      :key="client"
-                      :label="client"
-                      :value="client"
+                      :key="client.id"
+                      :label="client.name"
+                      :value="client.name"
                     />
                   </el-select>
                 </el-form-item>
@@ -809,9 +901,9 @@
                 >
                   <el-option
                     v-for="client in clientList"
-                    :key="client"
-                    :label="client"
-                    :value="client"
+                    :key="client.id"
+                    :label="client.name"
+                    :value="client.id"
                   />
                 </el-select>
               </el-form-item>
@@ -891,9 +983,10 @@ import {
 import PageHeader from '@/components/PageHeader.vue'
 import AIDocumentFill from '@/components/AIDocumentFill.vue'
 import { createCase, updateCase, checkDuplicate, getCaseDetail } from '@/api/case'
-import { searchClients } from '@/api/client'
+import { getClientDetail, searchClients } from '@/api/client'
 import { getUserList } from '@/api/user'
 import { useSubmitForm } from '@/composables/useSubmitForm'
+import { CASE_TYPE_OPTIONS, CASE_TYPE_PROFILES, getPartyRoleOptions } from '@/utils/caseTypeProfiles'
 
 const router = useRouter()
 const route = useRoute()
@@ -936,7 +1029,26 @@ const transformToRequest = () => {
     '共同原告': 'CO_PLAINTIFF',
     '共同被告': 'CO_DEFENDANT',
     '管理人': 'ADMINISTRATOR',
-    '债权人': 'CREDITOR'
+    '债权人': 'CREDITOR',
+    '债务人': 'DEBTOR',
+    '委托人': 'CLIENT',
+    '委托方': 'CLIENT',
+    '顾问单位': 'CONSULTANT_UNIT',
+    '服务对象': 'SERVICE_RECIPIENT',
+    '关联公司': 'RELATED_COMPANY',
+    '交易相对方': 'COUNTERPARTY',
+    '单项事务相对方': 'COUNTERPARTY',
+    '目标公司': 'TARGET_COMPANY',
+    '投资方': 'INVESTOR',
+    '融资方': 'FINANCIER',
+    '犯罪嫌疑人': 'SUSPECT',
+    '被告人': 'DEFENDANT_CRIMINAL',
+    '被害人': 'VICTIM',
+    '近亲属': 'FAMILY_MEMBER',
+    '行政相对人': 'ADMINISTRATIVE_COUNTERPART',
+    '行政机关': 'ADMINISTRATIVE_AUTHORITY',
+    '反请求申请人': 'COUNTERCLAIMANT',
+    '反请求被申请人': 'COUNTER_RESPONDENT'
   }
 
   // 转换当事人数据
@@ -976,6 +1088,18 @@ const transformToRequest = () => {
     agencyType: formData.agencyType || null,
     serviceStartDate: formData.serviceStartDate || null,
     serviceEndDate: formData.serviceEndDate || null,
+    consultantClientId: formData.consultantClientId || null,
+    consultantUnitName: formData.consultantUnitName || null,
+    consultantContactName: formData.consultantContactName || null,
+    consultantContactDepartment: formData.consultantContactDepartment || null,
+    consultantContactTitle: formData.consultantContactTitle || null,
+    consultantContactPhone: formData.consultantContactPhone || null,
+    consultantContactEmail: formData.consultantContactEmail || null,
+    consultantServiceScope: formData.consultantServiceScopes.join(','),
+    consultantResponseRequirement: formData.consultantResponseRequirement || null,
+    consultantIncludedServices: formData.consultantIncludedServices || null,
+    consultantExcludedServices: formData.consultantExcludedServices || null,
+    renewalReminderDate: formData.renewalReminderDate || null,
     trialStages: formData.trialStages?.join(',') || null,
     courtCaseNumber: formData.courtCaseNumber || null,
     hearingDate: formData.hearingDate || null,
@@ -1090,6 +1214,18 @@ const formData = reactive({
   agencyType: '',
   serviceStartDate: '',
   serviceEndDate: '',
+  consultantClientId: null,
+  consultantUnitName: '',
+  consultantContactName: '',
+  consultantContactDepartment: '',
+  consultantContactTitle: '',
+  consultantContactPhone: '',
+  consultantContactEmail: '',
+  consultantServiceScopes: [],
+  consultantResponseRequirement: '',
+  consultantIncludedServices: '',
+  consultantExcludedServices: '',
+  renewalReminderDate: '',
   trialStages: [],
   courtCaseNumber: '',
   hearingDate: '',
@@ -1145,6 +1281,7 @@ const formRules = {
   suspectName: [{ required: true, message: '请输入犯罪嫌疑人', trigger: 'blur' }],
   serviceStartDate: [{ required: true, message: '请选择合同服务开始时间', trigger: 'change' }],
   serviceEndDate: [{ required: true, message: '请选择合同服务结束时间', trigger: 'change' }],
+  consultantClientId: [{ required: true, message: '请从客户库选择顾问单位', trigger: 'change' }],
   freeReason: [{ required: true, message: '请输入免费代理申请理由', trigger: 'blur' }],
   riskRatio: []
 }
@@ -1152,6 +1289,7 @@ const formRules = {
 // 预置数据
 const businessTypeOptions = {
   CIVIL: ['婚姻家庭', '公司', '金融', '证券', '保险', '海事海商', '建设工程', '劳动', '知识产权', '破产与重组', '医疗纠纷', '其他'],
+  ARBITRATION: ['买卖合同', '公司股权', '金融', '建设工程', '房地产', '知识产权', '海事海商', '劳动人事', '其他'],
   CRIMINAL: ['一般代理', '当事人自行委托', '法律援助', '法定通知辩护', '扩大通知辩护', '刑事附带民事诉讼'],
   ADMINISTRATIVE: ['一般代理/应诉', '行政申诉'],
   NON_LITIGATION: ['公司', '金融', '证券', '保险', '反垄断', '建设工程与房地产', '劳动', '知识产权', '税法', '海事海商', '环境资源与能源', '破产与重组', '其他', '代书与咨询'],
@@ -1160,12 +1298,14 @@ const businessTypeOptions = {
 
 const trialStageOptions = {
   CIVIL: ['仲裁', '一审', '二审', '执行', '再审', '重审一审', '重审二审', '特别程序', '破产程序'],
+  ARBITRATION: ['仲裁申请', '仲裁答辩', '反请求', '撤销仲裁裁决', '申请执行'],
   CRIMINAL: ['侦查', '审查起诉', '一审', '二审', '申诉', '再审', '重审一审', '重审二审'],
   ADMINISTRATIVE: ['行政复议', '行政裁决', '一审', '二审', '执行', '再审', '重审一审', '重审二审']
 }
 
 const feeMethodOptions = {
   CIVIL: ['固定收费', '风险收费', '固定+风险', '其他', '免费代理', '未确定'],
+  ARBITRATION: ['固定收费', '风险收费', '固定+风险', '其他', '免费代理', '未确定'],
   CRIMINAL: ['固定收费', '其他', '免费代理', '未确定'],
   ADMINISTRATIVE: ['固定收费', '其他', '免费代理', '未确定'],
   NON_LITIGATION: ['固定收费', '风险收费', '固定+风险', '其他', '免费代理', '未确定'],
@@ -1174,6 +1314,7 @@ const feeMethodOptions = {
 
 const caseReasonIndex = {
   CIVIL: ['人格权纠纷', '婚姻家庭纠纷', '继承纠纷', '物权纠纷', '机动车交通事故责任纠纷', '医疗损害责任纠纷'],
+  ARBITRATION: ['买卖合同争议', '建设工程合同争议', '股权转让争议', '金融借款争议', '服务合同争议'],
   CRIMINAL: ['诈骗罪', '合同诈骗罪', '职务侵占罪', '非法吸收公众存款罪', '故意伤害罪', '危险驾驶罪'],
   ADMINISTRATIVE: ['行政处罚纠纷', '行政许可纠纷', '行政强制纠纷', '政府信息公开纠纷', '行政赔偿纠纷'],
   NON_LITIGATION: ['专项法律服务', '尽职调查', '法律意见书', '合规审查', '破产重整专项'],
@@ -1181,24 +1322,50 @@ const caseReasonIndex = {
 }
 
 const currentReasonHints = computed(() => caseReasonIndex[formData.caseType] || [])
+const currentCaseProfile = computed(() => CASE_TYPE_PROFILES[formData.caseType] || CASE_TYPE_PROFILES.CIVIL)
+const currentPartyRoleOptions = computed(() => getPartyRoleOptions(formData.caseType))
+const caseReasonLabel = computed(() => formData.caseType === 'CONSULTANT' ? '顾问事项' : formData.caseType === 'NON_LITIGATION' ? '项目事项' : '案由')
+const caseReasonPlaceholder = computed(() => formData.caseType === 'CONSULTANT'
+  ? '例如：2026年度常年法律顾问'
+  : formData.caseType === 'NON_LITIGATION' ? '例如：股权收购专项法律服务' : '请自由填写案由或争议类型')
+const trialStageLabel = computed(() => formData.caseType === 'ARBITRATION' ? '仲裁程序' : '审级')
 const currentBusinessTypes = computed(() => businessTypeOptions[formData.caseType] || [])
 const currentTrialStages = computed(() => trialStageOptions[formData.caseType] || [])
 const currentFeeMethods = computed(() => feeMethodOptions[formData.caseType] || [])
-const showTrialStages = computed(() => ['CIVIL', 'CRIMINAL', 'ADMINISTRATIVE'].includes(formData.caseType))
-const showCourtFields = computed(() => ['CIVIL', 'CRIMINAL', 'ADMINISTRATIVE'].includes(formData.caseType))
+const showTrialStages = computed(() => ['CIVIL', 'ARBITRATION', 'CRIMINAL', 'ADMINISTRATIVE'].includes(formData.caseType))
+const showCourtFields = computed(() => ['CIVIL', 'ARBITRATION', 'CRIMINAL', 'ADMINISTRATIVE'].includes(formData.caseType))
 const showAgencyType = computed(() => formData.caseType === 'CRIMINAL' && formData.businessType === '刑事附带民事诉讼')
-const isArbitrationCase = computed(() => formData.trialStages?.includes('仲裁'))
+const isArbitrationCase = computed(() => formData.caseType === 'ARBITRATION' || formData.trialStages?.includes('仲裁'))
 const trialOrganizationLabel = computed(() => isArbitrationCase.value ? '审理机构' : '受理法院')
 const trialOrganizationPlaceholder = computed(() => isArbitrationCase.value ? '请输入或选择仲裁委员会/审理机构' : '请输入或搜索法院')
 const caseNumberLabel = computed(() => isArbitrationCase.value ? '仲裁案号' : '法院案号')
 const caseNumberPlaceholder = computed(() => isArbitrationCase.value ? '请输入仲裁案号' : '请输入法院案号')
 const isRiskFee = computed(() => ['风险收费', '固定+风险', '基础+风险'].includes(formData.feeMethod))
 
-watch(() => formData.caseType, () => {
+watch(() => formData.caseType, (caseType, previousCaseType) => {
   formData.businessType = ''
   formData.trialStages = []
   formData.feeMethod = ''
   formData.agencyType = ''
+  if (previousCaseType === 'CONSULTANT' && caseType !== 'CONSULTANT') {
+    formData.consultantClientId = null
+    formData.consultantUnitName = ''
+    formData.consultantContactName = ''
+    formData.consultantContactDepartment = ''
+    formData.consultantContactTitle = ''
+    formData.consultantContactPhone = ''
+    formData.consultantContactEmail = ''
+    formData.consultantServiceScopes = []
+    formData.consultantResponseRequirement = ''
+    formData.consultantIncludedServices = ''
+    formData.consultantExcludedServices = ''
+    formData.renewalReminderDate = ''
+    formData.parties = formData.parties.filter(item => item.attribute !== 'CONSULTANT_UNIT')
+  }
+  if (caseType === 'CONSULTANT' && formData.relatedClients.length === 1) {
+    formData.consultantClientId = formData.relatedClients[0]
+    handleConsultantClientChange(formData.consultantClientId)
+  }
 })
 
 watch(() => formData.feeMethod, () => {
@@ -1264,6 +1431,7 @@ const validateFilingBusinessRules = () => {
 }
 
 const commonTags = ref(['紧急', 'VIP客户', '法援', '涉黑恶', '无罪辩护', '重大疑难案件', '群体性案件', '媒体关注'])
+const consultantScopeOptions = ['合同审查', '日常咨询', '劳动人事', '公司治理', '合规审查', '争议处理', '法律培训', '律师函件', '制度建设']
 
 const userOptions = ref([])
 const caseHandlerPositions = ['主任', '部门主管', '合伙人', '律师', '实习律师', '助理', '律师助理']
@@ -1292,6 +1460,7 @@ const assistantList = computed(() => userOptions.value.filter(isAssistant))
 
 const courtList = ref([])
 const clientList = ref([])
+const consultantClientOptions = computed(() => clientList.value.filter(client => client.clientType !== '个人'))
 const caseOptions = ref([])
 
 const loadUserOptions = async () => {
@@ -1347,17 +1516,53 @@ const searchClient = async (query) => {
   try {
     const response = await searchClients(query)
     if (isSuccessResponse(response)) {
-      clientList.value = response.data.map(client => client.name || client.clientName)
+      clientList.value = (response.data || []).map(client => ({
+        id: client.id,
+        name: client.name || client.clientName,
+        clientType: client.clientType || client.type || ''
+      })).filter(client => client.id && client.name)
     }
   } catch (error) {
     console.error('搜索客户失败:', error)
-    // 降级到本地搜索
-    clientList.value = [
-      '张三',
-      '李四',
-      '某某科技有限公司'
-    ].filter(client => client.includes(query))
+    clientList.value = []
   }
+}
+
+const handleConsultantClientChange = (clientId) => {
+  const client = clientList.value.find(item => item.id === clientId)
+  if (!client) return
+  if (client.clientType === '个人') {
+    formData.consultantClientId = null
+    ElMessage.warning('顾问单位不能选择个人客户')
+    return
+  }
+  formData.consultantUnitName = client.name
+  if (!formData.relatedClients.includes(client.id)) {
+    formData.relatedClients = [client.id, ...formData.relatedClients]
+  }
+  const existing = formData.parties.find(item => item.attribute === 'CONSULTANT_UNIT')
+  if (existing) {
+    existing.name = client.name
+    existing.type = '单位'
+    existing.isClient = true
+    return
+  }
+  formData.parties.unshift({
+    type: '单位',
+    name: client.name,
+    isClient: true,
+    attribute: 'CONSULTANT_UNIT',
+    phone: '',
+    idCard: '',
+    gender: '',
+    nation: '',
+    address: '',
+    creditCode: '',
+    legalRep: '',
+    opposingLawyer: '',
+    remark: '',
+    syncToClient: false
+  })
 }
 
 // 查重
@@ -1607,6 +1812,24 @@ const handleSubmitApproval = async () => {
 onMounted(async () => {
   await loadUserOptions()
 
+  if (!isEditMode.value && route.query.clientId) {
+    try {
+      const response = await getClientDetail(route.query.clientId)
+      const client = response.data || {}
+      const option = {
+        id: client.id || Number(route.query.clientId),
+        name: client.clientName || client.name || route.query.clientName,
+        clientType: client.clientType || client.type || ''
+      }
+      if (option.id && option.name) {
+        clientList.value = [option]
+        formData.relatedClients = [option.id]
+      }
+    } catch (error) {
+      ElMessage.warning('客户信息预填失败，请在关联客户中重新选择')
+    }
+  }
+
   // 如果是编辑模式，加载案件数据
   if (isEditMode.value) {
     try {
@@ -1627,6 +1850,18 @@ onMounted(async () => {
       formData.agencyType = caseData.agencyType || ''
       formData.serviceStartDate = caseData.serviceStartDate || ''
       formData.serviceEndDate = caseData.serviceEndDate || ''
+      formData.consultantClientId = caseData.clientIds?.[0] || null
+      formData.consultantUnitName = caseData.consultantUnitName || ''
+      formData.consultantContactName = caseData.consultantContactName || ''
+      formData.consultantContactDepartment = caseData.consultantContactDepartment || ''
+      formData.consultantContactTitle = caseData.consultantContactTitle || ''
+      formData.consultantContactPhone = caseData.consultantContactPhone || ''
+      formData.consultantContactEmail = caseData.consultantContactEmail || ''
+      formData.consultantServiceScopes = caseData.consultantServiceScope?.split(',').filter(Boolean) || []
+      formData.consultantResponseRequirement = caseData.consultantResponseRequirement || ''
+      formData.consultantIncludedServices = caseData.consultantIncludedServices || ''
+      formData.consultantExcludedServices = caseData.consultantExcludedServices || ''
+      formData.renewalReminderDate = caseData.renewalReminderDate || ''
       formData.trialStages = caseData.trialStages ? caseData.trialStages.split(',').filter(Boolean) : []
       formData.courtCaseNumber = caseData.courtCaseNumber || ''
       formData.hearingDate = caseData.hearingDate || ''
@@ -1664,6 +1899,7 @@ onMounted(async () => {
           type: p.partyType === 'INDIVIDUAL' ? '个人' : '单位',
           attribute: p.partyRole,
           name: p.name,
+          isClient: Boolean(p.isClient),
           phone: p.phone,
           address: p.address
         }))
@@ -1675,8 +1911,11 @@ onMounted(async () => {
       }
 
       // 关联客户和案件
-      if (caseData.relatedClients && caseData.relatedClients.length > 0) {
-        formData.relatedClients = caseData.relatedClients
+      if (caseData.clientIds && caseData.clientIds.length > 0) {
+        formData.relatedClients = caseData.clientIds
+        if (caseData.consultantUnitName) {
+          clientList.value = [{ id: caseData.clientIds[0], name: caseData.consultantUnitName }]
+        }
       }
       if (caseData.relatedCases && caseData.relatedCases.length > 0) {
         formData.relatedCases = caseData.relatedCases
@@ -1705,6 +1944,46 @@ onMounted(async () => {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   }
 
+  .type-guide {
+    margin: 0 0 20px 120px;
+    padding: 12px 14px;
+    border-left: 3px solid #5d91c9;
+    background: #f6f8fa;
+    color: #4c5663;
+    font-size: 12px;
+
+    .type-guide-row,
+    .type-guide-focus {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 7px 12px;
+    }
+
+    .type-guide-focus {
+      margin-top: 9px;
+      padding-top: 9px;
+      border-top: 1px solid #e1e5e9;
+    }
+
+    .type-guide-label {
+      flex: 0 0 56px;
+      color: #202a35;
+      font-weight: 600;
+    }
+
+    .type-guide-step {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+
+      b {
+        color: #27659f;
+        font-size: 11px;
+      }
+    }
+  }
+
   .form-section {
     margin-bottom: 40px;
     padding-bottom: 30px;
@@ -1727,6 +2006,13 @@ onMounted(async () => {
         color: #333;
         border-left: 4px solid #1890ff;
         padding-left: 12px;
+      }
+
+      .section-note {
+        margin: 6px 0 0 16px;
+        color: #7b8491;
+        font-size: 12px;
+        line-height: 1.5;
       }
     }
 
@@ -1752,6 +2038,10 @@ onMounted(async () => {
       &:last-child {
         margin-bottom: 0;
       }
+    }
+
+    .conflict-check-note {
+      margin-bottom: 16px;
     }
 
     .empty-tip {
@@ -1793,6 +2083,20 @@ onMounted(async () => {
       color: #666;
       white-space: pre-wrap;
       word-wrap: break-word;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .create-container {
+      padding: 16px;
+    }
+
+    .type-guide {
+      margin-left: 0;
+
+      .type-guide-label {
+        flex-basis: 100%;
+      }
     }
   }
 }

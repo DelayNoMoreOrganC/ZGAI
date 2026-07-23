@@ -10,12 +10,15 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 知识库文章Repository
  */
 @Repository
 public interface KnowledgeArticleRepository extends JpaRepository<KnowledgeArticle, Long>, JpaSpecificationExecutor<KnowledgeArticle> {
+
+    Optional<KnowledgeArticle> findFirstByContentSha256AndDeletedFalse(String contentSha256);
 
     /**
      * 根据类型查询文章

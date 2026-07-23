@@ -72,7 +72,9 @@ class UserAuthorityServiceTest {
         assertTrue(authorities.contains("CLIENT_DELETE"));
         assertTrue(authorities.contains("USER_EDIT"));
         assertTrue(authorities.contains("ROLE_EDIT"));
+        assertTrue(authorities.contains("KNOWLEDGE_MANAGE"));
         assertTrue(authorities.contains("SYSTEM_CONFIG"));
+        assertTrue(authorities.contains("SEAL_APPROVE"));
     }
 
     @Test
@@ -103,17 +105,18 @@ class UserAuthorityServiceTest {
         assertFalse(authorities.contains("CASE_DELETE"));
         assertFalse(authorities.contains("USER_EDIT"));
         assertFalse(authorities.contains("ROLE_EDIT"));
+        assertFalse(authorities.contains("KNOWLEDGE_MANAGE"));
         assertFalse(authorities.contains("SYSTEM_CONFIG"));
     }
 
     @Test
-    void filingAdministratorReceivesCaseEditWithoutBroadAdminRights() {
+    void aPersonsNameDoesNotGrantHiddenCaseEditPermission() {
         User filingAdmin = activeUser(3L, "田颖思", "田颖思");
         when(userRoleRepository.findByUserId(3L)).thenReturn(Collections.emptyList());
 
         List<String> authorities = codes(service.loadAuthorities(filingAdmin));
 
-        assertTrue(authorities.contains("CASE_EDIT"));
+        assertFalse(authorities.contains("CASE_EDIT"));
         assertFalse(authorities.contains("CLIENT_DELETE"));
     }
 

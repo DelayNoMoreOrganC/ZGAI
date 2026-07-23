@@ -1,6 +1,18 @@
 <template>
   <div class="rag-search-page">
-    <PageHeader title="AI知识库" />
+    <PageHeader title="AI知识库">
+      <template #extra>
+        <el-select v-model="providerType" class="provider-select" :loading="providerLoading">
+          <el-option
+            v-for="provider in availableProviders"
+            :key="provider.providerType"
+            :label="`${provider.displayName} · ${provider.modelName || '未命名模型'}`"
+            :value="provider.providerType"
+            :disabled="!provider.available"
+          />
+        </el-select>
+      </template>
+    </PageHeader>
 
     <el-alert
       class="scope-alert"
@@ -97,7 +109,7 @@
           {{ searchMethod === 'VECTOR' ? '语义检索' : '关键词检索' }}
         </el-tag>
         <el-tag v-if="answerMode === 'RETRIEVAL_ONLY'" type="warning">
-          本地大模型未接入
+          本次为原文检索
         </el-tag>
       </div>
     </el-card>
@@ -105,11 +117,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, computed, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { searchKnowledge, askAI } from '@/api/knowledge'
+import { getAvailableAiProviders } from '@/api/ai'
 
 const question = ref('')
 const answer = ref('')
@@ -120,6 +133,23 @@ const loading = ref(false)
 const activeSources = ref(['0', '1', '2'])
 const searchMethod = ref('')
 const answerMode = ref('')
+const providerType = ref('LM_STUDIO')
+const availableProviders = ref([])
+const providerLoading = ref(false)
+
+const selectedProvider = computed(() => availableProviders.value.find(item => item.providerType === providerType.value))
+
+const loadProviders = async () => {
+  providerLoading.value = true
+  try {
+    const response = await getAvailableAiProviders()
+    availableProviders.value = response.data || []
+    const local = availableProviders.value.find(item => item.providerType === 'LM_STUDIO' && item.available)
+    providerType.value = local?.providerType || availableProviders.value.find(item => item.available)?.providerType || 'LM_STUDIO'
+  } finally {
+    providerLoading.value = false
+  }
+}
 
 const knowledgeScopes = [
   {
@@ -174,7 +204,14 @@ const handleSearch = async () => {
   answerMode.value = ''
 
   try {
-    const aiResponse = await askAI(question.value, { topK: 5 })
+    if (selectedProvider.value && !selectedProvider.value.local) {
+      await ElMessageBox.confirm(
+        '本次问题将发送至外部模型服务。请确认内容不含案件材料、客户隐私或未脱敏信息。',
+        '使用云端模型',
+        { type: 'warning', confirmButtonText: '确认发送', cancelButtonText: '取消' }
+      )
+    }
+    const aiResponse = await askAI(question.value, { topK: 5, providerType: providerType.value })
     const result = aiResponse.data || {}
     answer.value = result.answer || '暂未生成回答。'
     hasAnswer.value = Boolean(result.hasAnswer)
@@ -190,6 +227,8 @@ const handleSearch = async () => {
     loading.value = false
   }
 }
+
+onMounted(loadProviders)
 
 const fallbackKeywordSearch = async () => {
   const searchResponse = await searchKnowledge(question.value, { size: 5 })

@@ -13,12 +13,14 @@ import org.springframework.security.access.AccessDeniedException;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class PersonalWorkspaceControllerAccessTest {
 
     private TodoService todoService;
     private CalendarService calendarService;
+    private CaseService caseService;
     private SecurityUtils securityUtils;
     private TodoController todoController;
     private CalendarController calendarController;
@@ -28,7 +30,7 @@ class PersonalWorkspaceControllerAccessTest {
         todoService = mock(TodoService.class);
         calendarService = mock(CalendarService.class);
         securityUtils = mock(SecurityUtils.class);
-        CaseService caseService = mock(CaseService.class);
+        caseService = mock(CaseService.class);
         todoController = new TodoController(todoService, caseService, securityUtils);
         calendarController = new CalendarController(calendarService, caseService, securityUtils);
         when(securityUtils.getCurrentUserId()).thenReturn(7L);
@@ -67,5 +69,26 @@ class PersonalWorkspaceControllerAccessTest {
 
         assertDoesNotThrow(() -> calendarController.getCalendar(20L));
         assertThrows(AccessDeniedException.class, () -> calendarController.deleteCalendar(20L));
+    }
+
+    @Test
+    void caseLinkedCalendarRequiresCaseEditPermission() {
+        CalendarDTO calendar = new CalendarDTO();
+        calendar.setCaseId(99L);
+
+        calendarController.createCalendar(calendar);
+
+        verify(caseService).assertCaseEditable(99L, 7L);
+    }
+
+    @Test
+    void caseLinkedTodoRequiresCaseEditPermission() {
+        TodoDTO todo = new TodoDTO();
+        todo.setCaseId(99L);
+        todo.setAssigneeId(7L);
+
+        todoController.createTodo(todo);
+
+        verify(caseService).assertCaseEditable(99L, 7L);
     }
 }

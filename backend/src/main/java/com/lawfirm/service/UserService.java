@@ -57,6 +57,7 @@ public class UserService {
 
         // 加密密码
         user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setMustChangePassword(!isProtectedDeveloperAccount(user.getUsername()));
 
         user = userRepository.save(user);
 
@@ -197,6 +198,7 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("用户", userId));
 
         user.setPassword(passwordEncoder.encode(newPassword));
+        user.setMustChangePassword(!isProtectedDeveloperAccount(user.getUsername()));
         userRepository.save(user);
     }
 
@@ -211,6 +213,9 @@ public class UserService {
         if (newPassword == null || newPassword.trim().isEmpty()) {
             throw new InvalidParameterException("newPassword", "新密码不能为空");
         }
+        if (newPassword.length() < 8 || newPassword.length() > 100) {
+            throw new InvalidParameterException("newPassword", "新密码长度必须为8至100位");
+        }
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("用户", userId));
@@ -218,8 +223,12 @@ public class UserService {
         if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
             throw new InvalidParameterException("oldPassword", "原密码不正确");
         }
+        if (passwordEncoder.matches(newPassword, user.getPassword())) {
+            throw new InvalidParameterException("newPassword", "新密码不能与当前密码相同");
+        }
 
         user.setPassword(passwordEncoder.encode(newPassword));
+        user.setMustChangePassword(false);
         userRepository.save(user);
     }
 
@@ -304,5 +313,9 @@ public class UserService {
         if ("admin".equalsIgnoreCase(username) || "amin".equalsIgnoreCase(username)) {
             throw new InvalidParameterException("userId", "开发管理员账号不能被停用、删除或调整角色");
         }
+    }
+
+    private boolean isProtectedDeveloperAccount(String username) {
+        return "admin".equalsIgnoreCase(username) || "amin".equalsIgnoreCase(username);
     }
 }

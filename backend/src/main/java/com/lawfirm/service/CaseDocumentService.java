@@ -14,6 +14,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -46,6 +48,13 @@ public class CaseDocumentService {
     public CaseDocumentDTO uploadDocument(Long caseId, MultipartFile file,
                                           String documentType, String folderPath,
                                           Long userId) throws IOException {
+        return uploadDocument(caseId, file, documentType, folderPath, userId, null, null);
+    }
+
+    @Transactional
+    public CaseDocumentDTO uploadDocument(Long caseId, MultipartFile file,
+                                          String documentType, String folderPath,
+                                          Long userId, String ocrResult, String contentSha256) throws IOException {
         Case caseEntity = caseRepository.findById(caseId)
                 .orElseThrow(() -> new IllegalArgumentException("案件不存在"));
 
@@ -55,6 +64,10 @@ public class CaseDocumentService {
         assertDocumentEditable(caseEntity);
         if (documentType == null || documentType.trim().isEmpty()) {
             throw new IllegalArgumentException("文件类型不能为空");
+        }
+        if (contentSha256 != null
+                && caseDocumentRepository.existsByCaseIdAndContentSha256AndDeletedFalse(caseId, contentSha256)) {
+            throw new IllegalArgumentException("该案件中已存在内容相同的文件");
         }
 
         // 创建目录
@@ -73,6 +86,7 @@ public class CaseDocumentService {
         Path filePath = uploadPath.resolve(newFilename).normalize();
         assertInsideCaseFolder(caseFolder, filePath);
         Files.copy(file.getInputStream(), filePath);
+        registerRollbackCleanup(filePath);
 
         // 创建文档记录
         CaseDocument document = new CaseDocument();
@@ -89,11 +103,39 @@ public class CaseDocumentService {
         document.setUploadBy(userId);
         document.setKnowledgeEligible(false);
         document.setIndexStatus("FORBIDDEN");
+        document.setOcrResult(ocrResult);
+        document.setContentSha256(contentSha256);
 
-        CaseDocument saved = caseDocumentRepository.save(document);
+        CaseDocument saved;
+        try {
+            saved = caseDocumentRepository.save(document);
+        } catch (RuntimeException e) {
+            deleteQuietly(filePath);
+            throw e;
+        }
         log.info("上传案件文档成功: caseId={}, fileName={}", caseId, originalFilename);
 
         return convertToDTO(saved);
+    }
+
+    private void registerRollbackCleanup(Path filePath) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) return;
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
+                    deleteQuietly(filePath);
+                }
+            }
+        });
+    }
+
+    private void deleteQuietly(Path filePath) {
+        try {
+            Files.deleteIfExists(filePath);
+        } catch (IOException cleanupError) {
+            log.error("事务回滚后清理案件文件失败: {}", filePath, cleanupError);
+        }
     }
 
     private String sanitizeFileName(String value) {
@@ -397,6 +439,7 @@ public class CaseDocumentService {
         dto.setKnowledgeEligible(document.getKnowledgeEligible());
         dto.setIndexStatus(document.getIndexStatus());
         dto.setOcrResult(document.getOcrResult());
+        dto.setContentSha256(document.getContentSha256());
         dto.setCreatedAt(document.getCreatedAt());
         dto.setUpdatedAt(document.getUpdatedAt());
         return dto;

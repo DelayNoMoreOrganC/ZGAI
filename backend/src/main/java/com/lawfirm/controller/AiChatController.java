@@ -10,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import javax.validation.Valid;
+
 /**
  * AI问答控制器
  */
@@ -28,9 +30,9 @@ public class AiChatController {
      * 普通聊天
      */
     @PostMapping("/chat")
-    public Result<String> chat(@RequestBody AiChatRequest request) {
+    public Result<String> chat(@Valid @RequestBody AiChatRequest request) {
         Long userId = securityUtils.getCurrentUserId();
-        String response = aiChatService.generalChat(request.getMessage(), userId);
+        String response = aiChatService.generalChat(request.getMessage(), userId, request.getProviderType());
         return Result.success(response);
     }
 
@@ -39,9 +41,9 @@ public class AiChatController {
      * POST /api/ai/assist
      */
     @PostMapping("/assist")
-    public Result<String> assist(@RequestBody AiChatRequest request) {
+    public Result<String> assist(@Valid @RequestBody AiChatRequest request) {
         Long userId = securityUtils.getCurrentUserId();
-        String response = aiChatService.generalChat(request.getMessage(), userId);
+        String response = aiChatService.generalChat(request.getMessage(), userId, request.getProviderType());
         return Result.success(response);
     }
 
@@ -49,7 +51,7 @@ public class AiChatController {
      * 案件上下文问答
      */
     @PostMapping("/case-chat/{caseId}")
-    public Result<String> caseChat(@PathVariable Long caseId, @RequestBody AiChatRequest request) {
+    public Result<String> caseChat(@PathVariable Long caseId, @Valid @RequestBody AiChatRequest request) {
         Long userId = securityUtils.getCurrentUserId();
         caseService.assertCaseVisible(caseId, userId);
         request.setCaseId(caseId);

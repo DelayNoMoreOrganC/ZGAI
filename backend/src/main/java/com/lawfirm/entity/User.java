@@ -63,4 +63,7 @@ public class User extends LogicalDeleteEntity {
 
     @Column(name = "last_login_time")
     private java.time.LocalDateTime lastLoginTime;
+
+    @Column(name = "must_change_password", nullable = false, columnDefinition = "boolean default false")
+    private Boolean mustChangePassword = false;
 }

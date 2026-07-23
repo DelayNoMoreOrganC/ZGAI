@@ -28,19 +28,36 @@ public class AILogService {
                     String inputContent, Integer inputTokens,
                     String outputContent, Integer outputTokens,
                     String modelName, String status, Integer duration, String errorMessage) {
+        log(userId, caseId, functionType, inputContent, inputTokens, outputContent, outputTokens,
+                null, modelName, status, duration, errorMessage, null);
+    }
+
+    public void log(Long userId, Long caseId, AIFunctionType functionType,
+                    String inputContent, Integer inputTokens,
+                    String outputContent, Integer outputTokens,
+                    String providerType, String modelName, String status, Integer duration,
+                    String errorMessage, Long estimatedCostMicros) {
         AILog log = new AILog();
         log.setUserId(userId);
         log.setCaseId(caseId);
         log.setFunctionType(functionType.getCode());
-        log.setInputContent(inputContent);
+        // New logs deliberately do not persist prompts, case materials or model output.
+        log.setInputContent(null);
         log.setInputTokens(inputTokens);
-        log.setOutputContent(outputContent);
+        log.setOutputContent(null);
         log.setOutputTokens(outputTokens);
+        log.setProviderType(providerType);
+        log.setInputSummary(AIContentPrivacy.summarize(inputContent));
+        log.setInputHash(AIContentPrivacy.sha256(inputContent));
+        log.setOutputHash(AIContentPrivacy.sha256(outputContent));
+        log.setEstimatedCostMicros(estimatedCostMicros);
         log.setModelName(modelName);
         log.setStatus(status);
         log.setDuration(duration);
-        log.setErrorMessage(errorMessage);
-        log.setCreatedAt(LocalDateTime.now());
+        log.setErrorMessage(AIContentPrivacy.errorSummary(errorMessage));
+        LocalDateTime now = LocalDateTime.now();
+        log.setPrivacySanitizedAt(now);
+        log.setCreatedAt(now);
 
         aiLogRepository.save(log);
     }

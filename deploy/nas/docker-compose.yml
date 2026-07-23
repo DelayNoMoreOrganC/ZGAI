@@ -1,0 +1,138 @@
+name: zgai-staging
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-zgai}
+      POSTGRES_USER: ${POSTGRES_USER:-zgai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - ${ZGAI_POSTGRES_DATA:?ZGAI_POSTGRES_DATA is required}:/var/lib/postgresql/data
+      - ${ZGAI_BACKUPS:?ZGAI_BACKUPS is required}:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal, egress]
+
+  qdrant:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:v1.12.0}
+    restart: unless-stopped
+    volumes:
+      - ${ZGAI_QDRANT_DATA:?ZGAI_QDRANT_DATA is required}:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  archive-worker:
+    build:
+      context: ../..
+      dockerfile: archive-worker/Dockerfile
+    restart: unless-stopped
+    environment:
+      ARCHIVE_WORKER_TOKEN: ${ARCHIVE_WORKER_TOKEN:?ARCHIVE_WORKER_TOKEN is required}
+      ARCHIVE_ALLOWED_ROOTS: /data/case-files
+      ARCHIVE_OCR_CACHE: /data/archive-cache
+      ARCHIVE_CJK_FONT: /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
+      LM_STUDIO_BASE_URL: ${LM_STUDIO_BASE_URL:-http://192.168.1.200:1234/v1}
+      LM_STUDIO_MODEL: ${LM_STUDIO_MODEL:-qwen/qwen3.6-35b-a3b}
+      LM_STUDIO_API_KEY: ${LM_STUDIO_API_KEY:-}
+      LM_STUDIO_TIMEOUT: ${ARCHIVE_WORKER_TIMEOUT_SECONDS:-300}
+    volumes:
+      - ${ZGAI_CASE_FILES:?ZGAI_CASE_FILES is required}:/data/case-files
+      - ${ZGAI_ARCHIVE_CACHE:?ZGAI_ARCHIVE_CACHE is required}:/data/archive-cache
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8091/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
+    networks: [internal, egress]
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      archive-worker:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-zgai}
+      POSTGRES_USER: ${POSTGRES_USER:-zgai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      CRYPTO_SECRET_KEY: ${CRYPTO_SECRET_KEY:?CRYPTO_SECRET_KEY is required}
+      SEED_DEMO_DATA: "false"
+      EMPLOYEE_SYNC_ENABLED: "false"
+      CASE_FILE_LIBRARY_ROOT: /data/case-files
+      KNOWLEDGE_FILE_LIBRARY_ROOT: /data/knowledge-files
+      FIRM_POLICY_SOURCE_ROOT: /data/firm-policies
+      KNOWLEDGE_IMPORT_STAGING_ROOT: /data/knowledge-imports
+      AI_DOCUMENT_INTAKE_TEMP_DIR: /data/document-intake
+      APPROVAL_FILE_ROOT: /data/approval-files
+      BACKUP_ROOT_PATH: /data/backups
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-180}
+      PG_DUMP_PATH: /usr/bin/pg_dump
+      PG_RESTORE_PATH: /usr/bin/pg_restore
+      TESSERACT_COMMAND: /usr/bin/tesseract
+      PDFTOPPM_COMMAND: /usr/bin/pdftoppm
+      QDRANT_ENABLED: ${QDRANT_ENABLED:-true}
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      QDRANT_GRPC_PORT: 6334
+      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME:-lawfirm-knowledge}
+      QDRANT_VECTOR_SIZE: ${AI_EMBEDDING_DIMENSION:-1024}
+      LM_STUDIO_BASE_URL: ${LM_STUDIO_BASE_URL:-http://192.168.1.200:1234/v1}
+      LM_STUDIO_MODEL: ${LM_STUDIO_MODEL:-}
+      LM_STUDIO_API_KEY: ${LM_STUDIO_API_KEY:-}
+      AI_EMBEDDING_PROVIDER: ${AI_EMBEDDING_PROVIDER:-LM_STUDIO}
+      AI_EMBEDDING_BASE_URL: ${AI_EMBEDDING_BASE_URL:-http://192.168.1.200:1234/v1}
+      AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-}
+      AI_EMBEDDING_DIMENSION: ${AI_EMBEDDING_DIMENSION:-1024}
+      AI_EMBEDDING_API_KEY: ${AI_EMBEDDING_API_KEY:-}
+      YUANDIAN_API_KEY: ${YUANDIAN_API_KEY:-}
+      ARCHIVE_WORKER_BASE_URL: http://archive-worker:8091
+      ARCHIVE_WORKER_TOKEN: ${ARCHIVE_WORKER_TOKEN:?ARCHIVE_WORKER_TOKEN is required}
+      ARCHIVE_WORKER_TIMEOUT_SECONDS: ${ARCHIVE_WORKER_TIMEOUT_SECONDS:-1800}
+    volumes:
+      - ${ZGAI_CASE_FILES:?ZGAI_CASE_FILES is required}:/data/case-files
+      - ${ZGAI_KNOWLEDGE_FILES:?ZGAI_KNOWLEDGE_FILES is required}:/data/knowledge-files
+      - ${ZGAI_BACKUPS:?ZGAI_BACKUPS is required}:/data/backups
+      - ${ZGAI_KNOWLEDGE_IMPORTS:?ZGAI_KNOWLEDGE_IMPORTS is required}:/data/knowledge-imports
+      - ${ZGAI_DOCUMENT_INTAKE:?ZGAI_DOCUMENT_INTAKE is required}:/data/document-intake
+      - ${ZGAI_APPROVAL_FILES:?ZGAI_APPROVAL_FILES is required}:/data/approval-files
+      - ${ZGAI_FIRM_POLICY_SOURCE:?ZGAI_FIRM_POLICY_SOURCE is required}:/data/firm-policies:ro
+    tmpfs:
+      - /tmp:size=2g,mode=1777
+    networks: [internal, egress]
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - ${ZGAI_LISTEN_ADDRESS:-0.0.0.0}:${ZGAI_HTTP_PORT:-3017}:80
+    networks: [edge, internal]
+
+networks:
+  edge: {}
+  egress: {}
+  internal:
+    internal: true

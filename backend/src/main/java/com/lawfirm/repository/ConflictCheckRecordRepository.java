@@ -12,4 +12,6 @@ public interface ConflictCheckRecordRepository extends JpaRepository<ConflictChe
     List<ConflictCheckRecord> findBySubjectNameOrderByCreatedAtDesc(String subjectName);
 
     List<ConflictCheckRecord> findByCheckedByOrderByCreatedAtDesc(Long checkedBy);
+
+    List<ConflictCheckRecord> findByCaseIdOrderByCreatedAtAsc(Long caseId);
 }

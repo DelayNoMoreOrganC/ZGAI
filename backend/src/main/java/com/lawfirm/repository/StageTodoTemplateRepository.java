@@ -12,6 +12,10 @@ import java.util.List;
 @Repository
 public interface StageTodoTemplateRepository extends JpaRepository<StageTodoTemplate, Long> {
 
+    boolean existsByCaseTypeAndStageNameAndTodoTitleAndIsDeletedFalse(
+            String caseType, String stageName, String todoTitle
+    );
+
     /**
      * 根据阶段名称和案件类型查找启用的待办模板
      */

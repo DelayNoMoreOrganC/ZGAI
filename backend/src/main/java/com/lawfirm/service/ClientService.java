@@ -1,9 +1,14 @@
 package com.lawfirm.service;
 
 import com.lawfirm.dto.ClientDTO;
+import com.lawfirm.dto.ConflictCheckHitDTO;
+import com.lawfirm.dto.ConflictCheckRecordDTO;
+import com.lawfirm.dto.ConflictCheckResultDTO;
+import com.lawfirm.dto.ConflictCheckReviewRequest;
 import com.lawfirm.entity.Client;
 import com.lawfirm.entity.Case;
 import com.lawfirm.entity.ConflictCheckRecord;
+import com.lawfirm.entity.Party;
 import com.lawfirm.entity.User;
 import com.lawfirm.exception.ResourceNotFoundException;
 import com.lawfirm.repository.ClientRepository;
@@ -11,18 +16,22 @@ import com.lawfirm.repository.CaseRepository;
 import com.lawfirm.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -34,17 +43,17 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ClientService {
 
-    private static final Set<String> ALL_CLIENT_VIEW_USER_NAMES = new HashSet<>(Arrays.asList(
-            "田颖思", "黄智明", "邝凤兰", "何俊慧", "吴兴印"
-    ));
-
     private final ClientRepository clientRepository;
     private final CaseRepository caseRepository;
     private final UserRepository userRepository;
     private final com.lawfirm.repository.CommunicationRecordRepository communicationRecordRepository;
     private final com.lawfirm.repository.PartyRepository partyRepository;
+    private final com.lawfirm.repository.CaseMemberRepository caseMemberRepository;
     private final com.lawfirm.repository.DepartmentRepository departmentRepository;
     private final com.lawfirm.repository.ConflictCheckRecordRepository conflictCheckRecordRepository;
+    private final UserPermissionService userPermissionService;
+    private final ConflictWaiverAttachmentService conflictWaiverAttachmentService;
+    private final ClientSubjectRelationService clientSubjectRelationService;
 
     /**
      * 创建客户
@@ -117,8 +126,18 @@ public class ClientService {
      * 根据ID查询当前用户可见客户
      */
     public ClientDTO getClientById(Long id, Long currentUserId) {
-        assertClientVisible(id, currentUserId);
-        return getClientById(id);
+        Client client = clientRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("客户不存在"));
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
+        if (!canAccessClient(client, currentUser)) {
+            throw new IllegalArgumentException("无权访问非本部门相关客户");
+        }
+        ClientDTO dto = convertToDTO(client);
+        boolean relationEditable = canEditClientByRelation(client, currentUser);
+        dto.setCanEdit(relationEditable && userPermissionService.hasPermission(currentUser, "CLIENT_EDIT"));
+        dto.setCanDelete(relationEditable && userPermissionService.hasPermission(currentUser, "CLIENT_DELETE"));
+        return dto;
     }
 
     /**
@@ -196,51 +215,88 @@ public class ClientService {
      * 分页查询客户
      */
     public com.lawfirm.util.PageResult<ClientDTO> getClients(int page, int size) {
-        Pageable pageable = PageRequest.of(Math.max(0, page - 1), size, Sort.by(Sort.Direction.DESC, "createdAt"));
-
-        // 使用数据库查询优化，只查询未删除的客户
-        List<Client> allClients = clientRepository.findByDeletedFalse();
-
-        int start = (int) pageable.getOffset();
-        int end = Math.min(start + pageable.getPageSize(), allClients.size());
-
-        // 参数验证：防止空数据时subList参数错误
-        List<Client> pageClients;
-        if (start >= end || start >= allClients.size()) {
-            pageClients = new java.util.ArrayList<>();
-        } else {
-            pageClients = allClients.subList(start, end);
-        }
-
-        List<ClientDTO> dtoList = pageClients.stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
-
-        return new com.lawfirm.util.PageResult<>((long) page, (long) size, (long) allClients.size(), dtoList);
+        return paginateClients(clientRepository.findByDeletedFalse(), page, size);
     }
 
     /**
      * 分页查询当前用户可见客户
      */
     public com.lawfirm.util.PageResult<ClientDTO> getClients(int page, int size, Long currentUserId) {
-        Pageable pageable = PageRequest.of(Math.max(0, page - 1), size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        List<Client> visibleClients = clientRepository.findByDeletedFalse().stream()
-                .filter(client -> canAccessClient(client, currentUserId))
+        return getClients(page, size, currentUserId, null, null, null);
+    }
+
+    /**
+     * 分页查询当前用户可见客户。筛选必须在分页前执行，避免只过滤当前页。
+     */
+    public com.lawfirm.util.PageResult<ClientDTO> getClients(
+            int page,
+            int size,
+            Long currentUserId,
+            String keyword,
+            String clientType,
+            Long departmentId) {
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
+        String normalizedType = StringUtils.hasText(clientType) ? clientType.trim() : null;
+
+        List<Client> filteredClients = clientRepository.findByDeletedFalse().stream()
+                .filter(client -> canAccessClient(client, currentUser))
+                .filter(client -> normalizedType == null || normalizedType.equals(client.getClientType()))
+                .filter(client -> departmentId == null || departmentId.equals(client.getDepartmentId()))
+                .filter(client -> matchesClientKeyword(client, keyword))
                 .collect(Collectors.toList());
 
-        int start = (int) pageable.getOffset();
-        int end = Math.min(start + pageable.getPageSize(), visibleClients.size());
-        List<Client> pageClients;
-        if (start >= end || start >= visibleClients.size()) {
-            pageClients = new ArrayList<>();
-        } else {
-            pageClients = visibleClients.subList(start, end);
+        return paginateClients(filteredClients, page, size);
+    }
+
+    private com.lawfirm.util.PageResult<ClientDTO> paginateClients(
+            List<Client> clients, int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(100, Math.max(1, size));
+        List<Client> sortedClients = new ArrayList<>(clients);
+        sortedClients.sort(Comparator
+                .comparing(Client::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(Client::getId, Comparator.nullsLast(Comparator.reverseOrder())));
+
+        int start = safePage * safeSize;
+        int end = Math.min(start + safeSize, sortedClients.size());
+        List<ClientDTO> records = start >= sortedClients.size()
+                ? new ArrayList<>()
+                : sortedClients.subList(start, end).stream().map(this::convertToDTO).collect(Collectors.toList());
+        return com.lawfirm.util.PageResult.of(
+                (long) safePage, (long) safeSize, (long) sortedClients.size(), records);
+    }
+
+    private boolean matchesClientKeyword(Client client, String keyword) {
+        if (!StringUtils.hasText(keyword)) {
+            return true;
+        }
+        String normalizedKeyword = keyword.trim().toLowerCase(Locale.ROOT);
+        if (containsNormalized(client.getClientName(), normalizedKeyword)
+                || containsNormalized(client.getCreditCode(), normalizedKeyword)
+                || containsNormalized(client.getIdCard(), normalizedKeyword)
+                || containsNormalized(client.getSource(), normalizedKeyword)) {
+            return true;
         }
 
-        List<ClientDTO> dtoList = pageClients.stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
-        return new com.lawfirm.util.PageResult<>((long) page, (long) size, (long) visibleClients.size(), dtoList);
+        List<Long> relatedUserIds = new ArrayList<>();
+        relatedUserIds.addAll(parseIds(client.getSourceUserIds()));
+        relatedUserIds.addAll(parseIds(client.getClientOwnerIds()));
+        if (client.getOwnerId() != null) {
+            relatedUserIds.add(client.getOwnerId());
+        }
+        return relatedUserIds.stream()
+                .distinct()
+                .map(userRepository::findById)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .anyMatch(user -> containsNormalized(user.getRealName(), normalizedKeyword)
+                        || containsNormalized(user.getUsername(), normalizedKeyword));
+    }
+
+    private boolean containsNormalized(String value, String normalizedKeyword) {
+        return StringUtils.hasText(value)
+                && value.toLowerCase(Locale.ROOT).contains(normalizedKeyword);
     }
 
     public void assertClientVisible(Long clientId, Long currentUserId) {
@@ -254,11 +310,18 @@ public class ClientService {
                 .orElseThrow(() -> new ResourceNotFoundException("客户", clientId));
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
-        if (isDevelopmentAdmin(currentUser) || "主任".equals(currentUser.getPosition())) {
+        if (canEditClientByRelation(client, currentUser)) {
             return;
         }
+        throw new IllegalArgumentException("仅案源人、承办人、主任或管理员可修改该客户");
+    }
+
+    private boolean canEditClientByRelation(Client client, User currentUser) {
         if (client == null || Boolean.TRUE.equals(client.getDeleted())) {
-            throw new IllegalArgumentException("客户不存在");
+            return false;
+        }
+        if (isDevelopmentAdmin(currentUser) || "主任".equals(currentUser.getPosition())) {
+            return true;
         }
         List<Long> relatedUserIds = new ArrayList<>();
         relatedUserIds.addAll(parseIds(client.getSourceUserIds()));
@@ -266,10 +329,10 @@ public class ClientService {
         if (client.getOwnerId() != null) {
             relatedUserIds.add(client.getOwnerId());
         }
-        if (relatedUserIds.stream().anyMatch(currentUserId::equals)) {
-            return;
+        if (relatedUserIds.stream().anyMatch(currentUser.getId()::equals)) {
+            return true;
         }
-        throw new IllegalArgumentException("仅案源人、承办人、主任或管理员可修改该客户");
+        return false;
     }
 
     public boolean canAccessClient(Long clientId, Long currentUserId) {
@@ -281,14 +344,18 @@ public class ClientService {
     public boolean canAccessClient(Client client, Long currentUserId) {
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
+        return canAccessClient(client, currentUser);
+    }
+
+    private boolean canAccessClient(Client client, User currentUser) {
+        if (client == null || Boolean.TRUE.equals(client.getDeleted())) {
+            return false;
+        }
         if (isDevelopmentAdmin(currentUser)) {
             return true;
         }
         if (hasAllClientViewAccess(currentUser)) {
             return true;
-        }
-        if (client == null || Boolean.TRUE.equals(client.getDeleted())) {
-            return false;
         }
         List<Long> relatedUserIds = new ArrayList<>();
         relatedUserIds.addAll(parseIds(client.getSourceUserIds()));
@@ -297,11 +364,26 @@ public class ClientService {
             relatedUserIds.add(client.getOwnerId());
         }
         if (relatedUserIds.isEmpty()) {
+            return currentUser.getDepartmentId() != null
+                    && currentUser.getDepartmentId().equals(client.getDepartmentId());
+        }
+        Long currentUserId = currentUser.getId();
+        if (currentUserId != null && relatedUserIds.stream().distinct().anyMatch(currentUserId::equals)) {
+            return true;
+        }
+        Long currentDepartmentId = currentUser.getDepartmentId();
+        if (currentDepartmentId == null) {
             return false;
+        }
+        if (currentDepartmentId.equals(client.getDepartmentId())) {
+            return true;
         }
         return relatedUserIds.stream()
                 .distinct()
-                .anyMatch(userId -> userId.equals(currentUserId));
+                .map(userRepository::findById)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .anyMatch(relatedUser -> currentDepartmentId.equals(relatedUser.getDepartmentId()));
     }
 
     private boolean isDevelopmentAdmin(User user) {
@@ -312,10 +394,7 @@ public class ClientService {
         if (user == null) {
             return false;
         }
-        String position = user.getPosition();
-        return ALL_CLIENT_VIEW_USER_NAMES.contains(user.getUsername())
-                || ALL_CLIENT_VIEW_USER_NAMES.contains(user.getRealName())
-                || "主任".equals(position);
+        return userPermissionService.hasPermission(user, "CLIENT_VIEW_ALL");
     }
 
     /**
@@ -324,119 +403,465 @@ public class ClientService {
     public ClientDTO checkConflict(Long clientId) {
         Client client = clientRepository.findById(clientId)
                 .orElseThrow(() -> new IllegalArgumentException("客户不存在"));
-        return checkConflictPreview(convertToDTO(client), clientId);
+        ConflictCheckResultDTO detailed = performConflictCheck(convertToDTO(client), clientId);
+        ClientDTO result = convertToDTO(client);
+        result.setHasConflict(detailed.getHasConflict());
+        result.setConflictLevel(detailed.getConflictLevel());
+        result.setConflictDescription(detailed.getConflictDescription());
+        result.setSimilarClientNames(detailed.getSimilarClientNames());
+        result.setConflictCaseIds(detailed.getConflictCaseIds());
+        return result;
+    }
+
+    public ClientDTO checkConflict(Long clientId, Long currentUserId) {
+        assertClientVisible(clientId, currentUserId);
+        return checkConflict(clientId);
     }
 
     /**
      * 客户建档前利益冲突预检。
      */
-    public ClientDTO checkConflictPreview(ClientDTO dto) {
-        return checkConflictPreview(dto, null, null);
+    public ConflictCheckResultDTO checkConflictPreview(ClientDTO dto) {
+        return performConflictCheck(dto, null);
     }
 
-    public ClientDTO checkConflictPreviewAndRecord(ClientDTO dto, Long checkedBy) {
-        ClientDTO result = checkConflictPreview(dto, null, checkedBy);
-        saveConflictCheckRecord(dto, result, checkedBy);
+    @Transactional
+    public ConflictCheckResultDTO checkConflictPreviewAndRecord(ClientDTO dto, Long checkedBy) {
+        return checkConflictPreviewAndRecord(dto, checkedBy, null);
+    }
+
+    @Transactional
+    public ConflictCheckResultDTO checkConflictPreviewAndRecord(ClientDTO dto, Long checkedBy, Long caseId) {
+        ConflictCheckResultDTO result = performConflictCheck(dto, null);
+        ConflictCheckRecord record = saveConflictCheckRecord(dto, result, checkedBy, caseId);
+        result.setRecordId(record.getId());
+        result.setReportNo(formatReportNo(record));
+        result.setCheckedAt(record.getCreatedAt());
         return result;
     }
 
-    public List<ConflictCheckRecord> getConflictCheckRecords(String subjectName) {
+    public List<ConflictCheckRecordDTO> getConflictCheckRecords(String subjectName, Long currentUserId) {
         if (!StringUtils.hasText(subjectName)) {
             return new ArrayList<>();
         }
-        return conflictCheckRecordRepository.findBySubjectNameOrderByCreatedAtDesc(subjectName);
+        return conflictCheckRecordRepository.findBySubjectNameOrderByCreatedAtDesc(subjectName).stream()
+                .map(record -> toConflictCheckRecordDTO(record, currentUserId))
+                .collect(Collectors.toList());
     }
 
-    private ClientDTO checkConflictPreview(ClientDTO dto, Long excludedClientId) {
-        return checkConflictPreview(dto, excludedClientId, null);
+    public List<ConflictCheckRecordDTO> getConflictCheckRecordsByCaseId(Long caseId, Long currentUserId) {
+        if (caseId == null) {
+            return new ArrayList<>();
+        }
+        return conflictCheckRecordRepository.findByCaseIdOrderByCreatedAtAsc(caseId).stream()
+                .map(record -> toConflictCheckRecordDTO(record, currentUserId))
+                .collect(Collectors.toList());
     }
 
-    private ClientDTO checkConflictPreview(ClientDTO dto, Long excludedClientId, Long checkedBy) {
-        ClientDTO result = new ClientDTO();
+    @Transactional
+    public ConflictCheckRecordDTO reviewConflictCheck(Long recordId, ConflictCheckReviewRequest request, Long reviewerId) {
+        ConflictCheckRecord record = conflictCheckRecordRepository.findById(recordId)
+                .orElseThrow(() -> new IllegalArgumentException("利冲检查记录不存在"));
+        if ("COMPLETED".equals(record.getReviewStatus())) {
+            throw new IllegalArgumentException("该利冲检查已完成正式审查，不允许覆盖原结论；如需复核请重新发起检查");
+        }
+        validateConflictReview(record, request);
+        record.setReviewStatus("COMPLETED");
+        record.setReviewDecision(request.getDecision().trim().toUpperCase());
+        record.setReviewConclusion(request.getConclusion().trim());
+        record.setWaiverBasis(StringUtils.hasText(request.getWaiverBasis()) ? request.getWaiverBasis().trim() : null);
+        record.setReviewedBy(reviewerId);
+        record.setReviewedAt(java.time.LocalDateTime.now());
+        return toConflictCheckRecordDTO(conflictCheckRecordRepository.save(record), reviewerId);
+    }
+
+    private ConflictCheckResultDTO performConflictCheck(ClientDTO dto, Long excludedClientId) {
+        ConflictCheckResultDTO result = new ConflictCheckResultDTO();
         result.setClientName(dto.getClientName());
-        result.setClientType(dto.getClientType());
-        result.setClientRelationship(dto.getClientRelationship());
-        result.setClientRole(dto.getClientRole());
-        result.setIdCard(dto.getIdCard());
         result.setHasConflict(false);
         result.setConflictLevel("NONE");
-        result.setConflictCaseIds(new ArrayList<>());
-        result.setSimilarClientNames(new ArrayList<>());
 
         if (!StringUtils.hasText(dto.getClientName())) {
+            result.setConflictDescription("请输入拟签约客户姓名或名称。 ");
             return result;
         }
 
+        String subjectName = dto.getClientName().trim();
+        String normalized = normalizeClientName(subjectName);
         List<Client> clients = clientRepository.findByDeletedFalse().stream()
                 .filter(c -> excludedClientId == null || !excludedClientId.equals(c.getId()))
                 .collect(Collectors.toList());
+        List<Party> parties = partyRepository.findByDeletedFalse();
 
         List<Client> exactMatches = clients.stream()
-                .filter(c -> dto.getClientName().equals(c.getClientName()))
+                .filter(c -> isExactName(subjectName, c.getClientName()) || isSameIdentity(dto, c))
                 .collect(Collectors.toList());
 
         for (Client existing : exactMatches) {
+            result.getHits().add(ConflictCheckHitDTO.builder()
+                    .sourceType("CLIENT")
+                    .subjectName(existing.getClientName())
+                    .subjectRole(existing.getClientRole())
+                    .matchType(isSameIdentity(dto, existing) ? "IDENTITY" : "EXACT_NAME")
+                    .riskLevel(isOpposingRole(dto.getClientRole(), existing.getClientRole()) ? "DIRECT" : "EXISTING")
+                    .relatedCaseCount(countCasesByPartyName(existing.getClientName()))
+                    .reason(isSameIdentity(dto, existing) ? "证件号码或统一社会信用代码一致" : "客户库名称完全一致")
+                    .build());
             if (isOpposingRole(dto.getClientRole(), existing.getClientRole())) {
                 result.setHasConflict(true);
                 result.setConflictLevel("DIRECT");
                 result.setConflictDescription("存在直接利益冲突：客户库中已存在相同客户名称，且既有客户角色为“"
                         + nullToBlank(existing.getClientRole()) + "”，本次拟录入角色为“"
                         + nullToBlank(dto.getClientRole()) + "”。请停止建档并由行政管理进行利冲审查。");
-                result.getConflictCaseIds().addAll(findCaseIdsByPartyName(dto.getClientName()));
-                return result;
+                result.getConflictCaseIds().addAll(findCaseIdsByPartyName(existing.getClientName()));
             }
         }
 
-        if (!exactMatches.isEmpty()) {
-            Client existing = exactMatches.get(0);
+        if (!exactMatches.isEmpty() && !"DIRECT".equals(result.getConflictLevel())) {
             result.setConflictLevel("EXISTING");
-            result.setConflictDescription("此客户已存在，客户所属人为“"
-                    + resolveUserNames(existing.getClientOwnerIds(), existing.getOwnerId()) + "”，所属部门为“"
-                    + resolveDepartmentName(existing.getDepartmentId()) + "”。未发现直接利益冲突。");
+            result.setConflictDescription("客户库中存在相同主体记录，需由行政管理结合既有委托关系进一步核对。系统不会因利冲命中自动开放客户详情。");
         }
 
-        String normalized = normalizeClientName(dto.getClientName());
-        List<String> similarNames = clients.stream()
-                .filter(c -> !dto.getClientName().equals(c.getClientName()))
+        Map<String, List<Party>> exactPartyGroups = parties.stream()
+                .filter(p -> isExactName(subjectName, p.getName()) || isSameIdentity(dto, p))
+                .collect(Collectors.groupingBy(
+                        p -> p.getName() + "|" + nullToBlank(p.getPartyRole()),
+                        LinkedHashMap::new,
+                        Collectors.toList()));
+        exactPartyGroups.forEach((key, group) -> {
+            Party sample = group.get(0);
+            boolean opposing = isOpposingRole(dto.getClientRole(), sample.getPartyRole());
+            result.getHits().add(ConflictCheckHitDTO.builder()
+                    .sourceType("CASE_PARTY")
+                    .subjectName(sample.getName())
+                    .subjectRole(sample.getPartyRole())
+                    .matchType(isSameIdentity(dto, sample) ? "IDENTITY" : "EXACT_NAME")
+                    .riskLevel(opposing ? "DIRECT" : "CASE_PARTY")
+                    .relatedCaseCount((int) group.stream().map(Party::getCaseId).distinct().count())
+                    .reason("该主体曾作为案件当事人出现，需核对其在既有案件中的立场")
+                    .build());
+            group.stream().map(Party::getCaseId).distinct().forEach(result.getConflictCaseIds()::add);
+            if (opposing) {
+                result.setHasConflict(true);
+                result.setConflictLevel("DIRECT");
+            } else if (!"DIRECT".equals(result.getConflictLevel()) && "NONE".equals(result.getConflictLevel())) {
+                result.setHasConflict(true);
+                result.setConflictLevel("CASE_PARTY");
+            }
+        });
+
+        addRelatedSubjectHits(dto, result, clients, subjectName);
+
+        List<String> similarNames = new ArrayList<>();
+        clients.stream()
+                .filter(c -> !isExactName(subjectName, c.getClientName()))
                 .filter(c -> isSimilarName(normalized, normalizeClientName(c.getClientName())))
                 .map(Client::getClientName)
                 .distinct()
                 .limit(5)
-                .collect(Collectors.toList());
+                .forEach(similarNames::add);
+        parties.stream()
+                .filter(p -> !isExactName(subjectName, p.getName()))
+                .filter(p -> isSimilarName(normalized, normalizeClientName(p.getName())))
+                .map(Party::getName)
+                .distinct()
+                .filter(name -> !similarNames.contains(name))
+                .limit(Math.max(0, 5 - similarNames.size()))
+                .forEach(similarNames::add);
 
-        if (!similarNames.isEmpty() && !"EXISTING".equals(result.getConflictLevel())) {
+        if (!similarNames.isEmpty()) {
+            similarNames.forEach(name -> result.getHits().add(ConflictCheckHitDTO.builder()
+                    .sourceType("SIMILAR_SUBJECT")
+                    .subjectName(name)
+                    .matchType("SIMILAR_NAME")
+                    .riskLevel("SIMILAR")
+                    .reason("名称去除地区、组织形式和标点后高度相似")
+                    .build()));
+        }
+        if (!similarNames.isEmpty() && "NONE".equals(result.getConflictLevel())) {
             result.setConflictLevel("SIMILAR");
             result.setSimilarClientNames(similarNames);
             result.setConflictDescription("发现高度相似客户：" + String.join("、", similarNames)
                     + "。请再次核实客户名称是否正确；核实后可继续新增。");
+        } else {
+            result.setSimilarClientNames(similarNames);
+        }
+
+        result.setConflictCaseIds(result.getConflictCaseIds().stream().distinct().collect(Collectors.toList()));
+        if ("DIRECT".equals(result.getConflictLevel())) {
+            result.setConflictDescription("发现直接利益冲突线索。请暂停签约或立案，提交行政管理进行正式审查。 ");
+            result.setRecommendation("暂停办理，由行政管理核对既有委托关系、案件立场和书面豁免条件。 ");
+        } else if ("CASE_PARTY".equals(result.getConflictLevel())) {
+            result.setConflictDescription("该主体曾出现在案件当事人库中，需要人工确认其案件角色和现有委托关系。 ");
+            result.setRecommendation("联系行政管理完成正式利冲审查，不要仅凭本次初筛直接签约。 ");
+        } else if ("EXISTING".equals(result.getConflictLevel())) {
+            result.setRecommendation("核对是否为同一主体，并由既有案源人或承办人确认服务关系。 ");
+        } else if ("RELATED".equals(result.getConflictLevel())) {
+            result.setConflictDescription("主体关系图谱发现关联企业、控制人、曾用名或其他关联主体，需要核对既有委托关系和实际利益是否一致。 ");
+            result.setRecommendation("由行政管理核对关联主体的控制关系、共同利益和既有案件立场后作出正式结论。 ");
+        } else if ("SIMILAR".equals(result.getConflictLevel())) {
+            result.setRecommendation("核对主体全称、曾用名及统一社会信用代码后再继续。 ");
+        } else {
+            result.setConflictDescription("全所客户库及案件当事人库未发现同名或高度相似主体。 ");
+            result.setRecommendation("可继续后续流程，但正式立案仍应完成行政利冲审查。 ");
         }
 
         return result;
     }
 
-    private void saveConflictCheckRecord(ClientDTO request, ClientDTO result, Long checkedBy) {
+    private ConflictCheckRecord saveConflictCheckRecord(
+            ClientDTO request, ConflictCheckResultDTO result, Long checkedBy, Long caseId) {
         if (!StringUtils.hasText(request.getClientName())) {
-            return;
+            throw new IllegalArgumentException("检查对象不能为空");
         }
         ConflictCheckRecord record = new ConflictCheckRecord();
-        record.setSubjectName(request.getClientName());
+        record.setSubjectName(request.getClientName().trim());
         record.setClientType(request.getClientType());
         record.setClientRelationship(request.getClientRelationship());
         record.setClientRole(request.getClientRole());
         record.setIdCard(request.getIdCard());
         record.setCreditCode(request.getCreditCode());
         record.setCheckedBy(checkedBy);
+        record.setCaseId(caseId);
         record.setConflictLevel(result.getConflictLevel());
         record.setConclusion(result.getConflictDescription());
         record.setSimilarNames(result.getSimilarClientNames() == null ? null : String.join(",", result.getSimilarClientNames()));
+        record.setMatchedRelatedSubjects(result.getHits().stream()
+                .filter(hit -> "RELATED_ENTITY".equals(hit.getSourceType()))
+                .map(hit -> nullToBlank(hit.getSubjectRole()) + ":" + nullToBlank(hit.getSubjectName()))
+                .distinct()
+                .collect(Collectors.joining(",")));
         record.setMatchedCaseIds(result.getConflictCaseIds() == null ? null : result.getConflictCaseIds().stream()
                 .map(String::valueOf)
                 .collect(Collectors.joining(",")));
-        record.setMatchedClientIds(clientRepository.findAllByClientNameAndDeletedFalse(request.getClientName()).stream()
+        record.setMatchedClientIds(clientRepository.findByDeletedFalse().stream()
+                .filter(client -> isExactName(request.getClientName(), client.getClientName()) || isSameIdentity(request, client))
                 .map(Client::getId)
                 .map(String::valueOf)
                 .collect(Collectors.joining(",")));
-        conflictCheckRecordRepository.save(record);
+        return conflictCheckRecordRepository.save(record);
+    }
+
+    public String generateConflictCheckReport(Long recordId, Long currentUserId) {
+        ConflictCheckRecord record = conflictCheckRecordRepository.findById(recordId)
+                .orElseThrow(() -> new IllegalArgumentException("利冲检查记录不存在"));
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new IllegalArgumentException("当前用户不存在"));
+        boolean canRead = canReadConflictRecord(record, currentUser);
+        if (!canRead) {
+            throw new IllegalArgumentException("无权下载该利冲检查报告");
+        }
+
+        String operator = resolveUserName(record.getCheckedBy());
+        return String.join("\n",
+                "ZGAI 利益冲突检查报告",
+                "报告编号：" + formatReportNo(record),
+                "检查对象：" + record.getSubjectName(),
+                "检查时间：" + (record.getCreatedAt() == null ? "-" : record.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))),
+                "检查人员：" + operator,
+                "检查范围：全所客户库、案件当事人库",
+                "风险等级：" + nullToBlank(record.getConflictLevel()),
+                "客户库命中数：" + countCsvItems(record.getMatchedClientIds()),
+                "关联案件数：" + countCsvItems(record.getMatchedCaseIds()),
+                "相似名称：" + (StringUtils.hasText(record.getSimilarNames()) ? record.getSimilarNames() : "无"),
+                "关联主体：" + (StringUtils.hasText(record.getMatchedRelatedSubjects()) ? record.getMatchedRelatedSubjects() : "无"),
+                "系统结论：" + (StringUtils.hasText(record.getConclusion()) ? record.getConclusion() : "无"),
+                "正式审查状态：" + reviewStatusLabel(record.getReviewStatus()),
+                "正式审查结论：" + reviewDecisionLabel(record.getReviewDecision()),
+                "审查意见：" + (StringUtils.hasText(record.getReviewConclusion()) ? record.getReviewConclusion() : "尚未审查"),
+                "豁免或处置依据：" + (StringUtils.hasText(record.getWaiverBasis()) ? record.getWaiverBasis() : "无"),
+                "复核人员：" + (record.getReviewedBy() == null ? "-" : resolveUserName(record.getReviewedBy())),
+                "复核时间：" + (record.getReviewedAt() == null ? "-" : record.getReviewedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))),
+                "",
+                "声明：系统初筛不替代行政管理人员依据律所制度作出的正式利益冲突审查结论。",
+                "");
+    }
+
+    private ConflictCheckRecordDTO toConflictCheckRecordDTO(ConflictCheckRecord record, Long currentUserId) {
+        ConflictCheckRecordDTO dto = new ConflictCheckRecordDTO();
+        dto.setId(record.getId());
+        dto.setReportNo(formatReportNo(record));
+        dto.setSubjectName(record.getSubjectName());
+        dto.setCaseId(record.getCaseId());
+        dto.setCheckedByName(resolveUserName(record.getCheckedBy()));
+        dto.setConflictLevel(record.getConflictLevel());
+        dto.setConclusion(record.getConclusion());
+        dto.setSimilarNames(record.getSimilarNames());
+        dto.setMatchedClientCount(countCsvItems(record.getMatchedClientIds()));
+        dto.setMatchedCaseCount(countCsvItems(record.getMatchedCaseIds()));
+        dto.setMatchedRelatedSubjectCount(countCsvItems(record.getMatchedRelatedSubjects()));
+        dto.setMatchedRelatedSubjects(record.getMatchedRelatedSubjects());
+        dto.setCheckedAt(record.getCreatedAt());
+        dto.setReviewStatus(StringUtils.hasText(record.getReviewStatus()) ? record.getReviewStatus() : "PENDING_REVIEW");
+        dto.setReviewDecision(record.getReviewDecision());
+        dto.setReviewConclusion(record.getReviewConclusion());
+        dto.setWaiverBasis(record.getWaiverBasis());
+        dto.setReviewedByName(record.getReviewedBy() == null ? null : resolveUserName(record.getReviewedBy()));
+        dto.setReviewedAt(record.getReviewedAt());
+        dto.setArchivedDocumentId(record.getArchivedDocumentId());
+        dto.setArchivedAt(record.getArchivedAt());
+        dto.setWaiverAttachments(conflictWaiverAttachmentService.list(record.getId()));
+        User currentUser = currentUserId == null ? null : userRepository.findById(currentUserId).orElse(null);
+        dto.setCanDownload(currentUser != null && canReadConflictRecord(record, currentUser));
+        return dto;
+    }
+
+    private void validateConflictReview(ConflictCheckRecord record, ConflictCheckReviewRequest request) {
+        if (request == null || !StringUtils.hasText(request.getDecision())) {
+            throw new IllegalArgumentException("请选择正式审查结论");
+        }
+        String decision = request.getDecision().trim().toUpperCase();
+        Set<String> allowed = new HashSet<>(Arrays.asList("PASSED", "REJECTED", "CONDITIONAL"));
+        if (!allowed.contains(decision)) {
+            throw new IllegalArgumentException("正式审查结论无效");
+        }
+        if (!StringUtils.hasText(request.getConclusion())) {
+            throw new IllegalArgumentException("请填写审查意见");
+        }
+        if ("CONDITIONAL".equals(decision) && !StringUtils.hasText(request.getWaiverBasis())) {
+            throw new IllegalArgumentException("附条件通过必须填写书面豁免或风险处置依据");
+        }
+        if ("CONDITIONAL".equals(decision) && !conflictWaiverAttachmentService.hasAttachment(record.getId())) {
+            throw new IllegalArgumentException("附条件通过必须上传书面豁免或风险处置依据原件");
+        }
+    }
+
+    public void assertConflictRecordReadable(Long recordId, Long currentUserId) {
+        ConflictCheckRecord record = conflictCheckRecordRepository.findById(recordId)
+                .orElseThrow(() -> new IllegalArgumentException("利冲检查记录不存在"));
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new IllegalArgumentException("当前用户不存在"));
+        if (!canReadConflictRecord(record, currentUser)) {
+            throw new IllegalArgumentException("无权查看该利冲检查记录");
+        }
+    }
+
+    public Long getConflictRecordCaseId(Long recordId) {
+        return conflictCheckRecordRepository.findById(recordId)
+                .orElseThrow(() -> new IllegalArgumentException("利冲检查记录不存在"))
+                .getCaseId();
+    }
+
+    private boolean canReadConflictRecord(ConflictCheckRecord record, User currentUser) {
+        return currentUser != null && ((record.getCheckedBy() != null && record.getCheckedBy().equals(currentUser.getId()))
+                || isDevelopmentAdmin(currentUser)
+                || hasAllClientViewAccess(currentUser)
+                || userPermissionService.hasPermission(currentUser, "CASE_FILING_REVIEW"));
+    }
+
+    private String reviewStatusLabel(String status) {
+        return "COMPLETED".equals(status) ? "已完成" : "待行政审查";
+    }
+
+    private String reviewDecisionLabel(String decision) {
+        if ("PASSED".equals(decision)) {
+            return "无冲突，通过";
+        }
+        if ("REJECTED".equals(decision)) {
+            return "存在冲突，不通过";
+        }
+        if ("CONDITIONAL".equals(decision)) {
+            return "附条件通过";
+        }
+        return "尚未审查";
+    }
+
+    private String formatReportNo(ConflictCheckRecord record) {
+        String date = record.getCreatedAt() == null
+                ? "00000000"
+                : record.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        return String.format("LC-%s-%06d", date, record.getId() == null ? 0L : record.getId());
+    }
+
+    private int countCsvItems(String value) {
+        if (!StringUtils.hasText(value)) {
+            return 0;
+        }
+        return (int) Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .count();
+    }
+
+    private String resolveUserName(Long userId) {
+        if (userId == null) {
+            return "未知人员";
+        }
+        return userRepository.findById(userId)
+                .map(User::getRealName)
+                .filter(StringUtils::hasText)
+                .orElse("未知人员");
+    }
+
+    private boolean isSameIdentity(ClientDTO request, Client existing) {
+        return (StringUtils.hasText(request.getIdCard()) && request.getIdCard().equalsIgnoreCase(nullToBlank(existing.getIdCard())))
+                || (StringUtils.hasText(request.getCreditCode()) && request.getCreditCode().equalsIgnoreCase(nullToBlank(existing.getCreditCode())));
+    }
+
+    private boolean isSameIdentity(ClientDTO request, Party existing) {
+        return (StringUtils.hasText(request.getIdCard()) && request.getIdCard().equalsIgnoreCase(nullToBlank(existing.getIdCard())))
+                || (StringUtils.hasText(request.getCreditCode()) && request.getCreditCode().equalsIgnoreCase(nullToBlank(existing.getCreditCode())));
+    }
+
+    private void addRelatedSubjectHits(
+            ClientDTO request, ConflictCheckResultDTO result, List<Client> clients, String subjectName) {
+        Map<Long, Client> clientsById = clients.stream()
+                .filter(client -> client.getId() != null)
+                .collect(Collectors.toMap(Client::getId, client -> client, (left, right) -> left));
+        Set<String> added = new HashSet<>();
+        clientSubjectRelationService.findAllActive().forEach(relation -> {
+            Client source = clientsById.get(relation.getSourceClientId());
+            Client target = relation.getTargetClientId() == null ? null : clientsById.get(relation.getTargetClientId());
+            String sourceName = source == null ? null : source.getClientName();
+            String targetName = target == null ? relation.getTargetSubjectName() : target.getClientName();
+            boolean matchesSource = isExactName(subjectName, sourceName)
+                    || (source != null && isSameIdentity(request, source));
+            boolean matchesTarget = isExactName(subjectName, targetName)
+                    || (StringUtils.hasText(request.getCreditCode())
+                    && request.getCreditCode().equalsIgnoreCase(nullToBlank(relation.getTargetCreditCode())))
+                    || (target != null && isSameIdentity(request, target));
+            if (!matchesSource && !matchesTarget) {
+                return;
+            }
+
+            String relatedName = matchesSource ? targetName : sourceName;
+            if (!StringUtils.hasText(relatedName)) {
+                return;
+            }
+            String relationName = matchesSource
+                    ? clientSubjectRelationService.relationTypeName(relation.getRelationType())
+                    : clientSubjectRelationService.inverseRelationTypeName(relation.getRelationType());
+            String key = relation.getId() + "|" + relatedName;
+            if (!added.add(key)) {
+                return;
+            }
+            result.getHits().add(ConflictCheckHitDTO.builder()
+                    .sourceType("RELATED_ENTITY")
+                    .subjectName(relatedName)
+                    .subjectRole(relationName)
+                    .matchType("RELATION_GRAPH")
+                    .riskLevel("RELATED")
+                    .relatedCaseCount(countCasesByPartyName(relatedName))
+                    .reason("主体关系图谱显示该主体与检查对象存在“" + relationName + "”关系")
+                    .build());
+            result.getConflictCaseIds().addAll(findCaseIdsByPartyName(relatedName));
+            result.setHasConflict(true);
+            if ("NONE".equals(result.getConflictLevel()) || "SIMILAR".equals(result.getConflictLevel())) {
+                result.setConflictLevel("RELATED");
+            }
+        });
+    }
+
+    private boolean isExactName(String left, String right) {
+        return StringUtils.hasText(left) && StringUtils.hasText(right) && left.trim().equalsIgnoreCase(right.trim());
+    }
+
+    private int countCasesByPartyName(String name) {
+        return (int) partyRepository.findByNameAndDeletedFalse(name).stream()
+                .map(Party::getCaseId)
+                .distinct()
+                .count();
     }
 
     /**
@@ -513,10 +938,31 @@ public class ClientService {
         if (!StringUtils.hasText(newRole) || !StringUtils.hasText(existingRole)) {
             return false;
         }
+        newRole = normalizePartyRole(newRole);
+        existingRole = normalizePartyRole(existingRole);
         Set<String> plaintiffSide = new HashSet<>(Arrays.asList("原告", "共同原告", "申请人", "上诉人", "债权人"));
         Set<String> defendantSide = new HashSet<>(Arrays.asList("被告", "共同被告", "被申请人", "被上诉人"));
         return (plaintiffSide.contains(newRole) && defendantSide.contains(existingRole))
                 || (defendantSide.contains(newRole) && plaintiffSide.contains(existingRole));
+    }
+
+    private String normalizePartyRole(String role) {
+        if (!StringUtils.hasText(role)) {
+            return "";
+        }
+        switch (role.trim().toUpperCase()) {
+            case "PLAINTIFF": return "原告";
+            case "CO_PLAINTIFF": return "共同原告";
+            case "DEFENDANT": return "被告";
+            case "CO_DEFENDANT": return "共同被告";
+            case "APPLICANT": return "申请人";
+            case "RESPONDENT": return "被申请人";
+            case "APPELLANT": return "上诉人";
+            case "APPELLEE": return "被上诉人";
+            case "CREDITOR": return "债权人";
+            case "DEBTOR": return "债务人";
+            default: return role.trim();
+        }
     }
 
     private String normalizeClientName(String name) {
@@ -654,25 +1100,66 @@ public class ClientService {
         // 通过Party表关联客户和案件（性能优化：使用数据库查询而非全表加载）
         List<com.lawfirm.entity.Party> parties = partyRepository.findByNameAndDeletedFalse(client.getClientName());
 
-        // 提取案件ID集合
-        List<Long> caseIds = parties.stream()
+        // 同时兼容结构化 client_id 和历史按当事人名称建立的关联。
+        Set<Long> caseIds = parties.stream()
                 .map(com.lawfirm.entity.Party::getCaseId)
-                .distinct()
-                .collect(Collectors.toList());
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        caseRepository.findByClientIdOrderByCreatedAtDesc(clientId).stream()
+                .map(Case::getId)
+                .filter(Objects::nonNull)
+                .forEach(caseIds::add);
 
         // 查询对应的案件
         return caseIds.stream()
                 .map(caseId -> caseRepository.findById(caseId))
                 .filter(java.util.Optional::isPresent)
                 .map(java.util.Optional::get)
-                .filter(c -> !c.getDeleted())
+                .filter(c -> !Boolean.TRUE.equals(c.getDeleted()))
                 .map(this::convertToCaseListVO)
                 .collect(Collectors.toList());
     }
 
     public List<com.lawfirm.vo.CaseListVO> getClientCases(Long clientId, Long currentUserId) {
         assertClientVisible(clientId, currentUserId);
-        return getClientCases(clientId);
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
+        return getClientCases(clientId).stream()
+                .filter(caseItem -> canAccessRelatedCase(caseItem.getId(), currentUser))
+                .collect(Collectors.toList());
+    }
+
+    private boolean canAccessRelatedCase(Long caseId, User currentUser) {
+        Case caseEntity = caseRepository.findById(caseId).orElse(null);
+        if (caseEntity == null || Boolean.TRUE.equals(caseEntity.getDeleted())) {
+            return false;
+        }
+        if (isDevelopmentAdmin(currentUser) || "主任".equals(currentUser.getPosition())
+                || (currentUser.getPosition() != null && currentUser.getPosition().startsWith("行政管理"))) {
+            return true;
+        }
+        if (Objects.equals(caseEntity.getOwnerId(), currentUser.getId())) {
+            return true;
+        }
+        List<com.lawfirm.entity.CaseMember> members = caseMemberRepository.findByCaseIdAndDeletedFalse(caseId);
+        if (members.stream().map(com.lawfirm.entity.CaseMember::getUserId).anyMatch(currentUser.getId()::equals)) {
+            return true;
+        }
+        String position = currentUser.getPosition();
+        boolean departmentManager = "部门主管".equals(position) || "主管".equals(position) || "合伙人".equals(position);
+        if (!departmentManager || currentUser.getDepartmentId() == null) {
+            return false;
+        }
+        User owner = userRepository.findById(caseEntity.getOwnerId()).orElse(null);
+        if (owner != null && Objects.equals(owner.getDepartmentId(), currentUser.getDepartmentId())) {
+            return true;
+        }
+        return members.stream()
+                .map(com.lawfirm.entity.CaseMember::getUserId)
+                .map(userRepository::findById)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .anyMatch(user -> Objects.equals(user.getDepartmentId(), currentUser.getDepartmentId()));
     }
 
     /**
@@ -688,7 +1175,9 @@ public class ClientService {
         if (start >= allRecords.size()) {
             return new ArrayList<>();
         }
-        return allRecords.subList(start, end);
+        List<com.lawfirm.entity.CommunicationRecord> records = new ArrayList<>(allRecords.subList(start, end));
+        records.forEach(this::enrichCommunicationRecord);
+        return records;
     }
 
     public List<com.lawfirm.entity.CommunicationRecord> getCommunications(Long clientId, int page, int size, Long currentUserId) {
@@ -714,7 +1203,9 @@ public class ClientService {
         record.setNextFollowDate(dto.getNextFollowDate());
         record.setAttachments(dto.getAttachments());
         record.setOperatorId(operatorId);
-        return communicationRecordRepository.save(record);
+        record = communicationRecordRepository.save(record);
+        enrichCommunicationRecord(record);
+        return record;
     }
 
     /**
@@ -734,7 +1225,9 @@ public class ClientService {
         record.setContent(dto.getContent());
         record.setNextFollowDate(dto.getNextFollowDate());
         record.setAttachments(dto.getAttachments());
-        return communicationRecordRepository.save(record);
+        record = communicationRecordRepository.save(record);
+        enrichCommunicationRecord(record);
+        return record;
     }
 
     public com.lawfirm.entity.CommunicationRecord updateCommunication(Long clientId, Long communicationId, com.lawfirm.dto.CommunicationRecordDTO dto, Long currentUserId) {
@@ -772,9 +1265,21 @@ public class ClientService {
         vo.setCaseNumber(caseEntity.getCaseNumber());
         vo.setCaseType(caseEntity.getCaseType());
         vo.setStatus(caseEntity.getStatus());
+        vo.setCurrentStage(caseEntity.getCurrentStage());
         vo.setCourt(caseEntity.getCourt());
+        vo.setOwnerId(caseEntity.getOwnerId());
+        vo.setOwnerName(resolveUserName(caseEntity.getOwnerId()));
+        vo.setFilingDate(caseEntity.getFilingDate());
+        vo.setAmount(caseEntity.getAmount());
+        vo.setAttorneyFee(caseEntity.getAttorneyFee());
         vo.setCreatedAt(caseEntity.getCreatedAt() != null ?
             caseEntity.getCreatedAt().toLocalDate() : null);
         return vo;
+    }
+
+    private void enrichCommunicationRecord(com.lawfirm.entity.CommunicationRecord record) {
+        if (record != null) {
+            record.setOperatorName(resolveUserName(record.getOperatorId()));
+        }
     }
 }

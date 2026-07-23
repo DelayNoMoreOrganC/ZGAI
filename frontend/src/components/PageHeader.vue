@@ -45,27 +45,50 @@ const handleBack = () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
-  padding: 16px 20px;
-  background-color: #fff;
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: 0 0 16px;
+  background: transparent;
+  border-bottom: 1px solid #e7e9ed;
 
   .header-left {
     display: flex;
     align-items: center;
     gap: 12px;
+    min-width: 0;
 
     h2 {
       margin: 0;
-      font-size: 18px;
-      font-weight: 500;
-      color: #333;
+      font-size: 20px;
+      font-weight: 600;
+      color: #1f2329;
+      line-height: 1.3;
     }
   }
 
   .header-right {
     display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
     gap: 10px;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    padding-bottom: 14px;
+
+    .header-left h2 {
+      font-size: 18px;
+    }
+
+    .header-right {
+      justify-content: flex-start;
+      width: 100%;
+    }
   }
 }
 </style>

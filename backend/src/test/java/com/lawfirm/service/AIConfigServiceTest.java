@@ -9,6 +9,7 @@ import com.lawfirm.repository.AIConfigRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -22,7 +23,10 @@ class AIConfigServiceTest {
     @Test
     void blankSecretOnUpdatePreservesExistingApiKey() {
         AIConfigRepository repository = mock(AIConfigRepository.class);
-        AIConfigService service = new AIConfigService(repository);
+        AIConfigService service = new AIConfigService(
+                repository,
+                mock(YuandianLegalService.class),
+                mock(OpenAICompatibleClient.class));
         AIConfig existing = config("stored-secret");
         existing.setId(12L);
         when(repository.findById(12L)).thenReturn(Optional.of(existing));
@@ -48,6 +52,37 @@ class AIConfigServiceTest {
         assertTrue(json.get("apiKeyConfigured").asBoolean());
         assertFalse(json.has("apiKey"));
         assertFalse(json.toString().contains("stored-secret"));
+    }
+
+    @Test
+    void emptySelectionAlwaysResolvesEnabledLmStudioInsteadOfCloudDefault() {
+        AIConfigRepository repository = mock(AIConfigRepository.class);
+        AIConfigService service = new AIConfigService(repository, mock(YuandianLegalService.class),
+                mock(OpenAICompatibleClient.class));
+        AIConfig local = config("");
+        local.setProviderType("LM_STUDIO");
+        local.setApiUrl("http://192.168.1.200:1234/v1");
+        local.setIsEnabled(true);
+        when(repository.findFirstByProviderTypeAndIsEnabledTrueAndDeletedFalseOrderByIsDefaultDescIdAsc("LM_STUDIO"))
+                .thenReturn(Optional.of(local));
+
+        assertEquals(local, service.resolveGenerationConfig(null));
+    }
+
+    @Test
+    void unavailableCloudProviderIsListedWithoutExposingSecret() {
+        AIConfigRepository repository = mock(AIConfigRepository.class);
+        AIConfigService service = new AIConfigService(repository, mock(YuandianLegalService.class),
+                mock(OpenAICompatibleClient.class));
+        AIConfig cloud = config("");
+        cloud.setProviderType("KIMI_API");
+        cloud.setApiUrl("https://api.moonshot.cn/v1");
+        cloud.setModelName("kimi-model");
+        cloud.setIsEnabled(true);
+        when(repository.findByDeletedFalse()).thenReturn(List.of(cloud));
+
+        assertFalse(service.getAvailableProviders().get(0).isAvailable());
+        assertFalse(new ObjectMapper().valueToTree(service.getAvailableProviders()).toString().contains("apiKey"));
     }
 
     private AIConfig config(String apiKey) {

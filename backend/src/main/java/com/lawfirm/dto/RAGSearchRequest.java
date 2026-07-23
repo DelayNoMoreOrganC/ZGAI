@@ -12,6 +12,8 @@ public class RAGSearchRequest {
 
     private Integer topK = 5; // 返回最相关的K篇文档
 
+    private String providerType;
+
     public String getQuestion() {
         return question;
     }
@@ -26,5 +28,13 @@ public class RAGSearchRequest {
 
     public void setTopK(Integer topK) {
         this.topK = topK;
+    }
+
+    public String getProviderType() {
+        return providerType;
+    }
+
+    public void setProviderType(String providerType) {
+        this.providerType = providerType;
     }
 }

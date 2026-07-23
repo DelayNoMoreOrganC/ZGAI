@@ -121,7 +121,7 @@ public class VectorMigrationService {
             }
 
             // 2. 批量生成向量
-            List<List<Double>> embeddings = embeddingService.embedTextBatch(texts);
+            List<List<Double>> embeddings = embeddingService.embedDocumentsBatch(texts);
 
             // 3. 批量插入Qdrant
             List<QdrantVectorService.VectorPoint> points = new ArrayList<>();
@@ -191,7 +191,7 @@ public class VectorMigrationService {
             String text = extractTextForEmbedding(article);
 
             // 生成向量
-            List<Double> embedding = embeddingService.embedText(text);
+            List<Double> embedding = embeddingService.embedDocument(text);
 
             // 构建payload
             JsonObject payload = new JsonObject();

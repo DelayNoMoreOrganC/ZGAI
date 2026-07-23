@@ -180,6 +180,7 @@ public class UserController {
      */
     @PutMapping("/change-password")
     @PreAuthorize("isAuthenticated()")
+    @AuditLog(value = "修改本人密码", operationType = "UPDATE", logParams = false)
     public Result<Void> changePassword(@RequestBody Map<String, String> params) {
         try {
             Long userId = securityUtils.getCurrentUserId();

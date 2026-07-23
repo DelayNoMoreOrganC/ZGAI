@@ -41,6 +41,18 @@ public class CaseCreateRequest {
     private String agencyType;
     private LocalDate serviceStartDate;
     private LocalDate serviceEndDate;
+    private Long consultantClientId;
+    private String consultantUnitName;
+    private String consultantContactName;
+    private String consultantContactDepartment;
+    private String consultantContactTitle;
+    private String consultantContactPhone;
+    private String consultantContactEmail;
+    private String consultantServiceScope;
+    private String consultantResponseRequirement;
+    private String consultantIncludedServices;
+    private String consultantExcludedServices;
+    private LocalDate renewalReminderDate;
     private String trialStages;
     private String courtCaseNumber;
     private LocalDate hearingDate;
@@ -67,6 +79,9 @@ public class CaseCreateRequest {
 
     // 当事人信息
     private List<PartyDTO> parties;
+
+    // 关联客户；首个客户作为案件主客户
+    private List<Long> clientIds;
 
     // 应收款信息
     private List<ReceivableRequest> receivables;

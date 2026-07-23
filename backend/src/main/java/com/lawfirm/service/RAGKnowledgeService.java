@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
  * RAG Knowledge Service (向量数据库检索版)
  *
  * 升级点：
- * 1. 使用阿里云通义千问Embedding API生成1024维向量
+ * 1. 使用管理员显式配置的本地 Embedding 模型生成向量
  * 2. Qdrant向量数据库存储与检索
  * 3. 语义搜索准确率提升（mAP@10 > 0.85）
  * 4. 检索速度优化（< 500ms）
@@ -38,11 +38,21 @@ public class RAGKnowledgeService {
     private final KnowledgeArticleRepository knowledgeArticleRepository;
     private final EmbeddingService embeddingService;
     private final QdrantVectorService qdrantVectorService;
+    private final OpenAICompatibleClient openAICompatibleClient;
+    private final AIGenerationGateway generationGateway;
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @PostConstruct
     public void init() {
+        if (!embeddingService.isConfigured()) {
+            log.info("Embedding 模型尚未配置，RAG 使用关键词检索，跳过 Qdrant 初始化");
+            return;
+        }
+        if (!qdrantVectorService.isEnabled()) {
+            log.info("Qdrant 已停用，RAG 使用关键词检索");
+            return;
+        }
         try {
             // 初始化Qdrant集合
             qdrantVectorService.initializeCollection();
@@ -56,6 +66,10 @@ public class RAGKnowledgeService {
      * RAG search and answer（向量检索版）
      */
     public Map<String, Object> ragSearch(String question, Long userId) {
+        return ragSearch(question, userId, null);
+    }
+
+    public Map<String, Object> ragSearch(String question, Long userId, String providerType) {
         log.info("RAG search question: {}", question);
 
         try {
@@ -77,7 +91,7 @@ public class RAGKnowledgeService {
             String context = buildEnhancedContext(scoredDocs, question);
 
             // Step 3: 通过LLM生成答案
-            AnswerGeneration answerGeneration = generateAnswer(question, context, scoredDocs);
+            AnswerGeneration answerGeneration = generateAnswer(question, context, scoredDocs, providerType);
 
             // Step 4: 提取源信息（包含相关性分数）
             List<Map<String, Object>> sources = scoredDocs.stream()
@@ -132,7 +146,7 @@ public class RAGKnowledgeService {
      * 智能检索相关文档（向量数据库检索版）
      *
      * 性能优化：
-     * 1. 使用阿里云Embedding API生成问题向量
+     * 1. 使用本地 Embedding API生成问题向量
      * 2. Qdrant向量相似度检索
      * 3. 检索速度 < 500ms
      * 4. 准确率 mAP@10 > 0.85
@@ -140,13 +154,13 @@ public class RAGKnowledgeService {
     private SearchExecution searchRelevantDocumentsWithScore(String question) {
         long startTime = System.currentTimeMillis();
 
-        if (!embeddingService.isConfigured()) {
+        if (!embeddingService.isConfigured() || !qdrantVectorService.isEnabled()) {
             return new SearchExecution(fallbackToKeywordSearch(question), "KEYWORD");
         }
 
         try {
             // Step 1: 生成问题的向量表示
-            List<Double> questionVector = embeddingService.embedText(question);
+            List<Double> questionVector = embeddingService.embedQuery(question);
 
             // Step 2: 向量检索（Top 5，相似度阈值0.6）
             List<QdrantVectorService.SearchResult> searchResults =
@@ -319,25 +333,25 @@ public class RAGKnowledgeService {
     /**
      * Generate answer via LLM
      */
-    private AnswerGeneration generateAnswer(String question, String context, List<ScoredDocument> scoredDocs) {
+    private AnswerGeneration generateAnswer(String question, String context, List<ScoredDocument> scoredDocs,
+                                            String providerType) {
+        if ((providerType == null || providerType.trim().isEmpty())
+                && aiConfigService.getUsableDefaultConfigOrNull() == null) {
+            return new AnswerGeneration(buildRetrievalAnswer(question, scoredDocs), "RETRIEVAL_ONLY");
+        }
         try {
-            AIConfig config = aiConfigService.getUsableDefaultConfigOrNull();
-            if (config == null) {
-                return new AnswerGeneration(buildRetrievalAnswer(question, scoredDocs), "RETRIEVAL_ONLY");
-            }
-
             String prompt = buildPrompt(question, context);
-            String response = callLLMAPI(config, prompt);
-            return new AnswerGeneration(extractAnswer(response), "LLM");
+            AIGenerationGateway.GenerationResult generation = generationGateway.generate(providerType, prompt, 4096);
+            return new AnswerGeneration(extractAnswer(generation.getContent()), "LLM");
 
         } catch (Exception e) {
-            log.error("LLM call failed", e);
+            log.warn("RAG 生成模型不可用，本次返回检索原文: {}", e.getMessage());
             return new AnswerGeneration(buildRetrievalAnswer(question, scoredDocs), "RETRIEVAL_ONLY");
         }
     }
 
     private String buildRetrievalAnswer(String question, List<ScoredDocument> scoredDocs) {
-        StringBuilder answer = new StringBuilder("已从知识库定位到以下相关资料。当前尚未接入本地大模型，以下为原文检索结果，请打开完整文档核对后使用：\n\n");
+        StringBuilder answer = new StringBuilder("已从知识库定位到以下相关资料。本次未生成AI综合回答，以下为原文检索结果，请打开完整文档核对后使用：\n\n");
         for (int i = 0; i < Math.min(3, scoredDocs.size()); i++) {
             KnowledgeArticle doc = scoredDocs.get(i).document;
             answer.append(i + 1).append(". ").append(doc.getTitle()).append("\n");
@@ -460,10 +474,19 @@ public class RAGKnowledgeService {
     public Map<String, Object> healthStatus() {
         boolean embeddingConfigured = embeddingService.isConfigured();
         boolean llmConfigured = aiConfigService.getUsableDefaultConfigOrNull() != null;
+        Map<String, Object> embedding = embeddingService.healthStatus();
+        Map<String, Object> vectorStore = embeddingConfigured
+                ? qdrantVectorService.healthStatus()
+                : qdrantVectorService.standbyStatus();
+        boolean qdrantReady = "ready".equals(vectorStore.get("status"));
+        boolean dimensionsAligned = Objects.equals(
+                embedding.get("configuredDimension"), vectorStore.get("configuredDimension"));
+        boolean vectorReady = embeddingConfigured && qdrantReady && dimensionsAligned;
         Map<String, Object> status = new LinkedHashMap<>();
-        status.put("status", embeddingConfigured && llmConfigured ? "READY" : "DEGRADED");
-        status.put("mode", embeddingConfigured ? "VECTOR_READY" : "KEYWORD");
-        status.put("embedding", embeddingConfigured ? "CONFIGURED" : "NOT_CONFIGURED");
+        status.put("status", vectorReady && llmConfigured ? "READY" : "DEGRADED");
+        status.put("mode", vectorReady ? "VECTOR_READY" : "KEYWORD");
+        status.put("embedding", embedding);
+        status.put("vectorStore", vectorStore);
         status.put("llm", llmConfigured ? "CONFIGURED" : "NOT_CONFIGURED");
         status.put("service", "ZGAI Knowledge RAG");
         return status;
@@ -506,6 +529,8 @@ public class RAGKnowledgeService {
             return callDeepSeek(apiUrl, apiKey, prompt, config);
         } else if ("OPENAI_API".equals(providerType)) {
             return callOpenAI(apiUrl, apiKey, prompt, config);
+        } else if ("LM_STUDIO".equals(providerType)) {
+            return openAICompatibleClient.chat(config, prompt, 4096);
         } else if ("ollama".equalsIgnoreCase(providerType)) {
             return callOllama(apiUrl, prompt, config);
         } else {
@@ -633,18 +658,22 @@ public class RAGKnowledgeService {
      * Extract answer from LLM response
      */
     private String extractAnswer(String response) {
+        if (response == null || response.trim().isEmpty()) {
+            return "模型未返回正文。";
+        }
+        String trimmed = response.trim();
+        if (!trimmed.startsWith("{")) {
+            return cleanAnswerText(trimmed);
+        }
         try {
-            JsonNode root = objectMapper.readTree(response);
+            JsonNode root = objectMapper.readTree(trimmed);
             JsonNode choices = root.path("choices");
 
             if (choices.isArray() && choices.size() > 0) {
                 JsonNode message = choices.get(0).path("message");
                 String content = message.path("content").asText();
 
-                return content
-                    .replaceAll("^```\\w*\\n", "")
-                    .replaceAll("\\n```$", "")
-                    .trim();
+                return cleanAnswerText(content);
             }
 
             return "Failed to generate answer.";
@@ -653,6 +682,13 @@ public class RAGKnowledgeService {
             log.error("Parse LLM response failed", e);
             return "Answer parsing failed.";
         }
+    }
+
+    private String cleanAnswerText(String content) {
+        return content
+                .replaceAll("^```\\w*\\n", "")
+                .replaceAll("\\n```$", "")
+                .trim();
     }
 
     /**

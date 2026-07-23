@@ -30,6 +30,7 @@ public class DataInitializer implements CommandLineRunner {
     private final CalendarRepository calendarRepository;
     private final AIConfigRepository aiConfigRepository;
     private final DepartmentRepository departmentRepository;
+    private final SystemConfigRepository systemConfigRepository;
 
     @Value("${app.seed-demo-data:false}")
     private boolean seedDemoData;
@@ -56,6 +57,7 @@ public class DataInitializer implements CommandLineRunner {
                 admin.setPosition("行政管理");
                 admin.setStatus(1);
                 admin.setDeleted(false);
+                admin.setMustChangePassword(false);
                 User savedAdmin = userRepository.save(admin);
 
                 // 2. 创建ADMIN角色
@@ -95,13 +97,52 @@ public class DataInitializer implements CommandLineRunner {
                     createDefaultAIConfig();
                 }
 
+                ensureYuandianConfig();
+                ensureLmStudioConfig();
+                ensureCloudProvider(AIProviderType.GLM_API, "智谱 GLM", "GLM_API_KEY",
+                        "GLM_API_BASE_URL", "https://open.bigmodel.cn/api/paas/v4",
+                        "GLM_MODEL", "glm-4.5");
+                ensureCloudProvider(AIProviderType.KIMI_API, "Moonshot Kimi", "KIMI_API_KEY",
+                        "KIMI_API_BASE_URL", "https://api.moonshot.cn/v1",
+                        "KIMI_MODEL", "kimi-k2.5");
+
                 createDefaultDepartments();
                 ensureDefaultAdminIdentity();
             }
+            initializePasswordChangePolicy();
         } catch (Exception e) {
             log.error("数据初始化失败", e);
             throw new IllegalStateException("数据库基础配置初始化失败", e);
         }
+    }
+
+    private void initializePasswordChangePolicy() {
+        final String migrationKey = "security.password-change-policy.v1";
+        if (systemConfigRepository.existsByConfigKey(migrationKey)) {
+            return;
+        }
+
+        int updated = 0;
+        for (User user : userRepository.findAll()) {
+            if (user == null || Boolean.TRUE.equals(user.getDeleted())
+                    || "admin".equalsIgnoreCase(user.getUsername())
+                    || "amin".equalsIgnoreCase(user.getUsername())) {
+                continue;
+            }
+            user.setMustChangePassword(true);
+            userRepository.save(user);
+            updated++;
+        }
+
+        SystemConfig marker = new SystemConfig();
+        marker.setConfigKey(migrationKey);
+        marker.setConfigValue(LocalDateTime.now().toString());
+        marker.setConfigType("STRING");
+        marker.setCategory("SECURITY_MIGRATION");
+        marker.setDescription("存量员工首次登录强制修改初始密码的一次性迁移标记");
+        marker.setDeleted(false);
+        systemConfigRepository.save(marker);
+        log.info("首次登录改密策略初始化完成，已标记 {} 个存量员工账号", updated);
     }
 
     private void createDefaultDepartments() {
@@ -216,6 +257,96 @@ public class DataInitializer implements CommandLineRunner {
         deepseekConfig.setDeleted(false);
         aiConfigRepository.save(deepseekConfig);
         log.info("✅ DeepSeek云端AI配置创建完成（默认模式）");
+
+        ensureYuandianConfig();
+        ensureLmStudioConfig();
+        ensureCloudProvider(AIProviderType.GLM_API, "智谱 GLM", "GLM_API_KEY",
+                "GLM_API_BASE_URL", "https://open.bigmodel.cn/api/paas/v4", "GLM_MODEL", "glm-4.5");
+        ensureCloudProvider(AIProviderType.KIMI_API, "Moonshot Kimi", "KIMI_API_KEY",
+                "KIMI_API_BASE_URL", "https://api.moonshot.cn/v1", "KIMI_MODEL", "kimi-k2.5");
+    }
+
+    private void ensureLmStudioConfig() {
+        String apiKey = System.getenv("LM_STUDIO_API_KEY");
+        String baseUrl = System.getenv().getOrDefault("LM_STUDIO_BASE_URL", "http://192.168.1.200:1234/v1");
+        String model = System.getenv().getOrDefault("LM_STUDIO_MODEL", "qwen/qwen3.6-35b-a3b");
+        boolean activate = apiKey != null && !apiKey.trim().isEmpty();
+
+        AIConfig config = aiConfigRepository.findByProviderTypeAndDeletedFalse(AIProviderType.LM_STUDIO.name())
+                .stream().findFirst().orElseGet(AIConfig::new);
+        if (config.getId() == null) {
+            config.setConfigName("LM Studio局域网模型");
+            config.setProviderType(AIProviderType.LM_STUDIO.name());
+            config.setDeleted(false);
+        }
+        config.setApiUrl(baseUrl);
+        config.setModelName(model);
+        config.setTemperature(0.1);
+        config.setMaxTokens(4096);
+        config.setTimeoutSeconds(300);
+        config.setIsEnabled(true);
+        config.setCategory("LOCAL_LEGAL_AI");
+        config.setDescription("局域网LM Studio模型，用于本地法律问答、RAG和文书草稿生成。");
+        if (activate) {
+            config.setApiKey(apiKey.trim());
+            aiConfigRepository.findByIsDefaultTrueAndDeletedFalse()
+                    .filter(current -> config.getId() == null || !current.getId().equals(config.getId()))
+                    .ifPresent(current -> {
+                        current.setIsDefault(false);
+                        aiConfigRepository.save(current);
+                    });
+            config.setIsDefault(true);
+        } else if (config.getIsDefault() == null) {
+            config.setIsDefault(false);
+        }
+        aiConfigRepository.save(config);
+        log.info("LM Studio配置已{}", activate ? "启用为默认本地模型" : "创建（待配置API Token）");
+    }
+
+    private void ensureCloudProvider(AIProviderType provider, String displayName, String keyEnv,
+                                     String urlEnv, String defaultUrl, String modelEnv, String defaultModel) {
+        AIConfig config = aiConfigRepository.findByProviderTypeAndDeletedFalse(provider.name())
+                .stream().findFirst().orElseGet(AIConfig::new);
+        if (config.getId() == null) {
+            config.setConfigName(displayName + "（云端）");
+            config.setProviderType(provider.name());
+            config.setApiUrl(System.getenv().getOrDefault(urlEnv, defaultUrl));
+            config.setModelName(System.getenv().getOrDefault(modelEnv, defaultModel));
+            config.setTemperature(0.2);
+            config.setMaxTokens(8192);
+            config.setTimeoutSeconds(120);
+            config.setIsDefault(false);
+            config.setIsEnabled(true);
+            config.setCategory("LEGAL_CHAT");
+            config.setDescription("云端模型仅在用户当前会话主动选择并确认后调用。");
+            config.setDeleted(false);
+        }
+        String key = System.getenv(keyEnv);
+        if (StringUtils.hasText(key)) config.setApiKey(key.trim());
+        aiConfigRepository.save(config);
+    }
+
+    private void ensureYuandianConfig() {
+        if (!aiConfigRepository.findByProviderTypeAndDeletedFalse(AIProviderType.YUANDIAN_LEGAL.name()).isEmpty()) {
+            return;
+        }
+
+        AIConfig config = new AIConfig();
+        config.setConfigName("元典法律数据服务");
+        config.setProviderType(AIProviderType.YUANDIAN_LEGAL.name());
+        config.setApiKey("");
+        config.setApiUrl("https://open.chineselaw.com");
+        config.setModelName("law-and-case-search");
+        config.setTemperature(0.0);
+        config.setMaxTokens(10);
+        config.setTimeoutSeconds(60);
+        config.setIsDefault(false);
+        config.setIsEnabled(true);
+        config.setCategory("LEGAL_DATA");
+        config.setDescription("元典法规、案例与法律引证核验服务。API Key 仅在系统设置中配置，不作为生成模型使用。");
+        config.setDeleted(false);
+        aiConfigRepository.save(config);
+        log.info("元典法律数据配置已创建");
     }
 
     private void createTestTodos(Long userId) {

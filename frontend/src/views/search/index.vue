@@ -6,7 +6,7 @@
           v-model="searchKeyword"
           placeholder="输入关键词搜索..."
           clearable
-          style="width: 400px"
+          class="search-field"
           @input="handleSearch"
         >
           <template #prefix>
@@ -71,7 +71,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
@@ -88,18 +88,11 @@ const searchResults = ref([])
 const loading = ref(false)
 const hasSearched = ref(false)
 
-// 页面加载时，如果 URL 有搜索关键词参数，自动搜索
-onMounted(() => {
-  const query = route.query.q
-  if (query) {
-    searchKeyword.value = query
-    performSearch()
-  }
-})
-
 // 执行搜索
 const performSearch = async () => {
   if (!searchKeyword.value.trim()) {
+    searchResults.value = []
+    hasSearched.value = false
     return
   }
 
@@ -169,10 +162,31 @@ const getTypeColor = (type) => {
   }
   return colorMap[type] || 'info'
 }
+
+watch(
+  () => route.query.q,
+  query => {
+    const keyword = typeof query === 'string' ? query : ''
+    searchKeyword.value = keyword
+    handleSearch.cancel()
+    if (keyword.trim()) performSearch()
+    else {
+      searchResults.value = []
+      hasSearched.value = false
+    }
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(() => handleSearch.cancel())
 </script>
 
 <style scoped lang="scss">
 .search-page {
+  .search-field {
+    width: min(400px, 55vw);
+  }
+
   .filter-section {
     display: flex;
     justify-content: space-between;
@@ -246,6 +260,31 @@ const getTypeColor = (type) => {
       justify-content: center;
       align-items: center;
       min-height: 400px;
+    }
+  }
+}
+
+@media (max-width: 760px) {
+  .search-page {
+    .search-field {
+      width: 100%;
+      flex: 1 1 220px;
+    }
+
+    .filter-section {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 12px;
+      padding: 14px;
+      overflow-x: auto;
+
+      .result-count {
+        align-self: flex-end;
+      }
+    }
+
+    .result-item {
+      padding: 16px !important;
     }
   }
 }

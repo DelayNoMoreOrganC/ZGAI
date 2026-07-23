@@ -116,4 +116,9 @@ public class ClientDTO {
      * 冲突案件列表
      */
     private List<Long> conflictCaseIds;
+
+    /** Current user's effective actions for the detail page. */
+    private Boolean canEdit;
+
+    private Boolean canDelete;
 }

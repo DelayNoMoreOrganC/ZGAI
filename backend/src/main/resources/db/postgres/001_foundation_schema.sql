@@ -2,6 +2,23 @@
 -- Spring Data JPA can create/update these tables automatically; this file documents
 -- the intended durable schema for deployment and migration review.
 
+ALTER TABLE "user"
+    ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE data_backup ADD COLUMN IF NOT EXISTS content_sha256 VARCHAR(64);
+ALTER TABLE data_backup ADD COLUMN IF NOT EXISTS verification_status VARCHAR(20);
+ALTER TABLE data_backup ADD COLUMN IF NOT EXISTS verified_at TIMESTAMP;
+
+CREATE TABLE IF NOT EXISTS zgai_data_migration_audit (
+    migration_id VARCHAR(36) PRIMARY KEY,
+    source_sha256 VARCHAR(64) NOT NULL,
+    started_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    completed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    source_rows BIGINT NOT NULL,
+    target_rows BIGINT NOT NULL,
+    details_json TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS document_folder (
     id BIGSERIAL PRIMARY KEY,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -33,17 +50,81 @@ CREATE TABLE IF NOT EXISTS conflict_check_record (
     id_card VARCHAR(20),
     credit_code VARCHAR(50),
     checked_by BIGINT,
+    case_id BIGINT,
     matched_client_ids VARCHAR(1000),
     matched_case_ids VARCHAR(1000),
     similar_names VARCHAR(1000),
+    matched_related_subjects VARCHAR(2000),
     conflict_level VARCHAR(30),
     conclusion VARCHAR(500),
-    remark VARCHAR(1000)
+    remark VARCHAR(1000),
+    review_status VARCHAR(30) NOT NULL DEFAULT 'PENDING_REVIEW',
+    review_decision VARCHAR(30),
+    review_conclusion VARCHAR(1000),
+    waiver_basis VARCHAR(2000),
+    reviewed_by BIGINT,
+    reviewed_at TIMESTAMP,
+    archived_document_id BIGINT,
+    archived_at TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_conflict_check_subject ON conflict_check_record(subject_name);
 CREATE INDEX IF NOT EXISTS idx_conflict_check_operator ON conflict_check_record(checked_by);
 CREATE INDEX IF NOT EXISTS idx_conflict_check_level ON conflict_check_record(conflict_level);
+CREATE INDEX IF NOT EXISTS idx_conflict_check_case ON conflict_check_record(case_id);
+
+ALTER TABLE conflict_check_record ADD COLUMN IF NOT EXISTS review_status VARCHAR(30) NOT NULL DEFAULT 'PENDING_REVIEW';
+ALTER TABLE conflict_check_record ADD COLUMN IF NOT EXISTS review_decision VARCHAR(30);
+ALTER TABLE conflict_check_record ADD COLUMN IF NOT EXISTS review_conclusion VARCHAR(1000);
+ALTER TABLE conflict_check_record ADD COLUMN IF NOT EXISTS waiver_basis VARCHAR(2000);
+ALTER TABLE conflict_check_record ADD COLUMN IF NOT EXISTS reviewed_by BIGINT;
+ALTER TABLE conflict_check_record ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP;
+ALTER TABLE conflict_check_record ADD COLUMN IF NOT EXISTS case_id BIGINT;
+ALTER TABLE conflict_check_record ADD COLUMN IF NOT EXISTS archived_document_id BIGINT;
+ALTER TABLE conflict_check_record ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP;
+ALTER TABLE conflict_check_record ADD COLUMN IF NOT EXISTS matched_related_subjects VARCHAR(2000);
+
+CREATE TABLE IF NOT EXISTS client_subject_relation (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    source_client_id BIGINT NOT NULL,
+    target_client_id BIGINT,
+    target_subject_name VARCHAR(200) NOT NULL,
+    target_credit_code VARCHAR(50),
+    relation_type VARCHAR(40) NOT NULL,
+    description VARCHAR(1000),
+    created_by BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_client_relation_source ON client_subject_relation(source_client_id);
+CREATE INDEX IF NOT EXISTS idx_client_relation_target ON client_subject_relation(target_client_id);
+CREATE INDEX IF NOT EXISTS idx_client_relation_target_name ON client_subject_relation(target_subject_name);
+CREATE INDEX IF NOT EXISTS idx_client_relation_deleted ON client_subject_relation(deleted);
+
+CREATE TABLE IF NOT EXISTS conflict_waiver_attachment (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    conflict_check_record_id BIGINT NOT NULL,
+    case_id BIGINT NOT NULL,
+    original_file_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(1000) NOT NULL,
+    file_size BIGINT NOT NULL,
+    mime_type VARCHAR(100),
+    content_sha256 VARCHAR(64) NOT NULL,
+    uploaded_by BIGINT NOT NULL,
+    archived_document_id BIGINT,
+    archived_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_conflict_waiver_record
+    ON conflict_waiver_attachment(conflict_check_record_id);
+CREATE INDEX IF NOT EXISTS idx_conflict_waiver_case
+    ON conflict_waiver_attachment(case_id);
+CREATE INDEX IF NOT EXISTS idx_conflict_waiver_hash
+    ON conflict_waiver_attachment(content_sha256);
 
 ALTER TABLE case_document ADD COLUMN IF NOT EXISTS folder_id BIGINT;
 ALTER TABLE case_document ADD COLUMN IF NOT EXISTS original_file_name VARCHAR(255);
@@ -51,6 +132,104 @@ ALTER TABLE case_document ADD COLUMN IF NOT EXISTS mime_type VARCHAR(100);
 ALTER TABLE case_document ADD COLUMN IF NOT EXISTS version_no INTEGER DEFAULT 1;
 ALTER TABLE case_document ADD COLUMN IF NOT EXISTS knowledge_eligible BOOLEAN DEFAULT FALSE;
 ALTER TABLE case_document ADD COLUMN IF NOT EXISTS index_status VARCHAR(30) DEFAULT 'NOT_INDEXED';
+ALTER TABLE case_document ADD COLUMN IF NOT EXISTS content_sha256 VARCHAR(64);
+
+ALTER TABLE "case" ADD COLUMN IF NOT EXISTS consultant_unit_name VARCHAR(200);
+ALTER TABLE "case" ADD COLUMN IF NOT EXISTS consultant_contact_name VARCHAR(100);
+ALTER TABLE "case" ADD COLUMN IF NOT EXISTS consultant_contact_department VARCHAR(100);
+ALTER TABLE "case" ADD COLUMN IF NOT EXISTS consultant_contact_title VARCHAR(100);
+ALTER TABLE "case" ADD COLUMN IF NOT EXISTS consultant_contact_phone VARCHAR(30);
+ALTER TABLE "case" ADD COLUMN IF NOT EXISTS consultant_contact_email VARCHAR(120);
+ALTER TABLE "case" ADD COLUMN IF NOT EXISTS consultant_service_scope VARCHAR(2000);
+ALTER TABLE "case" ADD COLUMN IF NOT EXISTS consultant_response_requirement VARCHAR(500);
+ALTER TABLE "case" ADD COLUMN IF NOT EXISTS consultant_included_services VARCHAR(2000);
+ALTER TABLE "case" ADD COLUMN IF NOT EXISTS consultant_excluded_services VARCHAR(2000);
+ALTER TABLE "case" ADD COLUMN IF NOT EXISTS renewal_reminder_date DATE;
+
+CREATE INDEX IF NOT EXISTS idx_case_document_hash ON case_document(case_id, content_sha256);
+
+CREATE TABLE IF NOT EXISTS case_activity (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    case_id BIGINT NOT NULL,
+    activity_type VARCHAR(50) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    content TEXT,
+    occurred_at TIMESTAMP NOT NULL,
+    source_type VARCHAR(40),
+    source_id BIGINT,
+    operator_id BIGINT NOT NULL,
+    procedure_stage VARCHAR(80),
+    metadata_json TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_case_activity_case_time ON case_activity(case_id, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_case_activity_source ON case_activity(source_type, source_id);
+
+CREATE TABLE IF NOT EXISTS ai_case_command (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    idempotency_key VARCHAR(80) NOT NULL,
+    user_id BIGINT NOT NULL,
+    case_id BIGINT,
+    instruction TEXT NOT NULL,
+    instruction_hash VARCHAR(64),
+    actions_json TEXT,
+    status VARCHAR(30) NOT NULL,
+    risk_level VARCHAR(20),
+    clarification VARCHAR(500),
+    model_name VARCHAR(120),
+    executed_at TIMESTAMP,
+    CONSTRAINT uk_ai_command_user_key UNIQUE(user_id, idempotency_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_command_case ON ai_case_command(case_id);
+CREATE INDEX IF NOT EXISTS idx_ai_command_status ON ai_case_command(status);
+ALTER TABLE ai_case_command ADD COLUMN IF NOT EXISTS instruction_hash VARCHAR(64);
+ALTER TABLE ai_case_command ADD COLUMN IF NOT EXISTS privacy_sanitized_at TIMESTAMP;
+
+CREATE TABLE IF NOT EXISTS ai_document_intake (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    original_file_name VARCHAR(255) NOT NULL,
+    temp_path VARCHAR(1000) NOT NULL,
+    mime_type VARCHAR(100),
+    file_size BIGINT NOT NULL,
+    content_sha256 VARCHAR(64) NOT NULL,
+    extracted_text TEXT,
+    analysis_json TEXT,
+    candidates_json TEXT,
+    suggested_folder VARCHAR(200),
+    suggested_document_type VARCHAR(50),
+    status VARCHAR(30) NOT NULL,
+    upload_by BIGINT NOT NULL,
+    confirmed_case_id BIGINT,
+    case_document_id BIGINT,
+    expires_at TIMESTAMP NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_intake_user ON ai_document_intake(upload_by, status);
+CREATE INDEX IF NOT EXISTS idx_document_intake_hash ON ai_document_intake(content_sha256);
+CREATE INDEX IF NOT EXISTS idx_document_intake_expiry ON ai_document_intake(expires_at, status);
+
+CREATE TABLE IF NOT EXISTS calendar_reminder (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    calendar_id BIGINT NOT NULL,
+    offset_minutes INTEGER NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    CONSTRAINT uk_calendar_reminder_offset UNIQUE(calendar_id, offset_minutes)
+);
+
+CREATE INDEX IF NOT EXISTS idx_calendar_reminder_status ON calendar_reminder(status);
 
 ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS knowledge_source VARCHAR(30) DEFAULT 'FIRM_KNOWLEDGE';
 ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS knowledge_eligible BOOLEAN DEFAULT TRUE;
@@ -61,6 +240,62 @@ ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS document_number VARCHAR(1
 ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS effective_date DATE;
 ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS validity_status VARCHAR(20) DEFAULT 'UNKNOWN';
 ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS authorization_confirmed BOOLEAN DEFAULT FALSE;
+ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS source_url VARCHAR(1000);
+ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS source_relative_path VARCHAR(1000);
+ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS content_sha256 VARCHAR(64);
+ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS collected_at TIMESTAMP;
+ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS review_status VARCHAR(30) DEFAULT 'APPROVED';
+ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS reviewed_by BIGINT;
+ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP;
+ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS review_reason VARCHAR(1000);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_knowledge_article_sha
+    ON knowledge_article(content_sha256) WHERE content_sha256 IS NOT NULL AND deleted = FALSE;
+
+CREATE TABLE IF NOT EXISTS knowledge_import_batch (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    source_type VARCHAR(30) NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    created_by BIGINT NOT NULL,
+    item_count INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_import_item (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    batch_id BIGINT NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    title VARCHAR(300),
+    source_url VARCHAR(1000),
+    source_relative_path VARCHAR(1000),
+    original_file_name VARCHAR(500),
+    source_absolute_path VARCHAR(1500),
+    staged_path VARCHAR(1500),
+    content_sha256 VARCHAR(64),
+    issuing_authority VARCHAR(200),
+    document_number VARCHAR(100),
+    published_date DATE,
+    effective_date DATE,
+    validity_status VARCHAR(20) DEFAULT 'UNKNOWN',
+    article_id BIGINT,
+    error_message VARCHAR(1000),
+    collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_import_batch ON knowledge_import_item(batch_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_import_sha ON knowledge_import_item(content_sha256);
+
+ALTER TABLE ai_log ADD COLUMN IF NOT EXISTS provider_type VARCHAR(50);
+ALTER TABLE ai_log ADD COLUMN IF NOT EXISTS input_summary VARCHAR(500);
+ALTER TABLE ai_log ADD COLUMN IF NOT EXISTS input_hash VARCHAR(64);
+ALTER TABLE ai_log ADD COLUMN IF NOT EXISTS output_hash VARCHAR(64);
+ALTER TABLE ai_log ADD COLUMN IF NOT EXISTS estimated_cost_micros BIGINT;
+ALTER TABLE ai_log ADD COLUMN IF NOT EXISTS privacy_sanitized_at TIMESTAMP;
 
 CREATE TABLE IF NOT EXISTS legacy_material_search_record (
     id BIGSERIAL PRIMARY KEY,
@@ -94,3 +329,131 @@ CREATE TABLE IF NOT EXISTS legacy_material_search_result (
 
 CREATE INDEX IF NOT EXISTS idx_legacy_result_record ON legacy_material_search_result(search_record_id);
 CREATE INDEX IF NOT EXISTS idx_legacy_result_case ON legacy_material_search_result(source_case_id);
+
+CREATE TABLE IF NOT EXISTS archive_job (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    case_id BIGINT NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    template_version VARCHAR(30) NOT NULL DEFAULT 'CIVIL_V1',
+    idempotency_key VARCHAR(100) NOT NULL UNIQUE,
+    created_by BIGINT NOT NULL,
+    submitted_by BIGINT,
+    reviewed_by BIGINT,
+    submitted_at TIMESTAMP,
+    reviewed_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    progress INTEGER DEFAULT 0,
+    current_stage VARCHAR(100),
+    error_message VARCHAR(1000),
+    review_reason VARCHAR(1000),
+    exception_reason VARCHAR(1000),
+    correction_reason VARCHAR(1000),
+    model_provider VARCHAR(30) DEFAULT 'LM_STUDIO',
+    model_name VARCHAR(100),
+    prompt_version VARCHAR(30) DEFAULT 'ARCHIVE_CIVIL_V1'
+);
+CREATE INDEX IF NOT EXISTS idx_archive_job_case ON archive_job(case_id);
+CREATE INDEX IF NOT EXISTS idx_archive_job_status ON archive_job(status);
+ALTER TABLE archive_job ADD COLUMN IF NOT EXISTS correction_reason VARCHAR(1000);
+
+CREATE TABLE IF NOT EXISTS archive_document_item (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    job_id BIGINT NOT NULL,
+    case_document_id BIGINT NOT NULL,
+    original_file_name VARCHAR(500) NOT NULL,
+    catalog_seq INTEGER,
+    catalog_name VARCHAR(200),
+    document_type VARCHAR(80),
+    included BOOLEAN NOT NULL DEFAULT TRUE,
+    source_page_count INTEGER DEFAULT 0,
+    output_start_page INTEGER,
+    output_end_page INTEGER,
+    content_sha256 VARCHAR(64),
+    confidence DOUBLE PRECISION,
+    classification_reason VARCHAR(1000),
+    sort_order INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_archive_item_job ON archive_document_item(job_id);
+CREATE INDEX IF NOT EXISTS idx_archive_item_document ON archive_document_item(case_document_id);
+
+CREATE TABLE IF NOT EXISTS archive_field_snapshot (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    job_id BIGINT NOT NULL,
+    field_key VARCHAR(100) NOT NULL,
+    field_value TEXT,
+    source_document_id BIGINT,
+    source_page INTEGER,
+    confidence DOUBLE PRECISION,
+    extraction_reason VARCHAR(1000),
+    confirmed_by BIGINT,
+    confirmed_at TIMESTAMP,
+    CONSTRAINT uk_archive_field_key UNIQUE(job_id, field_key)
+);
+CREATE INDEX IF NOT EXISTS idx_archive_field_job ON archive_field_snapshot(job_id);
+
+CREATE TABLE IF NOT EXISTS archive_output (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    job_id BIGINT NOT NULL,
+    case_id BIGINT NOT NULL,
+    version_no INTEGER NOT NULL,
+    file_name VARCHAR(500) NOT NULL,
+    file_path VARCHAR(1500) NOT NULL,
+    content_sha256 VARCHAR(64) NOT NULL,
+    manifest_file_path VARCHAR(1500),
+    manifest_sha256 VARCHAR(64),
+    page_count INTEGER,
+    source_page_count INTEGER,
+    gap_pages INTEGER DEFAULT 0,
+    duplicate_pages INTEGER DEFAULT 0,
+    template_version VARCHAR(30),
+    created_by BIGINT NOT NULL,
+    CONSTRAINT uk_archive_output_version UNIQUE(case_id, version_no)
+);
+CREATE INDEX IF NOT EXISTS idx_archive_output_job ON archive_output(job_id);
+CREATE INDEX IF NOT EXISTS idx_archive_output_case ON archive_output(case_id);
+ALTER TABLE archive_output ADD COLUMN IF NOT EXISTS manifest_file_path VARCHAR(1500);
+ALTER TABLE archive_output ADD COLUMN IF NOT EXISTS manifest_sha256 VARCHAR(64);
+
+CREATE TABLE IF NOT EXISTS archive_audit_log (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    job_id BIGINT NOT NULL,
+    operator_id BIGINT NOT NULL,
+    action VARCHAR(50) NOT NULL,
+    detail VARCHAR(2000)
+);
+CREATE INDEX IF NOT EXISTS idx_archive_audit_job ON archive_audit_log(job_id);
+
+CREATE TABLE IF NOT EXISTS approval_attachment (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    approval_id BIGINT NOT NULL,
+    case_document_id BIGINT,
+    original_file_name VARCHAR(500) NOT NULL,
+    file_path VARCHAR(1500) NOT NULL,
+    file_size BIGINT,
+    mime_type VARCHAR(150),
+    content_sha256 VARCHAR(64),
+    source_type VARCHAR(30) NOT NULL,
+    seal_status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+    uploaded_by BIGINT NOT NULL,
+    decided_by BIGINT,
+    decided_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_approval_attachment_approval ON approval_attachment(approval_id);
+CREATE INDEX IF NOT EXISTS idx_approval_attachment_case_document ON approval_attachment(case_document_id);

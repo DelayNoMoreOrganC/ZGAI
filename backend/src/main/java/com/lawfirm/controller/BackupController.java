@@ -57,6 +57,17 @@ public class BackupController {
         return Result.success(backups);
     }
 
+    @PostMapping("/backup/{backupId}/verify")
+    @PreAuthorize("hasAuthority('SYSTEM_CONFIG')")
+    @AuditLog(value = "校验数据备份", operationType = "VERIFY", logParams = false)
+    public Result<Map<String, Object>> verifyBackup(@PathVariable Long backupId) {
+        boolean verified = backupService.verifyBackup(backupId);
+        Map<String, Object> data = new HashMap<>();
+        data.put("backupId", backupId);
+        data.put("verified", verified);
+        return Result.success(data);
+    }
+
     /**
      * 恢复数据（危险操作）
      */

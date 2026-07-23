@@ -16,13 +16,13 @@
       <div class="workbench-title">
         <div>
           <h2>行政审批中心</h2>
-          <p>集中处理立案申请、利冲审查和审批流转。</p>
+          <p>集中处理立案申请、利冲审查、公章用印和审批流转。</p>
         </div>
         <el-tag type="warning" size="large">待处理 {{ pendingList.length }}</el-tag>
       </div>
-      <div v-if="pendingFilingApprovals.length > 0" class="filing-cards">
+      <div v-if="pendingPriorityApprovals.length > 0" class="filing-cards">
         <div
-          v-for="item in pendingFilingApprovals"
+          v-for="item in pendingPriorityApprovals"
           :key="item.id"
           class="filing-card"
           @click="openApprovalDetail(item)"
@@ -35,7 +35,7 @@
           <div class="filing-card-actions" @click.stop>
             <el-button type="primary" plain @click="openApprovalDetail(item)">查看审批</el-button>
             <el-button
-              v-if="canHandleApproval(item)"
+              v-if="canHandleApproval(item) && item.approvalType !== 'SEAL'"
               type="success"
               class="approve-main-btn"
               @click="handleApprove(item)"
@@ -45,7 +45,7 @@
           </div>
         </div>
       </div>
-      <el-empty v-else description="暂无立案审批待办" />
+      <el-empty v-else description="暂无重点审批待办" />
     </div>
 
     <div v-else class="role-workbench lawyer-approval-workbench">
@@ -59,7 +59,7 @@
       <div class="lawyer-steps">
         <span>提交立案申请</span>
         <span>行政利冲审查</span>
-        <span>必要时主任终审</span>
+        <span>主任终审</span>
         <span>建立案件档案</span>
       </div>
     </div>
@@ -91,7 +91,7 @@
               当前有 {{ pendingCaseFilingCount }} 个立案审批待处理，请进入审批详情后完成利冲审查，并点击“同意立案”或“驳回立案”。
             </template>
           </el-alert>
-          <el-table :data="pendingList" border class="approval-table"
+          <el-table v-loading="loading" :data="pendingList" border class="approval-table" empty-text="暂无待审批记录"
             :header-cell-style="{ background: '#f0f5ff', color: '#333', fontWeight: '600' }"
             :row-class-name="tableRowClassName">
             <el-table-column prop="title" label="审批标题" width="200" sortable />
@@ -124,11 +124,25 @@
                   查看审批
                 </el-button>
                 <template v-if="canHandleApproval(row)">
-                  <el-button type="success" size="small" class="approve-main-btn" @click="handleApprove(row)">
+                  <el-button
+                    v-if="row.approvalType !== 'SEAL'"
+                    type="success"
+                    size="small"
+                    class="approve-main-btn"
+                    @click="handleApprove(row)"
+                  >
                     {{ getApproveActionText(row) }}
                   </el-button>
-                  <el-button type="warning" size="small" @click="handleReject(row)">
+                  <el-button
+                    v-if="row.approvalType !== 'SEAL'"
+                    type="warning"
+                    size="small"
+                    @click="handleReject(row)"
+                  >
                     {{ isCaseFilingApproval(row) ? '驳回立案' : '驳回' }}
+                  </el-button>
+                  <el-button v-else type="warning" size="small" @click="openApprovalDetail(row)">
+                    查看文件并审批
                   </el-button>
                   <el-button type="primary" size="small" @click="handleTransfer(row)">
                     转审
@@ -143,7 +157,7 @@
       <!-- 已办 -->
       <el-tab-pane label="已办" name="processed">
         <div class="tab-content">
-          <el-table :data="processedList" border class="approval-table"
+          <el-table v-loading="loading" :data="processedList" border class="approval-table" empty-text="暂无已办记录"
             :header-cell-style="{ background: '#f0f5ff', color: '#333', fontWeight: '600' }"
             :row-class-name="tableRowClassName">
             <el-table-column prop="title" label="审批标题" width="200" sortable />
@@ -172,7 +186,7 @@
       <!-- 我发起的 -->
       <el-tab-pane label="我发起的" name="my-requests">
         <div class="tab-content">
-          <el-table :data="myRequestList" border class="approval-table"
+          <el-table v-loading="loading" :data="myRequestList" border class="approval-table" empty-text="暂无我发起的审批"
             :header-cell-style="{ background: '#f0f5ff', color: '#333', fontWeight: '600' }"
             :row-class-name="tableRowClassName">
             <el-table-column prop="title" label="审批标题" width="200" sortable />
@@ -217,6 +231,19 @@
       </el-tab-pane>
     </el-tabs>
 
+    <div v-if="totalRecords > 0" class="approval-pagination">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :page-sizes="[20, 50, 100]"
+        :total="totalRecords"
+        layout="total, sizes, prev, pager, next, jumper"
+        background
+        @current-change="handlePageChange"
+        @size-change="handleSizeChange"
+      />
+    </div>
+
     <!-- 发起审批对话框 -->
     <el-dialog v-model="approvalDialogVisible" title="发起审批" width="700px">
       <el-form :model="approvalForm" label-width="100px">
@@ -226,7 +253,7 @@
 
         <el-form-item label="审批类型" required>
           <el-select v-model="approvalForm.approvalType" placeholder="请选择审批类型" style="width: 100%">
-            <el-option label="用印申请" value="SEAL" />
+            <el-option label="公章用印审批" value="SEAL" />
             <el-option label="报销申请" value="REIMBURSEMENT" />
             <el-option label="请假申请" value="LEAVE" />
             <el-option label="出差申请" value="BUSINESS_TRIP" />
@@ -252,7 +279,7 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="审批人" required>
+        <el-form-item v-if="approvalForm.approvalType !== 'SEAL'" label="审批人" required>
           <el-select
             v-model="approvalForm.currentApproverId"
             filterable
@@ -266,6 +293,25 @@
               :value="user.id"
             />
           </el-select>
+        </el-form-item>
+
+        <el-form-item v-if="approvalForm.approvalType === 'SEAL'" label="用印文件" required>
+          <el-upload
+            drag
+            action="#"
+            :auto-upload="false"
+            :limit="1"
+            :file-list="sealFileList"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+            :on-change="handleSealFileChange"
+            :on-remove="handleSealFileRemove"
+          >
+            <el-icon><UploadFilled /></el-icon>
+            <div class="el-upload__text">拖入待用印文件，或点击选择</div>
+            <template #tip>
+              <span>支持 PDF、Word、Excel、图片，单个文件不超过 50MB；提交后自动流转至行政人员。</span>
+            </template>
+          </el-upload>
         </el-form-item>
 
         <el-form-item label="紧急程度">
@@ -336,7 +382,7 @@
 import { computed, ref, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, UploadFilled } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import PageHeader from '@/components/PageHeader.vue'
 import ApprovalDetailDrawer from '@/components/ApprovalDetailDrawer.vue'
@@ -345,6 +391,7 @@ import {
   getApprovalList,
   getApprovalDetail,
   createApproval,
+  createSealApproval,
   approveApproval,
   rejectApproval,
   transferApproval,
@@ -359,6 +406,10 @@ const userStore = useUserStore()
 
 const activeTab = ref('pending')
 const loading = ref(false)
+const currentPage = ref(1)
+const pageSize = ref(20)
+const totalRecords = ref(0)
+const appliedFilters = ref({})
 
 const pendingList = ref([])
 const processedList = ref([])
@@ -368,7 +419,9 @@ const selectedApproval = ref(null)
 const selectedApprovalId = ref(null)
 const isCaseApprovalMode = computed(() => Boolean(route.query.caseId))
 const pendingCaseFilingCount = computed(() => pendingList.value.filter(isCaseFilingApproval).length)
-const pendingFilingApprovals = computed(() => pendingList.value.filter(isCaseFilingApproval))
+const pendingPriorityApprovals = computed(() => pendingList.value
+  .filter(item => isCaseFilingApproval(item) || item.approvalType === 'SEAL')
+  .slice(0, 6))
 const currentUserId = computed(() => Number(userStore.userInfo?.id || userStore.userId || 0))
 const isSuperAdmin = computed(() => userStore.userInfo?.username === 'admin')
 const currentPosition = computed(() => userStore.userInfo?.position || '')
@@ -379,7 +432,7 @@ const isAdministrativeUser = computed(() => {
 })
 
 const approvalTypeMap = {
-  SEAL: '用印申请',
+  SEAL: '公章用印审批',
   REIMBURSEMENT: '费用报销',
   INVOICE: '开票申请',
   LEAVE: '请假出差',
@@ -406,6 +459,7 @@ const isCaseFilingApproval = (row) => ['CASE_FILING', 'CASE_FILING_DIRECTOR'].in
 const getApproveActionText = (row) => {
   if (row?.approvalType === 'CASE_FILING_DIRECTOR') return '终审通过'
   if (row?.approvalType === 'CASE_FILING') return '同意立案'
+  if (row?.approvalType === 'SEAL') return '同意用印'
   return '同意'
 }
 const canHandleApproval = (row) => {
@@ -423,6 +477,8 @@ const approvalForm = ref({
   urgency: 'NORMAL',
   description: ''
 })
+const sealFile = ref(null)
+const sealFileList = ref([])
 const userOptions = ref([])
 const transferDialogVisible = ref(false)
 const transferTarget = ref(null)
@@ -512,12 +568,14 @@ onMounted(async () => {
 
 // 监听Tab切换，自动加载对应数据
 watch(activeTab, () => {
+  currentPage.value = 1
   openRouteApproval()
 })
 
 watch(
   () => [route.query.caseId, route.query.approvalId],
   () => {
+    currentPage.value = 1
     openRouteApproval()
   }
 )
@@ -557,7 +615,19 @@ const handleCreateApproval = async () => {
     urgency: 'NORMAL',
     description: ''
   }
+  sealFile.value = null
+  sealFileList.value = []
   approvalDialogVisible.value = true
+}
+
+const handleSealFileChange = (file, fileList) => {
+  sealFile.value = file.raw
+  sealFileList.value = fileList.slice(-1)
+}
+
+const handleSealFileRemove = () => {
+  sealFile.value = null
+  sealFileList.value = []
 }
 
 const loadUserOptions = async () => {
@@ -575,16 +645,30 @@ const handleSubmitApproval = async () => {
     ElMessage.warning('请输入审批内容')
     return
   }
-  if (!approvalForm.value.currentApproverId) {
+  if (approvalForm.value.approvalType === 'SEAL' && !sealFile.value) {
+    ElMessage.warning('请选择需要用印的文件')
+    return
+  }
+  if (approvalForm.value.approvalType !== 'SEAL' && !approvalForm.value.currentApproverId) {
     ElMessage.warning('请选择审批人')
     return
   }
 
   try {
-    const response = await createApproval({
-      ...approvalForm.value,
-      content: approvalForm.value.description
-    })
+    let response
+    if (approvalForm.value.approvalType === 'SEAL') {
+      const formData = new FormData()
+      formData.append('title', approvalForm.value.title.trim())
+      formData.append('content', approvalForm.value.description.trim())
+      if (approvalForm.value.caseId) formData.append('caseId', approvalForm.value.caseId)
+      formData.append('file', sealFile.value)
+      response = await createSealApproval(formData)
+    } else {
+      response = await createApproval({
+        ...approvalForm.value,
+        content: approvalForm.value.description
+      })
+    }
     if (!isSuccessResponse(response)) {
       ElMessage.error(response.message || '提交失败')
       return
@@ -599,23 +683,39 @@ const handleSubmitApproval = async () => {
 }
 
 const handleApprove = async (row) => {
+  if (row.approvalType === 'CASE_FILING' && row.conflictChecks?.some(item => item.reviewStatus !== 'COMPLETED')) {
+    openApprovalDetail(row)
+    ElMessage.warning('请在审批资料中先完成全部委托方的正式利冲审查')
+    return
+  }
+  if (row.approvalType === 'CASE_FILING' && row.conflictChecks?.some(item => item.reviewDecision === 'REJECTED')) {
+    openApprovalDetail(row)
+    ElMessage.warning('存在利冲审查不通过结论，请驳回立案申请')
+    return
+  }
   try {
     const { value } = await ElMessageBox.prompt(
-      isCaseFilingApproval(row) ? '请填写利冲审查结论或立案审批意见' : '请输入审批意见（可选）',
+      isCaseFilingApproval(row)
+        ? '请填写利冲审查结论或立案审批意见'
+        : row.approvalType === 'SEAL' ? '请填写用印审批意见' : '请输入审批意见（可选）',
       `${getApproveActionText(row)}：${row.title}`,
       {
         confirmButtonText: getApproveActionText(row),
         cancelButtonText: '取消',
         inputPlaceholder: isCaseFilingApproval(row) ? '例如：经核查，未发现利益冲突，同意立案' : '请输入审批意见',
-        inputPattern: isCaseFilingApproval(row) ? /\S+/ : undefined,
-        inputErrorMessage: isCaseFilingApproval(row) ? '立案审批意见不能为空' : undefined,
+        inputPattern: (isCaseFilingApproval(row) || row.approvalType === 'SEAL') ? /\S+/ : undefined,
+        inputErrorMessage: isCaseFilingApproval(row)
+          ? '立案审批意见不能为空'
+          : row.approvalType === 'SEAL' ? '用印审批意见不能为空' : undefined,
         type: 'success'
       }
     )
 
     const response = await approveApproval(row.id, { comments: value || '' })
     if (isSuccessResponse(response)) {
-      ElMessage.success(isCaseFilingApproval(row) ? '立案审批已通过' : '审批已同意')
+      ElMessage.success(isCaseFilingApproval(row)
+        ? '立案审批已通过'
+        : row.approvalType === 'SEAL' ? '已同意用印' : '审批已同意')
       detailDrawerVisible.value = false
       await fetchApprovalList()
     } else {
@@ -729,12 +829,15 @@ const fetchApprovalList = async () => {
     loading.value = true
     const params = {
       caseId: route.query.caseId || null,
-      page: 1,
-      size: 100
+      page: currentPage.value,
+      size: pageSize.value,
+      ...appliedFilters.value
     }
 
-    if (activeTab.value === 'pending') {
+    if (activeTab.value === 'pending' && !params.status) {
       params.status = 'PENDING'
+    } else if (activeTab.value === 'processed' && !params.status) {
+      params.statusGroup = 'PROCESSED'
     } else if (activeTab.value === 'my-requests') {
       params.applicantId = currentUserId.value
     }
@@ -751,11 +854,12 @@ const fetchApprovalList = async () => {
     })
 
     const records = res.data?.records || []
+    totalRecords.value = Number(res.data?.total || 0)
     // 根据当前Tab分配数据
     if (activeTab.value === 'pending') {
       pendingList.value = records
     } else if (activeTab.value === 'processed') {
-      processedList.value = records.filter(item => ['APPROVED', 'REJECTED', 'WITHDRAWN', 'TRANSFERRED'].includes(item.status))
+      processedList.value = records
     } else {
       myRequestList.value = records
     }
@@ -772,14 +876,32 @@ const handleApprovalHandled = async () => {
   await fetchApprovalList()
 }
 
-const handleSearch = (filters) => {
-  // 搜索审批 - 应用筛选条件
-  ElMessage.success('筛选功能已就绪，待接入API')
+const handleSearch = async (filters) => {
+  const [startDate, endDate] = filters.dateRange || []
+  appliedFilters.value = {
+    approvalType: filters.approvalType || undefined,
+    status: filters.status || undefined,
+    keyword: filters.keyword?.trim() || undefined,
+    startDate: startDate || undefined,
+    endDate: endDate || undefined
+  }
+  currentPage.value = 1
+  await fetchApprovalList()
 }
 
-const handleReset = () => {
-  // 重置筛选条件
-  ElMessage.info('筛选条件已重置')
+const handleReset = async () => {
+  appliedFilters.value = {}
+  currentPage.value = 1
+  await fetchApprovalList()
+}
+
+const handlePageChange = async () => {
+  await fetchApprovalList()
+}
+
+const handleSizeChange = async () => {
+  currentPage.value = 1
+  await fetchApprovalList()
 }
 
 const tableRowClassName = ({ rowIndex }) => {
@@ -793,9 +915,9 @@ const tableRowClassName = ({ rowIndex }) => {
     margin-top: 18px;
     padding: 18px 20px;
     border: 1px solid #e5e7eb;
-    border-radius: 12px;
+    border-radius: 8px;
     background: #fff;
-    box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
   }
 
   .workbench-title {
@@ -829,13 +951,13 @@ const tableRowClassName = ({ rowIndex }) => {
     gap: 16px;
     padding: 14px;
     border: 1px solid #fde68a;
-    border-radius: 10px;
+    border-radius: 8px;
     background: #fffbeb;
     cursor: pointer;
 
     &:hover {
       border-color: #f59e0b;
-      box-shadow: 0 6px 16px rgba(245, 158, 11, 0.16);
+      box-shadow: 0 2px 8px rgba(245, 158, 11, 0.12);
     }
   }
 
@@ -886,13 +1008,13 @@ const tableRowClassName = ({ rowIndex }) => {
     margin-top: 20px;
     background: #fff;
     padding: 24px;
-    border-radius: 12px;
-    box-shadow: 0 2px 12px rgba(24, 144, 255, 0.08);
-    border: 1px solid #e6f7ff;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+    border: 1px solid #e5e7eb;
 
     :deep(.el-tabs__header) {
       margin-bottom: 24px;
-      border-bottom: 2px solid #e6f7ff;
+      border-bottom: 1px solid #e5e7eb;
     }
 
     :deep(.el-tabs__item) {
@@ -906,44 +1028,42 @@ const tableRowClassName = ({ rowIndex }) => {
 
       &:hover {
         color: #1890ff;
-        background: #f0f5ff;
+        background: #f5f5f7;
       }
 
       &.is-active {
         color: #1890ff;
-        background: linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 100%);
-        border-bottom: 2px solid #1890ff;
+        background: #f5f5f7;
+        border-bottom: 2px solid #007aff;
         font-weight: 600;
       }
     }
   }
 
   .create-btn {
-    background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
-    border: none;
+    background: #007aff;
+    border-color: #007aff;
     border-radius: 8px;
     padding: 10px 24px;
-    box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3);
-    transition: all 0.3s;
+    box-shadow: none;
 
     &:hover {
-      background: linear-gradient(135deg, #40a9ff 0%, #1890ff 100%);
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
+      background: #0068d9;
+      border-color: #0068d9;
     }
   }
 
   .approval-table {
-    border-radius: 12px;
+    border-radius: 8px;
     overflow: hidden;
-    box-shadow: 0 2px 12px rgba(24, 144, 255, 0.08);
+    box-shadow: none;
 
     :deep(.el-table__header-wrapper) {
       th {
-        background: #f0f5ff !important;
+        background: #f5f5f7 !important;
         color: #333 !important;
         font-weight: 600;
-        border-bottom: 2px solid #1890ff;
+        border-bottom: 1px solid #d1d5db;
       }
     }
 
@@ -955,7 +1075,7 @@ const tableRowClassName = ({ rowIndex }) => {
           background: #ffffff;
 
           &:hover {
-            background: #f0f5ff !important;
+            background: #f5f5f7 !important;
           }
         }
 
@@ -963,7 +1083,7 @@ const tableRowClassName = ({ rowIndex }) => {
           background: #fafcfe;
 
           &:hover {
-            background: #f0f5ff !important;
+            background: #f5f5f7 !important;
           }
         }
 
@@ -974,7 +1094,7 @@ const tableRowClassName = ({ rowIndex }) => {
     }
 
     :deep(.el-table__border) {
-      border: 1px solid #e6f7ff;
+      border: 1px solid #e5e7eb;
     }
 
     // 操作按钮优化
@@ -983,35 +1103,29 @@ const tableRowClassName = ({ rowIndex }) => {
       transition: all 0.3s;
 
       &.el-button--success {
-        background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%);
+        background: #34c759;
         border: none;
 
         &:hover {
-          background: linear-gradient(135deg, #73d13d 0%, #52c41a 100%);
-          transform: translateY(-1px);
-          box-shadow: 0 2px 8px rgba(82, 196, 26, 0.3);
+          background: #2eb34f;
         }
       }
 
       &.el-button--warning {
-        background: linear-gradient(135deg, #faad14 0%, #d46b08 100%);
+        background: #ff9f0a;
         border: none;
 
         &:hover {
-          background: linear-gradient(135deg, #ffc53d 0%, #faad14 100%);
-          transform: translateY(-1px);
-          box-shadow: 0 2px 8px rgba(250, 173, 20, 0.3);
+          background: #e88f00;
         }
       }
 
       &.el-button--primary {
-        background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+        background: #007aff;
         border: none;
 
         &:hover {
-          background: linear-gradient(135deg, #40a9ff 0%, #1890ff 100%);
-          transform: translateY(-1px);
-          box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3);
+          background: #0068d9;
         }
       }
     }
@@ -1019,6 +1133,12 @@ const tableRowClassName = ({ rowIndex }) => {
 
   .tab-content {
     min-height: 400px;
+  }
+
+  .approval-pagination {
+    display: flex;
+    justify-content: flex-end;
+    padding: 16px 0 4px;
   }
 
   .filing-alert {

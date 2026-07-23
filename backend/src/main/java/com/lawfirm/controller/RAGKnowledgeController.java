@@ -34,7 +34,8 @@ public class RAGKnowledgeController {
             Long userId = securityUtil.getCurrentUserId();
             Map<String, Object> result = ragKnowledgeService.ragSearch(
                 request.getQuestion(),
-                userId
+                userId,
+                request.getProviderType()
             );
             return Result.success(result);
         } catch (Exception e) {

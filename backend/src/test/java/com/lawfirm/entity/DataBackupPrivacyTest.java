@@ -13,6 +13,8 @@ class DataBackupPrivacyTest {
         DataBackup backup = new DataBackup();
         backup.setFilePath("/Volumes/ZGAI/backups/lawfirm_backup_20260722.sql");
         backup.setErrorMessage("internal command output");
+        backup.setContentSha256("abc123");
+        backup.setVerificationStatus("VERIFIED");
 
         String json = new ObjectMapper().writeValueAsString(backup);
 
@@ -21,5 +23,7 @@ class DataBackupPrivacyTest {
         assertFalse(json.contains("internal command output"));
         assertFalse(json.contains("filePath"));
         assertFalse(json.contains("errorMessage"));
+        assertTrue(json.contains("verificationStatus"));
+        assertTrue(json.contains("contentSha256"));
     }
 }

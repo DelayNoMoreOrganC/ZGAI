@@ -23,6 +23,7 @@ public class UserDTO {
     private String statusDesc;
     private List<Long> roleIds;
     private List<String> roles;
+    private Boolean mustChangePassword;
     private LocalDateTime lastLoginTime;
     private LocalDateTime createdAt;
 }

@@ -36,7 +36,7 @@ public class TodoController {
     @PreAuthorize("hasAuthority('TODO_EDIT')")
     public Result<TodoDTO> createTodo(@Valid @RequestBody TodoDTO dto) {
         assertUserVisible(dto.getAssigneeId());
-        assertCaseVisibleIfPresent(dto.getCaseId());
+        assertCaseEditableIfPresent(dto.getCaseId());
         try {
             Long userId = securityUtils.getCurrentUserId();
             TodoDTO result = todoService.createTodo(dto, userId);
@@ -59,7 +59,7 @@ public class TodoController {
     public Result<TodoDTO> updateTodo(@PathVariable Long id, @Valid @RequestBody TodoDTO dto) {
         assertTodoEditable(id);
         assertUserVisible(dto.getAssigneeId());
-        assertCaseVisibleIfPresent(dto.getCaseId());
+        assertCaseEditableIfPresent(dto.getCaseId());
         try {
             TodoDTO result = todoService.updateTodo(id, dto);
             return Result.success(result);
@@ -204,8 +204,8 @@ public class TodoController {
     @GetMapping("/case/{caseId}")
     @PreAuthorize("hasAuthority('TODO_VIEW')")
     public Result<List<TodoDTO>> getTodosByCase(@PathVariable Long caseId) {
+        assertCaseVisible(caseId);
         try {
-            assertCaseVisible(caseId);
             List<TodoDTO> result = todoService.getTodosByCase(caseId);
             return Result.success(result);
         } catch (Exception e) {
@@ -306,14 +306,17 @@ public class TodoController {
         TodoDTO todo = todoService.getTodoById(todoId);
         Long currentUserId = securityUtils.getCurrentUserId();
         if (currentUserId.equals(todo.getAssigneeId()) || securityUtils.isAdmin()) {
+            if (todo.getCaseId() != null) {
+                caseService.assertCaseEditable(todo.getCaseId(), currentUserId);
+            }
             return;
         }
         throw new AccessDeniedException("无权修改该待办");
     }
 
-    private void assertCaseVisibleIfPresent(Long caseId) {
+    private void assertCaseEditableIfPresent(Long caseId) {
         if (caseId != null) {
-            assertCaseVisible(caseId);
+            caseService.assertCaseEditable(caseId, securityUtils.getCurrentUserId());
         }
     }
 }

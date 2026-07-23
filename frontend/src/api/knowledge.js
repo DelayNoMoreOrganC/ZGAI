@@ -47,7 +47,7 @@ export function importKnowledgeDocument(data) {
     headers: {
       'Content-Type': 'multipart/form-data'
     },
-    timeout: 120000
+    timeout: 300000
   })
 }
 
@@ -93,6 +93,59 @@ export function askAI(question, options = {}) {
     data: {
       question,
       ...options
-    }
+    },
+    timeout: 300000
+  })
+}
+
+export function previewFlkImport(urls) {
+  return request({ url: '/knowledge/import-batches/flk/preview', method: 'post', data: { urls } })
+}
+
+export function createStarterFlkImport() {
+  return request({ url: '/knowledge/import-batches/flk/starter', method: 'post' })
+}
+
+export function stageKnowledgeImport(batchId) {
+  return request({ url: `/knowledge/import-batches/${batchId}/stage`, method: 'post', timeout: 600000 })
+}
+
+export function scanFirmPolicies() {
+  return request({ url: '/knowledge/import-batches/firm-policies/scan', method: 'post', timeout: 120000 })
+}
+
+export function confirmKnowledgeImport(batchId, itemIds = []) {
+  return request({ url: `/knowledge/import-batches/${batchId}/confirm`, method: 'post', data: { itemIds }, timeout: 600000 })
+}
+
+export function getKnowledgeImportBatches() {
+  return request({ url: '/knowledge/import-batches', method: 'get' })
+}
+
+export function getPendingKnowledgeReviews(params = {}) {
+  return request({ url: '/knowledge/pending-review', method: 'get', params })
+}
+
+export function getKnowledgeImportItems(batchId) {
+  return request({ url: `/knowledge/import-batches/${batchId}/items`, method: 'get' })
+}
+
+export function uploadKnowledgeImportAttachment(itemId, file) {
+  const data = new FormData()
+  data.append('file', file)
+  return request({
+    url: `/knowledge/import-items/${itemId}/attachment`,
+    method: 'post',
+    data,
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000
+  })
+}
+
+export function reviewKnowledgeArticle(articleId, decision, reason = '') {
+  return request({
+    url: `/knowledge/articles/${articleId}/review`,
+    method: 'post',
+    data: { decision, reason }
   })
 }

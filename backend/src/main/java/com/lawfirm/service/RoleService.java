@@ -36,7 +36,8 @@ public class RoleService {
 
     private static final Set<String> SYSTEM_ROLE_CODES = Set.of(
             "ADMIN", "MANAGER", "DEPT_HEAD", "LAWYER", "ASSISTANT", "LAWYER_ASSISTANT",
-            "TRAINEE", "FINANCE", "ADMINISTRATIVE", "ADMINISTRATIVE1", "ADMINISTRATIVE2"
+            "TRAINEE", "FINANCE", "ADMINISTRATIVE", "ADMINISTRATIVE1", "ADMINISTRATIVE2",
+            "CLIENT_AUDITOR", "INVOICE_PROCESSOR", "CASE_FILING_ADMIN"
     );
 
     /**

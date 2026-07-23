@@ -6,6 +6,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -66,4 +67,9 @@ public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificat
      * 根据职位查找用户列表（性能优化）
      */
     List<User> findByPosition(String position);
+
+    @Query("select u.id from User u where u.deleted = false and "
+            + "(lower(u.realName) like lower(concat('%', :keyword, '%')) "
+            + "or lower(u.username) like lower(concat('%', :keyword, '%')))")
+    List<Long> findActiveIdsByNameOrUsername(@Param("keyword") String keyword);
 }

@@ -42,6 +42,13 @@
             placeholder="搜索文件名、类型、标签"
             :prefix-icon="Search"
           />
+          <el-button
+            v-if="isConsultantCase"
+            :disabled="documentLocked"
+            @click="openLegalOpinionUpload"
+          >
+            上传法律意见书
+          </el-button>
           <el-button type="primary" :disabled="documentLocked" @click="openUploadDialog">
             <el-icon><Upload /></el-icon>
             上传文件
@@ -139,10 +146,18 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="210" fixed="right">
+        <el-table-column label="操作" width="286" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="downloadFile(row)">下载</el-button>
             <el-button link type="primary" @click="showVersions(row)">版本</el-button>
+            <el-button
+              v-if="canRequestSeal(row)"
+              link
+              type="warning"
+              @click="openSealApproval(row)"
+            >
+              申请用印
+            </el-button>
             <el-button
               link
               type="danger"
@@ -209,6 +224,33 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="sealDialogVisible" title="快速申请公章用印" width="560px">
+      <el-form label-width="90px">
+        <el-form-item label="用印文件">
+          <el-input :model-value="sealTarget?.originalFileName || sealTarget?.documentName" disabled />
+        </el-form-item>
+        <el-form-item label="审批标题" required>
+          <el-input v-model="sealForm.title" maxlength="200" />
+        </el-form-item>
+        <el-form-item label="用印事由" required>
+          <el-input
+            v-model="sealForm.content"
+            type="textarea"
+            :rows="5"
+            maxlength="5000"
+            show-word-limit
+            placeholder="请说明文件用途、份数、提交对象等信息"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="sealDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="sealSubmitting" @click="submitSealApproval">
+          提交行政审批
+        </el-button>
+      </template>
+    </el-dialog>
+
     <el-drawer
       v-model="versionDrawerVisible"
       title="文件版本"
@@ -264,6 +306,8 @@ import {
   getCaseDocuments,
   uploadCaseDocument
 } from '@/api/case'
+import { createSealApproval } from '@/api/approval'
+import { useUserStore } from '@/stores/user'
 
 const props = defineProps({
   caseData: {
@@ -271,6 +315,7 @@ const props = defineProps({
     default: () => ({})
   }
 })
+const userStore = useUserStore()
 
 const loading = ref(false)
 const uploading = ref(false)
@@ -285,11 +330,15 @@ const selectedFile = ref(null)
 const selectedFileList = ref([])
 const selectedVersionDocument = ref(null)
 const versionDocuments = ref([])
+const sealDialogVisible = ref(false)
+const sealSubmitting = ref(false)
+const sealTarget = ref(null)
 
 const documentTypes = [
   '立案材料',
   '证据材料',
   '法律文书',
+  '法律意见书',
   '合同收费',
   '往来函件',
   '审批归档',
@@ -300,8 +349,10 @@ const uploadForm = reactive({
   folderPath: '',
   documentType: '其他'
 })
+const sealForm = reactive({ title: '', content: '' })
 
 const currentCaseId = computed(() => props.caseData?.id)
+const isConsultantCase = computed(() => String(props.caseData?.caseType || '').toUpperCase() === 'CONSULTANT')
 const caseFolderPath = computed(() => props.caseData?.caseFolderPath || '')
 const lockedStatus = computed(() => String(props.caseData?.status || '').toUpperCase())
 const documentLocked = computed(() => lockedStatus.value !== 'ACTIVE')
@@ -354,7 +405,7 @@ const refreshAll = async () => {
   }
 }
 
-const openUploadDialog = () => {
+const prepareUploadDialog = (documentType, folderPath) => {
   if (documentLocked.value) {
     ElMessage.warning(lockAlertTitle.value)
     return
@@ -363,11 +414,57 @@ const openUploadDialog = () => {
     ElMessage.warning('案件标准目录尚未建立，请刷新后重试')
     return
   }
-  uploadForm.folderPath = selectedFolderPath.value || folders.value[0].folderPath
-  uploadForm.documentType = inferDocumentType(uploadForm.folderPath)
+  uploadForm.folderPath = folderPath || selectedFolderPath.value || folders.value[0].folderPath
+  uploadForm.documentType = documentType || inferDocumentType(uploadForm.folderPath)
   selectedFile.value = null
   selectedFileList.value = []
   uploadDialogVisible.value = true
+}
+
+const openUploadDialog = () => prepareUploadDialog()
+
+const openLegalOpinionUpload = () => {
+  const legalFolder = folders.value.find(folder =>
+    String(folder.folderName || folder.folderPath || '').includes('法律文书'))
+  prepareUploadDialog('法律意见书', legalFolder?.folderPath)
+}
+
+const canRequestSeal = (row) => {
+  if (!row?.id || !userStore.hasPermission('APPROVAL_EDIT')) return false
+  const fileName = String(row.originalFileName || row.documentName || '').toLowerCase()
+  return ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.png', '.jpg', '.jpeg']
+    .some(extension => fileName.endsWith(extension))
+}
+
+const openSealApproval = (row) => {
+  sealTarget.value = row
+  const caseName = props.caseData?.caseName || props.caseData?.caseNumber || '案件'
+  const fileName = row.originalFileName || row.documentName || '案件文件'
+  sealForm.title = `${caseName}-${fileName}用印申请`
+  sealForm.content = `申请对案件文件“${fileName}”加盖公章。\n用印用途：\n用印份数：\n提交对象：`
+  sealDialogVisible.value = true
+}
+
+const submitSealApproval = async () => {
+  if (!sealForm.title.trim() || !sealForm.content.trim()) {
+    ElMessage.warning('请完整填写审批标题和用印事由')
+    return
+  }
+  sealSubmitting.value = true
+  try {
+    const formData = new FormData()
+    formData.append('title', sealForm.title.trim())
+    formData.append('content', sealForm.content.trim())
+    formData.append('caseId', currentCaseId.value)
+    formData.append('caseDocumentId', sealTarget.value.id)
+    await createSealApproval(formData)
+    ElMessage.success('用印申请已提交，并发送至行政人员待办')
+    sealDialogVisible.value = false
+  } catch (error) {
+    ElMessage.error(error?.message || '提交用印申请失败')
+  } finally {
+    sealSubmitting.value = false
+  }
 }
 
 const handleFileChange = (file, fileList) => {
@@ -637,7 +734,7 @@ watch(currentCaseId, () => {
 
 .toolbar-actions {
   display: grid;
-  grid-template-columns: 260px auto 40px;
+  grid-template-columns: minmax(180px, 260px) auto auto 40px;
   gap: 8px;
   align-items: center;
 }

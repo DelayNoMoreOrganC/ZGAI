@@ -55,6 +55,41 @@ public class CaseStageService {
         Case caseEntity = caseRepository.findById(caseId).orElseThrow();
         caseEntity.setCurrentStage(stages.get(0));
         caseRepository.save(caseEntity);
+
+        // 只为当前阶段建立待办，后续阶段在实际流转时生成，避免立案时堆积全部流程任务。
+        autoCreateTodos(caseId, stages.get(0));
+    }
+
+    /**
+     * 修复尚未完成立案审批、且仍使用旧通用阶段的案件。已经进入正式办理或
+     * 存在完成记录的案件不自动迁移，避免覆盖真实办案历史。
+     */
+    @Transactional
+    public boolean reconcilePendingApprovalWorkflow(Case caseEntity) {
+        if (caseEntity == null || !"PENDING_APPROVAL".equals(caseEntity.getStatus())) {
+            return false;
+        }
+        List<String> expectedStages = getStagesByCaseType(caseEntity.getCaseType());
+        List<CaseStage> existingStages = caseStageRepository
+                .findByCaseIdAndDeletedFalseOrderByStageOrder(caseEntity.getId());
+        List<String> existingNames = existingStages.stream()
+                .map(CaseStage::getStageName)
+                .collect(java.util.stream.Collectors.toList());
+        if (existingNames.equals(expectedStages)) {
+            return false;
+        }
+        boolean hasCompletedHistory = existingStages.stream().anyMatch(stage ->
+                "COMPLETED".equals(stage.getStatus()) || stage.getEndDate() != null);
+        if (hasCompletedHistory) {
+            log.warn("案件 {} 存在历史阶段记录，跳过自动流程迁移", caseEntity.getId());
+            return false;
+        }
+        existingStages.forEach(stage -> stage.setDeleted(true));
+        caseStageRepository.saveAll(existingStages);
+        initializeStages(caseEntity.getId(), caseEntity.getCaseType());
+        caseTimelineService.createSystemTimeline(caseEntity.getId(), "WORKFLOW_MIGRATED",
+                "立案审批中案件已更新为" + caseEntity.getCaseType() + "标准办理流程");
+        return true;
     }
 
     /**
@@ -137,6 +172,7 @@ public class CaseStageService {
                 todo.setTitle(template.getTodoTitle());
                 todo.setDescription(template.getTodoDescription());
                 todo.setCaseId(caseId);
+                todo.setAssigneeId(caseEntity.getOwnerId());
                 todo.setPriority(mapPriorityFromTemplate(template.getPriority()));
                 todo.setStatus("PENDING");
                 todo.setDeleted(false);
@@ -277,16 +313,18 @@ public class CaseStageService {
     private List<String> getStagesByCaseType(String caseType) {
         switch (caseType) {
             case "CIVIL":
-                return List.of("咨询", "签约", "起草文书", "待立案", "已立案", "一审审理中", "一审结案", "执行", "结案归档");
+                return List.of("接洽利冲", "签约立案", "诉前准备", "立案或应诉", "举证答辩", "庭审", "裁判", "后续程序", "结案归档");
             case "CRIMINAL":
-                return List.of("咨询", "签约", "会见", "审查起诉", "一审", "二审", "结案");
+                return List.of("接洽利冲", "签约", "侦查与会见", "审查起诉", "阅卷", "一审", "二审或申诉", "结案归档");
             case "ADMINISTRATIVE":
-                return List.of("咨询", "签约", "起草文书", "待立案", "已立案", "一审", "二审", "结案");
+                return List.of("接洽利冲", "签约立案", "行政行为审查", "复议或起诉", "举证", "庭审", "裁判", "后续程序", "结案归档");
             case "COMMERCIAL":
             case "ARBITRATION":
-                return List.of("咨询", "签约", "起草文书", "申请仲裁", "组庭", "开庭", "裁决", "结案");
+                return List.of("接洽利冲", "签约立案", "仲裁条款审查", "申请或答辩", "组庭", "举证", "开庭", "裁决", "执行衔接", "结案归档");
             case "NON_LITIGATION":
-                return List.of("咨询", "签约", "尽职调查", "出具文书", "交付", "结案");
+                return List.of("接洽利冲", "签约立项", "资料收集", "调查核验", "起草或谈判", "内部复核", "成果交付", "整改跟踪", "项目归档");
+            case "CONSULTANT":
+                return List.of("顾问建档", "服务计划", "需求受理", "分派办理", "审核交付", "定期报告", "续签评估", "终止或归档");
             default:
                 return List.of("咨询", "签约", "办理", "结案");
         }

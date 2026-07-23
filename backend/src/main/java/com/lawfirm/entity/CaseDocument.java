@@ -66,6 +66,10 @@ public class CaseDocument extends LogicalDeleteEntity {
     @Column(name = "index_status", length = 30)
     private String indexStatus = "NOT_INDEXED";
 
+    @Lob
     @Column(name = "ocr_result")
     private String ocrResult;
+
+    @Column(name = "content_sha256", length = 64)
+    private String contentSha256;
 }

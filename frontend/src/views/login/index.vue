@@ -81,11 +81,11 @@ const loginForm = reactive({
 const loginRules = {
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 20, message: '用户名长度在 3 到 20 个字符', trigger: 'blur' }
+    { min: 2, max: 50, message: '用户名长度在 2 到 50 个字符', trigger: 'blur' }
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, max: 20, message: '密码长度在 6 到 20 个字符', trigger: 'blur' }
+    { min: 6, max: 100, message: '密码长度在 6 到 100 个字符', trigger: 'blur' }
   ]
 }
 
@@ -98,8 +98,9 @@ const handleLogin = async () => {
 
     ElMessage.success('登录成功')
 
-    // 跳转到原页面或首页
-    const redirect = route.query.redirect || '/'
+    const redirect = userStore.requiresPasswordChange
+      ? '/profile?passwordChange=required'
+      : (route.query.redirect || '/')
     router.push(redirect)
   } catch (error) {
     if (error.message) {

@@ -87,6 +87,39 @@ public class Case extends LogicalDeleteEntity {
     @Column(name = "service_end_date")
     private LocalDate serviceEndDate;
 
+    @Column(name = "consultant_unit_name", length = 200)
+    private String consultantUnitName;
+
+    @Column(name = "consultant_contact_name", length = 100)
+    private String consultantContactName;
+
+    @Column(name = "consultant_contact_department", length = 100)
+    private String consultantContactDepartment;
+
+    @Column(name = "consultant_contact_title", length = 100)
+    private String consultantContactTitle;
+
+    @Column(name = "consultant_contact_phone", length = 30)
+    private String consultantContactPhone;
+
+    @Column(name = "consultant_contact_email", length = 120)
+    private String consultantContactEmail;
+
+    @Column(name = "consultant_service_scope", length = 2000)
+    private String consultantServiceScope;
+
+    @Column(name = "consultant_response_requirement", length = 500)
+    private String consultantResponseRequirement;
+
+    @Column(name = "consultant_included_services", length = 2000)
+    private String consultantIncludedServices;
+
+    @Column(name = "consultant_excluded_services", length = 2000)
+    private String consultantExcludedServices;
+
+    @Column(name = "renewal_reminder_date")
+    private LocalDate renewalReminderDate;
+
     @Column(name = "trial_stages")
     private String trialStages;
 

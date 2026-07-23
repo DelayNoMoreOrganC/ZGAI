@@ -66,6 +66,18 @@ public class CaseUpdateRequest {
     private String agencyType;
     private LocalDate serviceStartDate;
     private LocalDate serviceEndDate;
+    private Long consultantClientId;
+    private String consultantUnitName;
+    private String consultantContactName;
+    private String consultantContactDepartment;
+    private String consultantContactTitle;
+    private String consultantContactPhone;
+    private String consultantContactEmail;
+    private String consultantServiceScope;
+    private String consultantResponseRequirement;
+    private String consultantIncludedServices;
+    private String consultantExcludedServices;
+    private LocalDate renewalReminderDate;
     private String trialStages;
     private String courtCaseNumber;
     private LocalDate hearingDate;

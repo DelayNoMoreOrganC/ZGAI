@@ -7,8 +7,12 @@ import com.fasterxml.jackson.annotation.JsonValue;
  */
 public enum AIProviderType {
     DEEPSEEK_API("DeepSeek API"),
+    GLM_API("智谱 GLM API"),
+    KIMI_API("Moonshot Kimi API"),
     LOCAL_QWEN("本地Qwen"),
+    LM_STUDIO("LM Studio局域网模型"),
     OPENAI_API("OpenAI API"),
+    YUANDIAN_LEGAL("元典法律数据"),
     CUSTOM("自定义");
 
     private final String description;

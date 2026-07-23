@@ -3,10 +3,6 @@ package com.lawfirm.service;
 import com.lawfirm.dto.KnowledgeArticleDTO;
 import com.lawfirm.dto.KnowledgeArticleVO;
 import com.lawfirm.entity.KnowledgeArticle;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.text.PDFTextStripper;
-import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
-import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -35,14 +31,17 @@ public class KnowledgeDocumentImportService {
     private static final Set<String> SUPPORTED_EXTENSIONS = Set.of("pdf", "docx", "txt", "md");
 
     private final KnowledgeArticleService articleService;
+    private final OcrService ocrService;
     private final Path knowledgeLibraryRoot;
     private final long maxFileSize;
 
     public KnowledgeDocumentImportService(
             KnowledgeArticleService articleService,
+            OcrService ocrService,
             @Value("${file.knowledge-library-root:./knowledge-files}") String knowledgeLibraryRoot,
             @Value("${file.max-size:52428800}") long maxFileSize) {
         this.articleService = articleService;
+        this.ocrService = ocrService;
         this.knowledgeLibraryRoot = Paths.get(knowledgeLibraryRoot).toAbsolutePath().normalize();
         this.maxFileSize = maxFileSize;
     }
@@ -51,12 +50,8 @@ public class KnowledgeDocumentImportService {
         validateFile(file);
         String source = normalizeSource(dto.getKnowledgeSource());
         String originalName = safeOriginalName(file.getOriginalFilename());
-        String extension = extensionOf(originalName);
-        String content = extractText(file, extension);
+        String content = extractText(file);
         if (content.trim().isEmpty()) {
-            if ("pdf".equals(extension)) {
-                throw new IllegalArgumentException("PDF 未提取到文字，可能是扫描件，请先完成 OCR 后再导入");
-            }
             throw new IllegalArgumentException("文档未提取到可用正文");
         }
 
@@ -116,24 +111,13 @@ public class KnowledgeDocumentImportService {
         }
     }
 
-    private String extractText(MultipartFile file, String extension) {
-        try (InputStream inputStream = file.getInputStream()) {
-            String text;
-            if ("pdf".equals(extension)) {
-                try (PDDocument document = PDDocument.load(inputStream)) {
-                    text = new PDFTextStripper().getText(document);
-                }
-            } else if ("docx".equals(extension)) {
-                try (XWPFDocument document = new XWPFDocument(inputStream);
-                     XWPFWordExtractor extractor = new XWPFWordExtractor(document)) {
-                    text = extractor.getText();
-                }
-            } else {
-                text = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
-            }
-            return normalizeText(text);
-        } catch (IOException | RuntimeException e) {
-            throw new IllegalArgumentException("文档解析失败，请确认文件未损坏且格式正确", e);
+    private String extractText(MultipartFile file) {
+        try {
+            return normalizeText(ocrService.recognizeDocument(file, "KNOWLEDGE_IMPORT"));
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("文档自动解析或 OCR 失败，请检查文件清晰度及本机 OCR 配置", e);
         }
     }
 

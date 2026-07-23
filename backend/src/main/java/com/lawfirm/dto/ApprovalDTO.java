@@ -3,6 +3,7 @@ package com.lawfirm.dto;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 审批DTO
@@ -25,4 +26,6 @@ public class ApprovalDTO {
     private LocalDateTime approvedTime;
     private String approvalNotes;
     private String attachments;
+    private List<ApprovalAttachmentDTO> sealAttachments;
+    private List<ConflictCheckRecordDTO> conflictChecks;
 }

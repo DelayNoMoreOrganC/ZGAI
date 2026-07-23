@@ -23,8 +23,15 @@ public interface AIConfigRepository extends JpaRepository<AIConfig, Long> {
      */
     List<AIConfig> findByProviderTypeAndDeletedFalse(String providerType);
 
+    Optional<AIConfig> findFirstByProviderTypeAndIsEnabledTrueAndDeletedFalseOrderByIsDefaultDescIdAsc(String providerType);
+
     /**
      * 查找所有启用的配置
      */
     List<AIConfig> findByIsEnabledTrueAndDeletedFalse();
+
+    /**
+     * 查找所有未删除配置（包括暂时停用的配置）
+     */
+    List<AIConfig> findByDeletedFalse();
 }

@@ -121,6 +121,55 @@ export function getConflictCheckRecords(subjectName) {
   })
 }
 
+// 下载利冲检查留档报告
+export function downloadConflictCheckReport(id) {
+  return request({
+    url: `/clients/conflict-check/records/${id}/report`,
+    method: 'get',
+    responseType: 'blob'
+  })
+}
+
+// 行政人员提交正式利冲审查结论
+export function reviewConflictCheckRecord(id, data) {
+  return request({
+    url: `/clients/conflict-check/records/${id}/review`,
+    method: 'put',
+    data
+  })
+}
+
+export function uploadConflictWaiverAttachment(id, file) {
+  const data = new FormData()
+  data.append('file', file)
+  return request({
+    url: `/clients/conflict-check/records/${id}/waiver-attachments`,
+    method: 'post',
+    data,
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+
+export function downloadConflictWaiverAttachment(recordId, attachmentId) {
+  return request({
+    url: `/clients/conflict-check/records/${recordId}/waiver-attachments/${attachmentId}/download`,
+    method: 'get',
+    responseType: 'blob'
+  })
+}
+
+export function getClientRelations(clientId) {
+  return request({ url: `/clients/${clientId}/relations`, method: 'get' })
+}
+
+export function createClientRelation(clientId, data) {
+  return request({ url: `/clients/${clientId}/relations`, method: 'post', data })
+}
+
+export function deleteClientRelation(clientId, relationId) {
+  return request({ url: `/clients/${clientId}/relations/${relationId}`, method: 'delete' })
+}
+
 // 别名函数，保持向后兼容
 export function checkConflict(id) {
   return conflictCheck(id)

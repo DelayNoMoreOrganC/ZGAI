@@ -88,7 +88,7 @@ export function uploadDocForAIRecognition(file) {
     headers: {
       'Content-Type': 'multipart/form-data'
     }
-  })
+  }).then(response => response.data)
 }
 
 // 生成文书
@@ -97,7 +97,7 @@ export function generateDoc(data) {
     url: '/ai/generate-doc',
     method: 'post',
     data,
-    responseType: 'blob'
+    timeout: 300000
   })
 }
 
@@ -106,7 +106,8 @@ export function aiChat(data) {
   return request({
     url: '/ai/assist',
     method: 'post',
-    data
+    data,
+    timeout: 300000
   }).then(response => {
     // response = {code: 200, message, data: "AI回复内容"}
     // 提取 AI 回复文本
@@ -134,8 +135,49 @@ export function caseChat(caseId, data) {
   return request({
     url: `/ai/case-chat/${caseId}`,
     method: 'post',
-    data
+    data,
+    timeout: 300000
   })
+}
+
+export function submitCaseCommand(data) {
+  return request({
+    url: '/ai/case-commands',
+    method: 'post',
+    data,
+    timeout: 300000
+  })
+}
+
+export function confirmCaseCommand(commandId) {
+  return request({
+    url: `/ai/case-commands/${commandId}/confirm`,
+    method: 'post',
+    timeout: 300000
+  })
+}
+
+export function createDocumentIntake(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return longTimeoutService({
+    url: '/ai/document-intakes',
+    method: 'post',
+    data: formData,
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }).then(response => response.data)
+}
+
+export function getDocumentIntake(id) {
+  return request({ url: `/ai/document-intakes/${id}`, method: 'get' })
+}
+
+export function confirmDocumentIntake(id, data) {
+  return longTimeoutService({
+    url: `/ai/document-intakes/${id}/confirm`,
+    method: 'post',
+    data
+  }).then(response => response.data)
 }
 
 // 获取AI使用日志
@@ -151,6 +193,13 @@ export function getAiLogs(params) {
 export function getAiConfig() {
   return request({
     url: '/ai/config',
+    method: 'get'
+  })
+}
+
+export function getAvailableAiProviders() {
+  return request({
+    url: '/ai/providers/available',
     method: 'get'
   })
 }

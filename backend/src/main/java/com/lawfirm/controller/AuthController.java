@@ -1,6 +1,7 @@
 package com.lawfirm.controller;
 
 import com.lawfirm.entity.User;
+import com.lawfirm.annotation.AuditLog;
 import com.lawfirm.exception.AuthenticationFailedException;
 import com.lawfirm.exception.InvalidParameterException;
 import com.lawfirm.exception.ResourceNotFoundException;
@@ -130,6 +131,7 @@ public class AuthController {
             data.put("avatar", user.getAvatar());
             data.put("departmentId", user.getDepartmentId());
             data.put("position", user.getPosition());
+            data.put("mustChangePassword", Boolean.TRUE.equals(user.getMustChangePassword()));
             addAuthorityData(data, authentication.getAuthorities().stream()
                     .map(org.springframework.security.core.GrantedAuthority::getAuthority)
                     .collect(Collectors.toList()));
@@ -179,6 +181,7 @@ public class AuthController {
         data.put("avatar", user.getAvatar());
         data.put("departmentId", user.getDepartmentId());
         data.put("position", user.getPosition());
+        data.put("mustChangePassword", Boolean.TRUE.equals(user.getMustChangePassword()));
         addAuthorityData(data, userAuthorityService.loadAuthorities(user).stream()
                 .map(org.springframework.security.core.GrantedAuthority::getAuthority)
                 .collect(Collectors.toList()));
@@ -201,6 +204,7 @@ public class AuthController {
      */
     @PostMapping("/change-password")
     @PreAuthorize("isAuthenticated()")
+    @AuditLog(value = "修改本人密码", operationType = "UPDATE", logParams = false)
     public Result<Void> changePassword(@RequestHeader(value = "Authorization", required = false) String authHeader,
                                        @Valid @RequestBody ChangePasswordRequest request) {
         if (authHeader == null || authHeader.isEmpty()) {
@@ -219,9 +223,13 @@ public class AuthController {
         if (!passwordEncoder.matches(request.getOldPassword(), user.getPassword())) {
             throw new InvalidParameterException("oldPassword", "旧密码错误");
         }
+        if (passwordEncoder.matches(request.getNewPassword(), user.getPassword())) {
+            throw new InvalidParameterException("newPassword", "新密码不能与当前密码相同");
+        }
 
         // 设置新密码
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setMustChangePassword(false);
         userRepository.save(user);
 
         log.info("用户修改密码成功: {}", user.getUsername());

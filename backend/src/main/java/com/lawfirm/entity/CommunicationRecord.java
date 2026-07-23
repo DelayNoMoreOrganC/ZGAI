@@ -46,4 +46,7 @@ public class CommunicationRecord extends LogicalDeleteEntity {
 
     @Column
     private String attachments;
+
+    @Transient
+    private String operatorName;
 }

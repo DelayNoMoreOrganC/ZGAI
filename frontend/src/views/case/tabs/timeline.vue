@@ -191,6 +191,7 @@ import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Promotion } from '@element-plus/icons-vue'
 import { getCaseTimeline, createTimelineComment, deleteTimelineComment } from '@/api/case'
+import { useUserStore } from '@/stores/user'
 
 const props = defineProps({
   caseData: {
@@ -200,13 +201,14 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['refresh'])
+const userStore = useUserStore()
 
 const activeTab = ref('all')
 const loading = ref(false)
 const showMention = ref(false)
 const newComment = ref('')
 const mentionedUsers = ref([])
-const currentUserId = ref('1') // 当前用户ID
+const currentUserId = computed(() => String(userStore.userId || ''))
 const caseId = computed(() => Number(props.caseData.id) || null)
 
 // ==================== 编辑评论对话框 ====================
@@ -217,13 +219,14 @@ const editingCommentText = ref('')
 // 时间线数据
 const timelineData = ref([])
 
-// 团队成员
-const teamMembers = ref([
-  { id: '1', name: '张律师' },
-  { id: '2', name: '李律师' },
-  { id: '3', name: '小张' },
-  { id: '4', name: '小李' }
-])
+const teamMembers = computed(() => {
+  const members = [
+    props.caseData.ownerId ? { id: props.caseData.ownerId, name: props.caseData.ownerName } : null,
+    ...(props.caseData.coOwners || []),
+    ...(props.caseData.assistants || [])
+  ].filter(item => item?.id && item?.name)
+  return [...new Map(members.map(item => [String(item.id), { id: String(item.id), name: item.name }])).values()]
+})
 
 // 过滤后的时间线
 const filteredTimeline = computed(() => {

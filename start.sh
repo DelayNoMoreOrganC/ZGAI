@@ -14,6 +14,7 @@ SSB_CLIENT_DIR="$SSB_REPO_DIR/client"
 AC_DIR="$ROOT_DIR/ac-calc"
 NPM="npm"
 DB_MODE="${ZGAI_DB:-h2}"
+EXTERNAL_TOOLS_ENABLED="${VITE_ENABLE_EXTERNAL_TOOLS:-false}"
 LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "localhost")
 
 # ── 探测 JDK 11（项目要求 JDK 11）──
@@ -210,8 +211,8 @@ FRONTEND_PID=$!
 echo "  → PID: $FRONTEND_PID"
 sleep 5
 
-# ── (可选) 启动 SSB 省时宝 ──
-if [ -f "$SSB_DIR/ssb_api.py" ]; then
+# ── (可选) 启动 SSB 省时宝与 AC 精算 ──
+if [ "$EXTERNAL_TOOLS_ENABLED" = "true" ] && [ -f "$SSB_DIR/ssb_api.py" ]; then
     echo "[可选] 启动省时宝 ZGAI 代理 (Flask :5002)..."
     cd "$SSB_DIR"
     nohup python3 ssb_api.py > "$ROOT_DIR/logs/ssb.log" 2>&1 &
@@ -219,7 +220,7 @@ if [ -f "$SSB_DIR/ssb_api.py" ]; then
     wait_for_http "省时宝 ZGAI 代理" "http://127.0.0.1:5002/api/health" 20 || true
 fi
 
-if [ -f "$SSB_REPO_DIR/server/app_new.py" ]; then
+if [ "$EXTERNAL_TOOLS_ENABLED" = "true" ] && [ -f "$SSB_REPO_DIR/server/app_new.py" ]; then
     echo "[可选] 启动独立省时宝后端 (Flask :5000)..."
     cd "$SSB_REPO_DIR/server"
     nohup python3 -m flask --app app_new:app run --host=0.0.0.0 --port=5000 > "$ROOT_DIR/logs/ssb-standalone-backend.log" 2>&1 &
@@ -227,7 +228,7 @@ if [ -f "$SSB_REPO_DIR/server/app_new.py" ]; then
     wait_for_http "独立省时宝后端" "http://127.0.0.1:5000/api/health" 30 || true
 fi
 
-if [ -f "$SSB_CLIENT_DIR/package.json" ] && [ -d "$SSB_CLIENT_DIR/node_modules" ]; then
+if [ "$EXTERNAL_TOOLS_ENABLED" = "true" ] && [ -f "$SSB_CLIENT_DIR/package.json" ] && [ -d "$SSB_CLIENT_DIR/node_modules" ]; then
     echo "[可选] 启动独立省时宝前端 (Vite :3000)..."
     cd "$SSB_CLIENT_DIR"
     nohup env VITE_API_BASE_URL="http://$LOCAL_IP:5000/api" $NPM run dev -- --host 0.0.0.0 --strictPort > "$ROOT_DIR/logs/ssb-standalone-frontend.log" 2>&1 &
@@ -236,7 +237,7 @@ if [ -f "$SSB_CLIENT_DIR/package.json" ] && [ -d "$SSB_CLIENT_DIR/node_modules" 
 fi
 
 # ── (可选) 启动 AC 精算 ──
-if [ -f "$AC_DIR/api_service.py" ]; then
+if [ "$EXTERNAL_TOOLS_ENABLED" = "true" ] && [ -f "$AC_DIR/api_service.py" ]; then
     echo "[可选] 启动AC精算 (Flask :5100)..."
     cd "$AC_DIR"
     nohup python3 api_service.py > "$ROOT_DIR/logs/ac-calc.log" 2>&1 &
@@ -252,7 +253,7 @@ echo ""
 echo "  本地访问:   http://localhost:3017"
 echo "  局域网访问: http://$LOCAL_IP:3017"
 echo "  后端 API:   http://localhost:8080/api"
-if [ -f "$SSB_CLIENT_DIR/package.json" ]; then
+if [ "$EXTERNAL_TOOLS_ENABLED" = "true" ] && [ -f "$SSB_CLIENT_DIR/package.json" ]; then
     echo "  省时宝:     http://$LOCAL_IP:3000"
 fi
 echo "  数据库:     $DB_MODE"

@@ -12,6 +12,8 @@ import java.util.List;
 @Repository
 public interface CaseDocumentRepository extends JpaRepository<CaseDocument, Long> {
 
+    boolean existsByCaseIdAndContentSha256AndDeletedFalse(Long caseId, String contentSha256);
+
     /**
      * 根据案件ID查找文档列表
      */

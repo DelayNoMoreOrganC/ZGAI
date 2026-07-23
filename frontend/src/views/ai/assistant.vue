@@ -73,7 +73,7 @@
               <el-icon v-else class="ai-avatar"><ChatDotRound /></el-icon>
             </div>
             <div class="message-content">
-              <div class="message-text" v-html="formatMessage(message.content)"></div>
+              <div class="message-text">{{ message.content }}</div>
               <div class="message-time">{{ message.time }}</div>
             </div>
           </div>
@@ -98,6 +98,8 @@
             v-model="inputMessage"
             type="textarea"
             :rows="3"
+            maxlength="20000"
+            show-word-limit
             placeholder="请输入您的法律问题..."
             @keydown.enter.ctrl="handleSend"
             :disabled="loading"
@@ -285,15 +287,6 @@ const handleQuickQuestion = (question) => {
   handleSend()
 }
 
-// 格式化消息
-const formatMessage = (content) => {
-  if (!content) return ''
-  // 将换行符转换为HTML换行
-  return content
-    .replace(/\n/g, '<br>')
-    .replace(/ /g, '&nbsp;')
-}
-
 // 格式化时间
 const formatTime = (date) => {
   return new Intl.DateTimeFormat('zh-CN', {
@@ -383,7 +376,8 @@ const scrollToBottom = () => {
 .message-text {
   padding: 10px 15px;
   border-radius: 8px;
-  word-wrap: break-word;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   line-height: 1.6;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }

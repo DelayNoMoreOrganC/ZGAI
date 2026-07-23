@@ -65,17 +65,18 @@ const handleBatchClose = async (caseIds) => {
 // 批量归档
 const handleBatchArchive = async (caseIds) => {
   try {
-    await ElMessageBox.confirm(
-      `确定要批量归档这 ${caseIds.length} 个案件吗？`,
+    const { value } = await ElMessageBox.prompt(
+      `请输入这 ${caseIds.length} 个案件的档案保管地`,
       '批量归档',
       {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
-        type: 'warning'
+        inputPattern: /^.{1,100}$/,
+        inputErrorMessage: '请输入档案保管地（1-100字符）'
       }
     )
 
-    await batchArchiveCases(caseIds)
+    await batchArchiveCases(caseIds, value.trim())
     ElMessage.success(`已批量归档 ${caseIds.length} 个案件`)
   } catch (error) {
     if (error !== 'cancel') {

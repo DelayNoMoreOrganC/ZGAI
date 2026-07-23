@@ -102,15 +102,22 @@ file:
     - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
     - text/plain
 
+knowledge:
+  import:
+    firm-policy-source-root: ${FIRM_POLICY_SOURCE_ROOT:/Volumes/律所共享资料/律所制度、章程}
+    max-file-size-bytes: ${KNOWLEDGE_IMPORT_MAX_FILE_SIZE_BYTES:52428800}
+    staging-root: ${KNOWLEDGE_IMPORT_STAGING_ROOT:./data/knowledge-imports}
+
 login:
   max-attempts: 5
   lock-duration: 1800000
 
 backup:
-  base-dir: ./backups
-  retention-days: 180
+  base-dir: ${BACKUP_ROOT_PATH:./backups}
+  retention-days: ${BACKUP_RETENTION_DAYS:180}
   postgres:
     pg-dump-path: ${PG_DUMP_PATH:pg_dump}
+    pg-restore-path: ${PG_RESTORE_PATH:pg_restore}
 
 app:
   seed-demo-data: ${SEED_DEMO_DATA:false}
@@ -124,10 +131,37 @@ employee-sync:
   enabled: ${EMPLOYEE_SYNC_ENABLED:false}
   workbook-path: ${EMPLOYEE_SYNC_WORKBOOK:}
 
+permission-bootstrap:
+  client-all-view-users: ${CLIENT_ALL_VIEW_USERS:田颖思,黄智明,邝凤兰,何俊慧,吴兴印}
+  invoice-processors: ${INVOICE_PROCESSORS:黄智明}
+  case-filing-managers: ${CASE_FILING_MANAGERS:田颖思}
+
+yuandian:
+  base-url: ${YUANDIAN_BASE_URL:https://open.chineselaw.com}
+  api-key: ${YUANDIAN_API_KEY:}
+  max-results: ${YUANDIAN_MAX_RESULTS:10}
+  cache-minutes: ${YUANDIAN_CACHE_MINUTES:30}
+
 crypto:
   secret-key: ${CRYPTO_SECRET_KEY:}
 
 ai:
+  document-intake:
+    temp-dir: ${AI_DOCUMENT_INTAKE_TEMP_DIR:./data/document-intake}
+    retention-hours: ${AI_DOCUMENT_INTAKE_RETENTION_HOURS:72}
+    cleanup-cron: "${AI_DOCUMENT_INTAKE_CLEANUP_CRON:0 30 * * * ?}"
+  ocr:
+    tesseract-command: ${TESSERACT_COMMAND:tesseract}
+    pdftoppm-command: ${PDFTOPPM_COMMAND:pdftoppm}
+    language: ${OCR_LANGUAGE:chi_sim+eng}
+    max-file-size: ${OCR_MAX_FILE_SIZE:52428800}
+    max-pdf-pages: ${OCR_MAX_PDF_PAGES:100}
+  lm-studio:
+    max-concurrent: ${LM_STUDIO_MAX_CONCURRENT:1}
+    queue-wait-seconds: ${LM_STUDIO_QUEUE_WAIT_SECONDS:600}
+    retry-count: ${LM_STUDIO_RETRY_COUNT:1}
+    retry-delay-millis: ${LM_STUDIO_RETRY_DELAY_MILLIS:1500}
+    curl-fallback-enabled: ${LM_STUDIO_CURL_FALLBACK_ENABLED:true}
   deepseek:
     api-key: your-deepseek-api-key
     base-url: https://api.deepseek.com/v1
@@ -140,22 +174,28 @@ ai:
     max-tokens: 2000
     temperature: 0.1
     timeout-seconds: 60
-  aliyun:
-    embedding:
-      api-key: your-aliyun-api-key
-      base-url: https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding
-      model: text-embedding-v3
-      dimension: 1024
-      timeout-seconds: 30
+  embedding:
+    # Knowledge embeddings stay local by default. Cloud providers require an explicit provider switch.
+    provider: ${AI_EMBEDDING_PROVIDER:LM_STUDIO}
+    base-url: ${AI_EMBEDDING_BASE_URL:${LM_STUDIO_BASE_URL:http://localhost:1234/v1}}
+    api-key: ${AI_EMBEDDING_API_KEY:${LM_STUDIO_API_KEY:}}
+    model: ${AI_EMBEDDING_MODEL:}
+    dimension: ${AI_EMBEDDING_DIMENSION:1024}
+    timeout-seconds: ${AI_EMBEDDING_TIMEOUT_SECONDS:30}
+    max-batch-size: ${AI_EMBEDDING_MAX_BATCH_SIZE:25}
+    max-input-chars: ${AI_EMBEDDING_MAX_INPUT_CHARS:8000}
+    query-prefix: ${AI_EMBEDDING_QUERY_PREFIX:}
+    document-prefix: ${AI_EMBEDDING_DOCUMENT_PREFIX:}
 
 qdrant:
-  host: localhost
-  port: 6333
-  grpc-port: 6334
-  collection-name: lawfirm-knowledge
-  vector-size: 1024
-  distance: Cosine
-  timeout-seconds: 10
+  enabled: ${QDRANT_ENABLED:true}
+  host: ${QDRANT_HOST:localhost}
+  port: ${QDRANT_PORT:6333}
+  grpc-port: ${QDRANT_GRPC_PORT:6334}
+  collection-name: ${QDRANT_COLLECTION_NAME:lawfirm-knowledge}
+  vector-size: ${QDRANT_VECTOR_SIZE:${AI_EMBEDDING_DIMENSION:1024}}
+  distance: ${QDRANT_DISTANCE:Cosine}
+  timeout-seconds: ${QDRANT_TIMEOUT_SECONDS:10}
 
 ac-calc:
   url: http://localhost:5100
@@ -165,6 +205,15 @@ legacy:
     root-path: ${LEGACY_CASE_ARCHIVE_ROOT_PATH:}
     max-scan-results: ${LEGACY_CASE_ARCHIVE_MAX_SCAN_RESULTS:30}
     max-scan-files: ${LEGACY_CASE_ARCHIVE_MAX_SCAN_FILES:100000}
+
+archive:
+  worker:
+    base-url: ${ARCHIVE_WORKER_BASE_URL:http://127.0.0.1:8091}
+    token: ${ARCHIVE_WORKER_TOKEN:}
+    timeout-seconds: ${ARCHIVE_WORKER_TIMEOUT_SECONDS:1800}
+
+approval:
+  file-root: ${APPROVAL_FILE_ROOT:./data/approval-files}
 
 logging:
   level:

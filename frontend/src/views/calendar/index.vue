@@ -414,6 +414,8 @@ import PageHeader from '@/components/PageHeader.vue'
 import PriorityDot from '@/components/PriorityDot.vue'
 import { getCalendarEvents, createEvent, updateEvent, deleteEvent } from '@/api/calendar'
 import { getTodos, createTodo, updateTodo, deleteTodo } from '@/api/todo'
+import { getCaseList } from '@/api/case'
+import { getUserList } from '@/api/user'
 
 // 视图模式
 const viewMode = ref('month')
@@ -474,17 +476,8 @@ const todoRules = {
   deadline: [{ required: true, message: '请选择截止时间', trigger: 'change' }]
 }
 
-// 预置数据
-const caseList = ref([
-  { id: '1', name: '张三诉李四买卖合同纠纷' },
-  { id: '2', name: '王五离婚纠纷' }
-])
-
-const userList = ref([
-  { id: '1', name: '张律师' },
-  { id: '2', name: '李律师' },
-  { id: '3', name: '小张' }
-])
+const caseList = ref([])
+const userList = ref([])
 
 // 当前月份
 const currentMonth = computed(() => {
@@ -811,6 +804,26 @@ const fetchTodos = async () => {
   }
 }
 
+const fetchFormOptions = async () => {
+  try {
+    const [caseRes, userRes] = await Promise.all([
+      getCaseList({ page: 1, size: 300 }),
+      getUserList({ page: 0, size: 300, status: 1 })
+    ])
+    const cases = caseRes.data?.records || []
+    const userData = userRes.data || {}
+    const users = userData.content || userData.records || userData || []
+    caseList.value = cases.map(item => ({ id: item.id, name: item.caseName }))
+    userList.value = users
+      .filter(user => user.status === undefined || user.status === 1)
+      .map(user => ({ id: user.id, name: user.realName || user.username }))
+  } catch (error) {
+    console.error('获取日程表单选项失败:', error)
+    caseList.value = []
+    userList.value = []
+  }
+}
+
 // 获取当前月份的开始和结束日期
 const getCurrentMonthStart = () => {
   const date = new Date(calendarDate.value)
@@ -826,6 +839,7 @@ const getCurrentMonthEnd = () => {
 // 初始化
 fetchEvents()
 fetchTodos()
+fetchFormOptions()
 </script>
 
 <style scoped lang="scss">

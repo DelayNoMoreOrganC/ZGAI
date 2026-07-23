@@ -27,14 +27,18 @@ class KnowledgeDocumentImportServiceTest {
     Path tempDir;
 
     @Test
-    void txtImportExtractsContentAndStoresOriginalInsideKnowledgeRoot() {
+    void txtImportExtractsContentAndStoresOriginalInsideKnowledgeRoot() throws Exception {
         KnowledgeArticleService articleService = mock(KnowledgeArticleService.class);
         KnowledgeArticleVO result = new KnowledgeArticleVO();
         result.setId(81L);
         when(articleService.createImportedArticle(any(KnowledgeArticleDTO.class), anyString())).thenReturn(result);
-        KnowledgeDocumentImportService service = new KnowledgeDocumentImportService(articleService, tempDir.toString(), 1024 * 1024);
+        OcrService ocrService = mock(OcrService.class);
         MockMultipartFile file = new MockMultipartFile(
                 "file", "利益冲突规则.txt", "text/plain", "第一条 适用范围\n第二条 审查规则".getBytes(StandardCharsets.UTF_8));
+        when(ocrService.recognizeDocument(file, "KNOWLEDGE_IMPORT"))
+                .thenReturn("第一条 适用范围\n第二条 审查规则");
+        KnowledgeDocumentImportService service = new KnowledgeDocumentImportService(
+                articleService, ocrService, tempDir.toString(), 1024 * 1024);
         KnowledgeArticleDTO dto = dto("LAW_REGULATION");
 
         KnowledgeArticleVO imported = service.importDocument(file, dto);
@@ -53,7 +57,8 @@ class KnowledgeDocumentImportServiceTest {
     @Test
     void unsupportedLegacyDocIsRejectedBeforeArticleCreation() {
         KnowledgeArticleService articleService = mock(KnowledgeArticleService.class);
-        KnowledgeDocumentImportService service = new KnowledgeDocumentImportService(articleService, tempDir.toString(), 1024 * 1024);
+        KnowledgeDocumentImportService service = new KnowledgeDocumentImportService(
+                articleService, mock(OcrService.class), tempDir.toString(), 1024 * 1024);
         MockMultipartFile file = new MockMultipartFile("file", "旧制度.doc", "application/msword", new byte[]{1, 2, 3});
 
         IllegalArgumentException error = assertThrows(
@@ -67,13 +72,36 @@ class KnowledgeDocumentImportServiceTest {
     @Test
     void caseDepositCannotBeImportedIntoSharedKnowledge() {
         KnowledgeArticleService articleService = mock(KnowledgeArticleService.class);
-        KnowledgeDocumentImportService service = new KnowledgeDocumentImportService(articleService, tempDir.toString(), 1024 * 1024);
+        KnowledgeDocumentImportService service = new KnowledgeDocumentImportService(
+                articleService, mock(OcrService.class), tempDir.toString(), 1024 * 1024);
         MockMultipartFile file = new MockMultipartFile(
                 "file", "案件材料.txt", "text/plain", "案件隐私内容".getBytes(StandardCharsets.UTF_8));
 
         assertThrows(IllegalArgumentException.class, () -> service.importDocument(file, dto("CASE_DEPOSIT")));
 
         verify(articleService, never()).createImportedArticle(any(), anyString());
+    }
+
+    @Test
+    void scannedPdfUsesAutomaticLocalOcrBeforeArticleCreation() throws Exception {
+        KnowledgeArticleService articleService = mock(KnowledgeArticleService.class);
+        OcrService ocrService = mock(OcrService.class);
+        KnowledgeArticleVO result = new KnowledgeArticleVO();
+        result.setId(82L);
+        when(articleService.createImportedArticle(any(KnowledgeArticleDTO.class), anyString())).thenReturn(result);
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "扫描法规.pdf", "application/pdf", "%PDF scan".getBytes(StandardCharsets.UTF_8));
+        when(ocrService.recognizeDocument(file, "KNOWLEDGE_IMPORT"))
+                .thenReturn("第一条 扫描件由本机自动识别");
+        KnowledgeDocumentImportService service = new KnowledgeDocumentImportService(
+                articleService, ocrService, tempDir.toString(), 1024 * 1024);
+
+        service.importDocument(file, dto("LAW_REGULATION"));
+
+        verify(ocrService).recognizeDocument(file, "KNOWLEDGE_IMPORT");
+        ArgumentCaptor<KnowledgeArticleDTO> captor = ArgumentCaptor.forClass(KnowledgeArticleDTO.class);
+        verify(articleService).createImportedArticle(captor.capture(), anyString());
+        assertTrue(captor.getValue().getContent().contains("本机自动识别"));
     }
 
     private KnowledgeArticleDTO dto(String source) {

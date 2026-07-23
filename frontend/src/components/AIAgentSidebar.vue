@@ -12,10 +12,10 @@
       <!-- 头部 -->
       <div class="sidebar-header">
         <div class="header-info">
-          <div class="icon">🤖</div>
+          <div class="icon"><el-icon><MagicStick /></el-icon></div>
           <div class="title">
             <h3>AI 助手</h3>
-            <p class="subtitle">智能文档识别 · 自动分类</p>
+            <p class="subtitle">智能文档识别 · 人工确认后操作</p>
           </div>
         </div>
         <el-button text @click="clearHistory" :disabled="history.length === 0">
@@ -58,7 +58,7 @@
         <!-- 快捷操作按钮 -->
         <div class="quick-actions">
           <el-button-group>
-            <el-button size="small" @click="selectCase" :disabled="!selectedCaseId">
+            <el-button size="small" @click="selectCase">
               <el-icon><FolderOpened /></el-icon>
               关联案件
             </el-button>
@@ -146,10 +146,7 @@
                   <el-icon><Plus /></el-icon>
                   创建待办
                 </el-button>
-                <el-button size="small" type="warning" @click="handleSaveToCase(item)">
-                  <el-icon><Folder /></el-icon>
-                  归档到案件
-                </el-button>
+                <el-tag size="small" type="info">文件归案请使用案件详情中的智能归案</el-tag>
               </div>
             </div>
 
@@ -166,22 +163,6 @@
         </div>
       </div>
 
-      <!-- AI设置 -->
-      <div class="settings-section">
-        <el-divider>AI 设置</el-divider>
-        <div class="setting-item">
-          <span>自动创建待办</span>
-          <el-switch v-model="settings.autoTodo" />
-        </div>
-        <div class="setting-item">
-          <span>自动匹配案件</span>
-          <el-switch v-model="settings.autoMatchCase" />
-        </div>
-        <div class="setting-item">
-          <span>自动归档</span>
-          <el-switch v-model="settings.autoArchive" />
-        </div>
-      </div>
     </div>
 
     <!-- 案件选择对话框 -->
@@ -212,16 +193,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   DArrowLeft, DArrowRight, Delete, UploadFilled,
-  FolderOpened, Plus, Document, Search, Folder
+  FolderOpened, Plus, Document, Search, MagicStick
 } from '@element-plus/icons-vue'
-import request from '@/utils/request'
 import { getCaseList } from '@/api/case'
 import { createTodo } from '@/api/todo'
-import { createTimelineComment } from '@/api/case'
 import { recognizeLegalDocument } from '@/api/ai'
 
 // 侧边栏状态
@@ -242,13 +221,6 @@ const caseDialogVisible = ref(false)
 const selectedCaseId = ref(null)
 const caseSearchKeyword = ref('')
 const filteredCases = ref([])
-
-// AI设置
-const settings = ref({
-  autoTodo: true,
-  autoMatchCase: true,
-  autoArchive: false
-})
 
 // 切换侧边栏
 const toggleSidebar = () => {
@@ -366,9 +338,6 @@ const recognizeDocument = async (file) => {
       record.processing = false
       latestResult.value = response.data
 
-      // 智能操作
-      await performSmartActions(response.data)
-
       ElMessage.success(`${file.name} 识别成功`)
     } else {
       throw new Error(response.message || '识别失败')
@@ -378,28 +347,6 @@ const recognizeDocument = async (file) => {
     record.processing = false
     record.error = error.message
     console.error('文档识别失败:', error)
-  }
-}
-
-// 智能操作
-const performSmartActions = async (result) => {
-  try {
-    // 自动匹配案件
-    if (settings.value.autoMatchCase && result.caseNumber) {
-      await matchCaseByNumber(result.caseNumber)
-    }
-
-    // 自动创建待办
-    if (settings.value.autoTodo && result.hearingDate) {
-      await createTodoFromResultData(result)
-    }
-
-    // 自动归档
-    if (settings.value.autoArchive && selectedCaseId.value) {
-      await archiveToCase(result)
-    }
-  } catch (error) {
-    console.error('智能操作失败:', error)
   }
 }
 
@@ -428,6 +375,11 @@ const matchCaseByNumber = async (caseNumber) => {
 // 创建待办
 const createTodoFromResultData = async (result) => {
   try {
+    await ElMessageBox.confirm(
+      `确认创建“${result.documentType || '文书'}处理”待办？识别出的日期和案件归属需由你核对。`,
+      '确认创建待办',
+      { type: 'warning', confirmButtonText: '确认创建', cancelButtonText: '取消' }
+    )
     const todoData = {
       title: `${result.documentType || '文书'}处理 - ${result.caseNumber || '未定案号'}`,
       content: `识别到${result.documentType || '文书'}信息：
@@ -443,36 +395,10 @@ const createTodoFromResultData = async (result) => {
     }
 
     await createTodo(todoData)
-    ElMessage.success('已自动创建待办事项')
+    ElMessage.success('待办事项已创建')
   } catch (error) {
+    if (error === 'cancel' || error === 'close') return
     console.error('创建待办失败:', error)
-  }
-}
-
-// 归档到案件
-const archiveToCase = async (result) => {
-  if (!selectedCaseId.value) {
-    ElMessage.warning('请先选择关联案件')
-    return
-  }
-
-  try {
-    // 在案件进度日志中记录
-    const comment = `系统自动识别并归档文档：
-- 文书类型：${result.documentType || '未识别'}
-- 案号：${result.caseNumber || '未识别'}
-- 法院：${result.courtName || '未识别'}
-- 识别时间：${new Date().toLocaleString()}`
-
-    await createTimelineComment(selectedCaseId.value, {
-      content: comment,
-      mentionIds: []
-    })
-
-    ElMessage.success('文档已归档到案件并记录日志')
-  } catch (error) {
-    console.error('归档失败:', error)
-    ElMessage.error('归档失败')
   }
 }
 
@@ -520,18 +446,6 @@ const handleCreateTodo = async (item) => {
   }
 }
 
-const handleSaveToCase = async (item) => {
-  if (!selectedCaseId.value) {
-    ElMessage.warning('请先选择关联案件')
-    selectCase()
-    return
-  }
-
-  if (item.data) {
-    await archiveToCase(item.data)
-  }
-}
-
 const createTodoFromResult = async () => {
   if (latestResult.value) {
     await createTodoFromResultData(latestResult.value)
@@ -540,24 +454,6 @@ const createTodoFromResult = async () => {
   }
 }
 
-// 初始化
-onMounted(() => {
-  // 加载设置
-  const savedSettings = localStorage.getItem('ai-agent-settings')
-  if (savedSettings) {
-    try {
-      Object.assign(settings.value, JSON.parse(savedSettings))
-    } catch (e) {
-      console.error('加载设置失败:', e)
-    }
-  }
-})
-
-// 监听设置变化并保存
-import { watch } from 'vue'
-watch(settings, (newSettings) => {
-  localStorage.setItem('ai-agent-settings', JSON.stringify(newSettings))
-}, { deep: true })
 </script>
 
 <style scoped lang="scss">

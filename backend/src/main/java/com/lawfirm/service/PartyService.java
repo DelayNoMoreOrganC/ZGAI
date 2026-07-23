@@ -120,6 +120,26 @@ public class PartyService {
             case "CO_DEFENDANT": return "共同被告";
             case "APPLICANT": return "申请人";
             case "RESPONDENT": return "被申请人";
+            case "APPELLANT": return "上诉人";
+            case "APPELLEE": return "被上诉人";
+            case "CLIENT": return "委托人";
+            case "CONSULTANT_UNIT": return "顾问单位";
+            case "SERVICE_RECIPIENT": return "服务对象";
+            case "RELATED_COMPANY": return "关联公司";
+            case "COUNTERPARTY": return "交易/事务相对方";
+            case "TARGET_COMPANY": return "目标公司";
+            case "INVESTOR": return "投资方";
+            case "FINANCIER": return "融资方";
+            case "CREDITOR": return "债权人";
+            case "DEBTOR": return "债务人";
+            case "SUSPECT": return "犯罪嫌疑人";
+            case "DEFENDANT_CRIMINAL": return "被告人";
+            case "VICTIM": return "被害人";
+            case "FAMILY_MEMBER": return "近亲属";
+            case "ADMINISTRATIVE_COUNTERPART": return "行政相对人";
+            case "ADMINISTRATIVE_AUTHORITY": return "行政机关";
+            case "COUNTERCLAIMANT": return "反请求申请人";
+            case "COUNTER_RESPONDENT": return "反请求被申请人";
             default: return role;
         }
     }

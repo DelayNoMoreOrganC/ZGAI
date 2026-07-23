@@ -37,6 +37,24 @@
                 {{ healthStatusLabel(item.status) }}
               </el-tag>
             </div>
+            <div v-for="item in ragHealthItems" :key="item.key" class="status-row">
+              <div>
+                <strong>{{ item.label }}</strong>
+                <span>{{ item.description }}</span>
+              </div>
+              <el-tag :type="healthStatusType(item.status)" effect="plain">
+                {{ healthStatusLabel(item.status) }}
+              </el-tag>
+            </div>
+            <div v-for="item in ocrHealthItems" :key="item.key" class="status-row">
+              <div>
+                <strong>{{ item.label }}</strong>
+                <span>{{ item.description }}</span>
+              </div>
+              <el-tag :type="healthStatusType(item.status)" effect="plain">
+                {{ healthStatusLabel(item.status) }}
+              </el-tag>
+            </div>
           </div>
         </section>
       </el-tab-pane>
@@ -228,6 +246,72 @@
         <section class="tab-panel"><AIConfigPanel /></section>
       </el-tab-pane>
 
+      <el-tab-pane label="隐私治理" name="privacy">
+        <section class="tab-panel privacy-panel" v-loading="privacyLoading">
+          <div class="section-heading">
+            <div>
+              <h3>历史 AI 数据脱敏</h3>
+              <p>清除旧版本遗留的提示词、案件材料和模型回复原文，保留脱敏摘要与校验哈希。</p>
+            </div>
+            <el-tag :type="privacyStatusType" effect="plain">{{ privacyStatusLabel }}</el-tag>
+          </div>
+
+          <div class="metric-strip privacy-metrics">
+            <div><span>待清理调用日志</span><strong>{{ privacyPreview.pendingLogCount || 0 }}</strong></div>
+            <div><span>待清理案件指令</span><strong>{{ privacyPreview.pendingCommandCount || 0 }}</strong></div>
+            <div><span>最近敏感记录</span><strong>{{ formatDateTime(privacyPreview.latestSensitiveRecordAt) }}</strong></div>
+          </div>
+
+          <el-alert
+            v-if="privacyPreview.status === 'CLEAN'"
+            title="当前历史记录已完成脱敏"
+            description="新产生的 AI 日志仅保存脱敏摘要、内容哈希、模型和耗时等运行元数据。"
+            type="success"
+            :closable="false"
+            show-icon
+          />
+
+          <template v-else>
+            <el-alert
+              title="执行前必须保留一份覆盖全部待清理记录的已校验备份"
+              description="该备份仍包含清理前原文，系统会明确标记，必须按受控权限和保留期限管理。"
+              type="warning"
+              :closable="false"
+              show-icon
+            />
+
+            <div class="governance-form">
+              <div class="governance-field">
+                <label>清理前备份</label>
+                <el-select v-model="privacyBackupId" placeholder="请选择已校验备份" style="width: 100%">
+                  <el-option
+                    v-for="backup in eligiblePrivacyBackups"
+                    :key="backup.id"
+                    :label="`${backup.fileName} · ${formatDateTime(backup.backupTime)}`"
+                    :value="backup.id"
+                  />
+                </el-select>
+                <span v-if="!eligiblePrivacyBackups.length" class="field-help">暂无覆盖当前敏感记录的已校验备份，请先创建备份。</span>
+              </div>
+              <div class="governance-field">
+                <label>操作确认</label>
+                <el-input v-model="privacyConfirmation" placeholder="请输入：清理历史AI敏感原文" maxlength="20" />
+                <span class="field-help">执行后不能从业务数据库恢复原文，仅能从受控备份恢复。</span>
+              </div>
+              <div class="governance-actions">
+                <el-button :icon="Download" :loading="privacyBackingUp" @click="handlePrivacyBackup">创建清理前备份</el-button>
+                <el-button
+                  type="danger"
+                  :loading="privacyCleaning"
+                  :disabled="!canExecutePrivacyCleanup"
+                  @click="handlePrivacyCleanup"
+                >执行历史脱敏</el-button>
+              </div>
+            </div>
+          </template>
+        </section>
+      </el-tab-pane>
+
       <el-tab-pane label="数据备份" name="backup">
         <section class="tab-panel" v-loading="backupLoading">
           <div class="metric-strip">
@@ -264,12 +348,29 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="140" fixed="right">
+            <el-table-column label="完整性" width="110">
+              <template #default="{ row }">
+                <el-tag
+                  :type="row.verificationStatus === 'VERIFIED' ? 'success' : row.verificationStatus === 'FAILED' ? 'danger' : 'info'"
+                  effect="plain"
+                >
+                  {{ backupVerificationLabel(row.verificationStatus) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="190" fixed="right">
               <template #default="{ row }">
                 <el-button
                   link
                   type="primary"
+                  :loading="verifyingBackupId === row.id"
                   :disabled="row.backupStatus !== 'SUCCESS'"
+                  @click="handleVerifyBackup(row)"
+                >校验</el-button>
+                <el-button
+                  link
+                  type="primary"
+                  :disabled="row.backupStatus !== 'SUCCESS' || row.verificationStatus !== 'VERIFIED'"
                   @click="handleRestoreBackup(row)"
                 >恢复</el-button>
                 <el-button link type="danger" @click="handleDeleteBackup(row)">删除</el-button>
@@ -363,6 +464,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -379,18 +481,23 @@ import {
 import { getRoleList } from '@/api/role'
 import { getDepartmentList } from '@/api/department'
 import {
+  cleanupHistoricalAiPrivacy,
   createBackup,
   deleteBackup,
   getAuditLogDetail,
   getAuditLogModules,
+  getAiPrivacyCleanupPreview,
   getAuditLogs,
   getBackups,
   getSystemHealthDetails,
-  restoreBackup
+  restoreBackup,
+  verifyBackup
 } from '@/api/system'
 
 const userStore = useUserStore()
-const activeTab = ref('health')
+const route = useRoute()
+const settingsTabs = ['health', 'users', 'roles', 'scope', 'logs', 'ai', 'privacy', 'backup']
+const activeTab = ref(settingsTabs.includes(String(route.query.tab)) ? String(route.query.tab) : 'health')
 
 const healthLoading = ref(false)
 const systemHealth = ref({})
@@ -459,6 +566,7 @@ const selectedAuditLog = ref(null)
 
 const backupLoading = ref(false)
 const backingUp = ref(false)
+const verifyingBackupId = ref(null)
 const backupList = ref([])
 const retentionDays = ref(180)
 const lastBackupTime = computed(() => backupList.value.length
@@ -468,6 +576,28 @@ const backupSize = computed(() => backupList.value.length
   ? formatBytes(backupList.value[0].fileSize)
   : '-')
 
+const privacyLoading = ref(false)
+const privacyBackingUp = ref(false)
+const privacyCleaning = ref(false)
+const privacyPreview = ref({ status: 'CLEAN', pendingLogCount: 0, pendingCommandCount: 0 })
+const privacyBackupId = ref(null)
+const privacyConfirmation = ref('')
+const eligiblePrivacyBackups = computed(() => {
+  const latest = toTimestamp(privacyPreview.value.latestSensitiveRecordAt)
+  return backupList.value.filter(backup => backup.backupStatus === 'SUCCESS'
+    && backup.verificationStatus === 'VERIFIED'
+    && toTimestamp(backup.backupTime) >= latest)
+})
+const canExecutePrivacyCleanup = computed(() => privacyPreview.value.status !== 'CLEAN'
+  && privacyBackupId.value
+  && privacyConfirmation.value === '清理历史AI敏感原文')
+const privacyStatusLabel = computed(() => ({
+  CLEAN: '无需清理', READY: '可以执行', BACKUP_REQUIRED: '需要备份'
+}[privacyPreview.value.status] || '待检查'))
+const privacyStatusType = computed(() => ({
+  CLEAN: 'success', READY: 'warning', BACKUP_REQUIRED: 'danger'
+}[privacyPreview.value.status] || 'info'))
+
 const storageHealthItems = computed(() => {
   const storage = systemHealth.value.storage || {}
   const labels = { caseLibrary: '案件文件库', knowledgeLibrary: '知识库原件', backup: '数据库备份' }
@@ -475,8 +605,63 @@ const storageHealthItems = computed(() => {
     .map(key => ({ key, label: labels[key], ...(storage[key] || {}) }))
 })
 
+const ragHealthItems = computed(() => {
+  const rag = systemHealth.value.rag || {}
+  const embedding = rag.embedding || {}
+  const vectorStore = rag.vectorStore || {}
+  const dimensionText = value => Number(value) > 0 ? `${value} 维` : '维度待确认'
+  return [
+    {
+      key: 'rag',
+      label: '知识库检索',
+      status: String(rag.status || '').toLowerCase(),
+      description: rag.mode === 'VECTOR_READY' ? '本地语义检索已启用' : '当前使用关键词检索降级模式'
+    },
+    {
+      key: 'embedding',
+      label: '本地 Embedding',
+      status: embedding.status,
+      description: embedding.configured
+        ? `${embedding.provider || '本地'} · ${embedding.model || '模型待确认'} · ${dimensionText(embedding.configuredDimension)}`
+        : '未配置本地向量模型，不会自动调用云端'
+    },
+    {
+      key: 'qdrant',
+      label: 'Qdrant 向量库',
+      status: vectorStore.status,
+      description: `${vectorStore.collection || '知识集合'} · ${dimensionText(vectorStore.actualDimension || vectorStore.configuredDimension)}`
+    }
+  ]
+})
+
+const ocrHealthItems = computed(() => {
+  const ocr = systemHealth.value.ocr || {}
+  const capabilityStatus = ready => ready ? 'ready' : 'unavailable'
+  const language = ocr.language || '语言待配置'
+  return [
+    {
+      key: 'ocr-text',
+      label: '文字文档提取',
+      status: capabilityStatus(ocr.textDocumentExtractionReady),
+      description: '文字型 PDF、DOCX、TXT 与 MD'
+    },
+    {
+      key: 'ocr-image',
+      label: '图片 OCR',
+      status: capabilityStatus(ocr.imageOcrReady),
+      description: `Tesseract · ${language}`
+    },
+    {
+      key: 'ocr-scanned-pdf',
+      label: '扫描 PDF OCR',
+      status: capabilityStatus(ocr.scannedPdfOcrReady),
+      description: ocr.message || '等待本地 OCR 能力检查'
+    }
+  ]
+})
+
 const permissionLabels = {
-  CASE_CREATE: '新建立案', CASE_VIEW: '查看案件', CASE_EDIT: '编辑案件', CASE_DELETE: '删除案件', CASE_ARCHIVE: '归档案件',
+  CASE_CREATE: '新建立案', CASE_VIEW: '查看案件', CASE_EDIT: '编辑案件', CASE_DELETE: '删除案件', CASE_ARCHIVE: '归档案件', CASE_ARCHIVE_REVIEW: '行政复核归档',
   CASE_IMPORT: '导入案件', CASE_EXPORT: '导出案件', CLIENT_CREATE: '新建客户', CLIENT_VIEW: '查看客户', CLIENT_EDIT: '编辑客户',
   CLIENT_DELETE: '删除客户', CLIENT_IMPORT: '导入客户', CLIENT_EXPORT: '导出客户', DOCUMENT_VIEW: '查看文档', DOCUMENT_EDIT: '编辑文档',
   DOCUMENT_DELETE: '删除文档', APPROVAL_VIEW: '查看审批', APPROVAL_EDIT: '处理审批', APPROVAL_DELETE: '删除审批', TODO_VIEW: '查看待办',
@@ -487,7 +672,7 @@ const permissionLabels = {
 const moduleLabels = {
   BackupController: '数据备份', UserController: '用户管理', RoleController: '角色权限',
   CaseController: '案件管理', ClientController: '客户管理', ApprovalController: '审批管理',
-  CaseDocumentController: '案件文件', FinanceController: '财务管理'
+  CaseDocumentController: '案件文件', FinanceController: '财务管理', AIPrivacyController: 'AI 隐私治理'
 }
 
 const loadSystemHealth = async () => {
@@ -712,6 +897,76 @@ const handleBackupNow = async () => {
   }
 }
 
+const loadPrivacyGovernance = async () => {
+  privacyLoading.value = true
+  try {
+    const [previewResponse, backupsResponse] = await Promise.all([
+      getAiPrivacyCleanupPreview(),
+      getBackups()
+    ])
+    privacyPreview.value = previewResponse.data || { status: 'CLEAN' }
+    backupList.value = backupsResponse.data || []
+    privacyBackupId.value = privacyPreview.value.eligibleBackupId || null
+  } catch {
+    privacyPreview.value = { status: 'UNAVAILABLE', pendingLogCount: 0, pendingCommandCount: 0 }
+    privacyBackupId.value = null
+    ElMessage.error('读取 AI 隐私治理状态失败')
+  } finally {
+    privacyLoading.value = false
+  }
+}
+
+const handlePrivacyBackup = async () => {
+  privacyBackingUp.value = true
+  try {
+    await createBackup()
+    ElMessage.success('清理前备份已创建并完成校验')
+    await loadPrivacyGovernance()
+  } catch {
+    ElMessage.error('创建清理前备份失败')
+  } finally {
+    privacyBackingUp.value = false
+  }
+}
+
+const handlePrivacyCleanup = async () => {
+  if (!canExecutePrivacyCleanup.value) return
+  privacyCleaning.value = true
+  try {
+    const response = await cleanupHistoricalAiPrivacy({
+      backupId: privacyBackupId.value,
+      confirmation: privacyConfirmation.value
+    })
+    const result = response.data || {}
+    ElMessage.success(`已脱敏 ${Number(result.cleanedLogCount || 0) + Number(result.cleanedCommandCount || 0)} 条历史记录`)
+    privacyConfirmation.value = ''
+    await loadPrivacyGovernance()
+  } catch {
+    ElMessage.error('历史 AI 数据脱敏失败')
+  } finally {
+    privacyCleaning.value = false
+  }
+}
+
+const backupVerificationLabel = status => ({
+  VERIFIED: '已校验',
+  FAILED: '校验失败'
+}[status] || '未校验')
+
+const handleVerifyBackup = async (backup) => {
+  verifyingBackupId.value = backup.id
+  try {
+    await verifyBackup(backup.id)
+    ElMessage.success('备份完整性校验通过')
+    await loadBackups()
+  } catch {
+    ElMessage.error('备份完整性校验失败')
+    await loadBackups()
+  } finally {
+    verifyingBackupId.value = null
+  }
+}
+
 const handleRestoreBackup = async (backup) => {
   try {
     await ElMessageBox.prompt(`恢复“${backup.fileName}”将覆盖当前数据库。请输入 RESTORE 继续。`, '恢复备份', {
@@ -743,10 +998,12 @@ const handleDeleteBackup = async (backup) => {
 }
 
 const healthStatusLabel = status => ({
-  ready: '正常', degraded: '部分降级', readonly: '只读', missing: '目录缺失', unavailable: '不可用'
+  ready: '正常', configured: '已配置', degraded: '部分降级', readonly: '只读', missing: '未配置',
+  unavailable: '不可用', incompatible: '维度不兼容', standby: '等待配置', disabled: '已停用'
 }[status] || '待检查')
 const healthStatusType = status => ({
-  ready: 'success', degraded: 'warning', readonly: 'warning', missing: 'danger', unavailable: 'danger'
+  ready: 'success', configured: 'info', degraded: 'warning', readonly: 'warning', missing: 'danger',
+  unavailable: 'danger', incompatible: 'danger', standby: 'info', disabled: 'info'
 }[status] || 'info')
 const permissionLabel = code => permissionLabels[code] || code
 const moduleLabel = module => moduleLabels[module] || module || '-'
@@ -775,17 +1032,25 @@ const formatDateTime = value => {
     : new Date(value)
   return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString('zh-CN')
 }
+const toTimestamp = value => {
+  if (!value) return 0
+  const date = Array.isArray(value)
+    ? new Date(value[0], (value[1] || 1) - 1, value[2] || 1, value[3] || 0, value[4] || 0, value[5] || 0)
+    : new Date(value)
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime()
+}
 const isCancel = error => error === 'cancel' || error === 'close'
 
 watch(activeTab, tab => {
+  if (tab === 'health') loadSystemHealth()
   if (tab === 'users' && !userList.value.length) loadUsers(1)
   if (tab === 'roles') loadRoles()
   if (tab === 'logs') Promise.all([loadAuditModules(), loadAuditLogs(1)])
+  if (tab === 'privacy') loadPrivacyGovernance()
   if (tab === 'backup') loadBackups()
-})
+}, { immediate: true })
 
 onMounted(() => {
-  loadSystemHealth()
   Promise.all([loadDepartments(), loadRoles()])
 })
 </script>
@@ -940,6 +1205,53 @@ onMounted(() => {
     }
   }
 
+  .privacy-panel {
+    max-width: 960px;
+  }
+
+  .privacy-metrics {
+    margin-top: 22px;
+  }
+
+  .governance-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 22px;
+    padding-top: 20px;
+    border-top: 1px solid #e7e9ed;
+  }
+
+  .governance-field {
+    min-width: 0;
+
+    label,
+    .field-help {
+      display: block;
+    }
+
+    label {
+      margin-bottom: 8px;
+      color: #30343a;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .field-help {
+      margin-top: 7px;
+      color: #777d86;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+  }
+
+  .governance-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
   @media (max-width: 760px) {
     .settings-tabs {
       padding: 12px;
@@ -953,6 +1265,19 @@ onMounted(() => {
     .scope-row {
       align-items: flex-start;
       flex-direction: column;
+    }
+
+    .governance-form {
+      grid-template-columns: 1fr;
+    }
+
+    .governance-actions {
+      justify-content: stretch;
+
+      :deep(.el-button) {
+        flex: 1;
+        margin-left: 0;
+      }
     }
   }
 }

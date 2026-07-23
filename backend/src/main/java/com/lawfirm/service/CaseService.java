@@ -7,6 +7,7 @@ import com.lawfirm.exception.DuplicateResourceException;
 import com.lawfirm.exception.InvalidParameterException;
 import com.lawfirm.exception.ResourceNotFoundException;
 import com.lawfirm.repository.*;
+import com.lawfirm.util.CaseFeeFormatter;
 import com.lawfirm.util.PageResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -34,6 +36,9 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class CaseService {
+
+    private static final Set<String> SUPPORTED_CASE_TYPES = Set.of(
+            "CIVIL", "ARBITRATION", "CRIMINAL", "ADMINISTRATIVE", "NON_LITIGATION", "CONSULTANT");
 
     private final CaseRepository caseRepository;
     private final PartyService partyService;
@@ -54,6 +59,7 @@ public class CaseService {
     private final ClientRepository clientRepository;
     private final ApprovalService approvalService;
     private final ObjectMapper objectMapper;
+    private final UserPermissionService userPermissionService;
 
     /**
      * 创建案件
@@ -70,6 +76,7 @@ public class CaseService {
         if (request.getOwnerId() == null) {
             throw new InvalidParameterException("ownerId", "主办律师不能为空");
         }
+        hydrateConsultantClient(request, currentUserId);
         validateFilingRequest(request);
 
         // 查重检查
@@ -101,7 +108,8 @@ public class CaseService {
         caseEntity.setCaseReason(request.getCaseReason());
         caseEntity.setCourt(request.getCourt());
         caseEntity.setAcceptanceDate(request.getAcceptanceDate() != null ? request.getAcceptanceDate() : LocalDate.now());
-        caseEntity.setFilingDate(request.getFilingDate());
+        // 立案日期由主任终审通过时写入，申请人不得预填。
+        caseEntity.setFilingDate(null);
         caseEntity.setDeadlineDate(request.getDeadlineDate());
         caseEntity.setCommissionDate(request.getCommissionDate());
         caseEntity.setSuspectName(request.getSuspectName());
@@ -110,6 +118,17 @@ public class CaseService {
         caseEntity.setAgencyType(request.getAgencyType());
         caseEntity.setServiceStartDate(request.getServiceStartDate());
         caseEntity.setServiceEndDate(request.getServiceEndDate());
+        caseEntity.setConsultantUnitName(request.getConsultantUnitName());
+        caseEntity.setConsultantContactName(request.getConsultantContactName());
+        caseEntity.setConsultantContactDepartment(request.getConsultantContactDepartment());
+        caseEntity.setConsultantContactTitle(request.getConsultantContactTitle());
+        caseEntity.setConsultantContactPhone(request.getConsultantContactPhone());
+        caseEntity.setConsultantContactEmail(request.getConsultantContactEmail());
+        caseEntity.setConsultantServiceScope(request.getConsultantServiceScope());
+        caseEntity.setConsultantResponseRequirement(request.getConsultantResponseRequirement());
+        caseEntity.setConsultantIncludedServices(request.getConsultantIncludedServices());
+        caseEntity.setConsultantExcludedServices(request.getConsultantExcludedServices());
+        caseEntity.setRenewalReminderDate(request.getRenewalReminderDate());
         caseEntity.setTrialStages(request.getTrialStages());
         caseEntity.setCourtCaseNumber(request.getCourtCaseNumber());
         caseEntity.setHearingDate(request.getHearingDate());
@@ -128,10 +147,14 @@ public class CaseService {
         // 设置初始状态：新建案件进入立案审批流程，审批通过后才转为正式在办案件
         caseEntity.setStatus(CaseStatus.PENDING_APPROVAL.getCode());
         caseEntity.setOwnerId(request.getOwnerId());
+        caseEntity.setClientId(resolvePrimaryClientId(request));
 
         // 保存案件
         caseEntity = caseRepository.save(caseEntity);
         log.info("[DEBUG] Case saved: id={}, deadlineDate={}", caseEntity.getId(), caseEntity.getDeadlineDate());
+
+        // 在写入本案当事人前完成委托方初筛，避免本案自身被误判为历史命中。
+        int conflictCheckCount = createFilingConflictChecks(request, caseEntity.getId(), currentUserId);
 
         // 2. 创建当事人
         List<Party> parties = partyService.batchCreate(request.getParties(), caseEntity.getId());
@@ -151,10 +174,8 @@ public class CaseService {
         // 4. 创建案件阶段流程
         caseStageService.initializeStages(caseEntity.getId(), request.getCaseType());
 
-        // 5. 自动生成待办事项（根据流程模板）
-        generateTodosFromTemplate(caseEntity, request);
-
-        // 5.1 如果有审限时间，自动生成审限届满待办
+        // 5. 如果有审限时间，自动生成审限届满待办。阶段待办由 CaseStageService
+        // 在阶段进入时按类型生成，避免新建案件一次性产生全部未来任务。
         log.info("[DEBUG] Checking deadline: caseId={}, deadlineDate={}, isNull={}",
                 caseEntity.getId(), caseEntity.getDeadlineDate(), caseEntity.getDeadlineDate() == null);
         if (caseEntity.getDeadlineDate() != null) {
@@ -168,6 +189,7 @@ public class CaseService {
                 caseEntity.getId(),
                 "CASE_FILING_SUBMITTED",
                 "立案申请已提交，案号：" + caseEntity.getCaseNumber()
+                        + (conflictCheckCount > 0 ? "；已生成 " + conflictCheckCount + " 份待行政复核的利冲初筛记录" : "；未识别到委托方，需行政补充利冲审查")
         );
 
         submitCaseFilingApproval(caseEntity, currentUserId);
@@ -191,15 +213,24 @@ public class CaseService {
     }
 
     private void validateFilingRequest(CaseCreateRequest request) {
+        if (!SUPPORTED_CASE_TYPES.contains(request.getCaseType())) {
+            throw new InvalidParameterException("caseType", "不支持的案件类型");
+        }
         if ("CRIMINAL".equals(request.getCaseType()) && !hasText(request.getSuspectName())) {
             throw new InvalidParameterException("suspectName", "刑事案件犯罪嫌疑人不能为空");
         }
         if ("CONSULTANT".equals(request.getCaseType())) {
+            if (!hasText(request.getConsultantUnitName())) {
+                throw new InvalidParameterException("consultantUnitName", "顾问单位不能为空");
+            }
             if (request.getServiceStartDate() == null) {
                 throw new InvalidParameterException("serviceStartDate", "顾问案件合同服务开始时间不能为空");
             }
             if (request.getServiceEndDate() == null) {
                 throw new InvalidParameterException("serviceEndDate", "顾问案件合同服务结束时间不能为空");
+            }
+            if (request.getServiceStartDate().isAfter(request.getServiceEndDate())) {
+                throw new InvalidParameterException("serviceEndDate", "顾问服务结束时间不能早于开始时间");
             }
         }
         if ("FIXED".equals(request.getFeeMethod()) || "BASE_PLUS_CONTINGENT".equals(request.getFeeMethod())) {
@@ -221,6 +252,73 @@ public class CaseService {
             throw new InvalidParameterException("freeReason", "免费代理案件必须填写免费理由");
         }
         validateAllocation(request.getAllocationJson());
+    }
+
+    private void hydrateConsultantClient(CaseCreateRequest request, Long currentUserId) {
+        if (!"CONSULTANT".equals(request.getCaseType()) || request.getConsultantClientId() == null) {
+            return;
+        }
+        clientService.assertClientVisible(request.getConsultantClientId(), currentUserId);
+        Client client = clientRepository.findById(request.getConsultantClientId())
+                .filter(item -> !Boolean.TRUE.equals(item.getDeleted()))
+                .orElseThrow(() -> new InvalidParameterException("consultantClientId", "顾问单位客户不存在"));
+        if ("个人".equals(client.getClientType())) {
+            throw new InvalidParameterException("consultantClientId", "顾问单位不能选择个人客户");
+        }
+        request.setConsultantUnitName(client.getClientName());
+        if (request.getClientIds() == null || request.getClientIds().isEmpty()) {
+            request.setClientIds(Collections.singletonList(client.getId()));
+        }
+    }
+
+    private Long resolvePrimaryClientId(CaseCreateRequest request) {
+        if ("CONSULTANT".equals(request.getCaseType()) && request.getConsultantClientId() != null) {
+            return request.getConsultantClientId();
+        }
+        if (request.getClientIds() == null || request.getClientIds().isEmpty()) return null;
+        return request.getClientIds().get(0);
+    }
+
+    private int createFilingConflictChecks(CaseCreateRequest request, Long caseId, Long currentUserId) {
+        Map<String, ClientDTO> subjects = new LinkedHashMap<>();
+        if (request.getParties() != null) {
+            request.getParties().stream()
+                    .filter(Objects::nonNull)
+                    .filter(party -> Boolean.TRUE.equals(party.getIsClient()))
+                    .filter(party -> hasText(party.getName()))
+                    .forEach(party -> {
+                        ClientDTO dto = new ClientDTO();
+                        dto.setClientName(party.getName().trim());
+                        dto.setClientType("ORGANIZATION".equalsIgnoreCase(party.getPartyType()) ? "单位" : "个人");
+                        dto.setClientRelationship("委托人");
+                        dto.setClientRole(party.getPartyRole());
+                        dto.setIdCard(party.getIdCard());
+                        dto.setCreditCode(party.getCreditCode());
+                        subjects.putIfAbsent(dto.getClientName().toLowerCase(Locale.ROOT), dto);
+                    });
+        }
+
+        if (subjects.isEmpty()) {
+            Long primaryClientId = resolvePrimaryClientId(request);
+            if (primaryClientId != null) {
+                clientRepository.findById(primaryClientId)
+                        .filter(client -> !Boolean.TRUE.equals(client.getDeleted()))
+                        .ifPresent(client -> {
+                            ClientDTO dto = new ClientDTO();
+                            dto.setClientName(client.getClientName());
+                            dto.setClientType(client.getClientType());
+                            dto.setClientRelationship(client.getClientRelationship());
+                            dto.setClientRole(client.getClientRole());
+                            dto.setIdCard(client.getIdCard());
+                            dto.setCreditCode(client.getCreditCode());
+                            subjects.put(dto.getClientName().trim().toLowerCase(Locale.ROOT), dto);
+                        });
+            }
+        }
+
+        subjects.values().forEach(subject ->
+                clientService.checkConflictPreviewAndRecord(subject, currentUserId, caseId));
+        return subjects.size();
     }
 
     private void validateAllocation(String allocationJson) {
@@ -258,12 +356,15 @@ public class CaseService {
     }
 
     private void submitCaseFilingApproval(Case caseEntity, Long currentUserId) {
-        Long approverId = findUserIdByPosition("行政管理");
+        Long approverId = userPermissionService.findFirstActiveUserByPermission(
+                        "CASE_FILING_REVIEW", "CASE_FILING_ADMIN")
+                .map(User::getId)
+                .orElse(null);
         if (approverId == null) {
             caseTimelineService.createSystemTimeline(
                     caseEntity.getId(),
                     "CASE_FILING_APPROVER_MISSING",
-                    "未找到身份类别为“行政管理1/行政管理2”的审批人，请在用户管理中配置后转交审批"
+                    "未找到具有立案行政初审权限的账号，请在角色权限中配置后重新提交"
             );
             return;
         }
@@ -283,27 +384,6 @@ public class CaseService {
         );
     }
 
-    private Long findUserIdByPosition(String position) {
-        return userRepository.findAll().stream()
-                .filter(user -> !Boolean.TRUE.equals(user.getDeleted()))
-                .filter(user -> user.getStatus() == null || user.getStatus() == 1)
-                .filter(user -> matchesPosition(user.getPosition(), position))
-                .sorted(Comparator.comparing((User user) -> user.getDepartmentId() == null))
-                .map(User::getId)
-                .findFirst()
-                .orElse(null);
-    }
-
-    private boolean matchesPosition(String actual, String expected) {
-        if (!hasText(actual) || !hasText(expected)) {
-            return false;
-        }
-        if ("行政管理".equals(expected)) {
-            return actual.startsWith("行政管理");
-        }
-        return expected.equals(actual);
-    }
-
     private String buildFilingApprovalContent(Case caseEntity) {
         return "请进行利冲审查并在审批意见中填写审查结论。"
                 + "\n案件名称：" + caseEntity.getCaseName()
@@ -311,24 +391,8 @@ public class CaseService {
                 + "\n案件类型：" + getCaseTypeDesc(caseEntity.getCaseType())
                 + "\n业务类型：" + (caseEntity.getBusinessType() == null ? "" : caseEntity.getBusinessType())
                 + "\n案由：" + (caseEntity.getCaseReason() == null ? "" : caseEntity.getCaseReason())
-                + "\n收费方式：" + getFeeMethodDesc(caseEntity.getFeeMethod())
+                + "\n收费方式：" + CaseFeeFormatter.format(caseEntity)
                 + "\n主办律师：" + getUserName(caseEntity.getOwnerId());
-    }
-
-    private String getFeeMethodDesc(String feeMethod) {
-        if (feeMethod == null) {
-            return "";
-        }
-        switch (feeMethod) {
-            case "FIXED": return "固定收费";
-            case "CONTINGENT": return "风险收费";
-            case "BASE_PLUS_CONTINGENT":
-            case "FIXED_PLUS_CONTINGENT": return "基础+风险";
-            case "FREE": return "免费代理";
-            case "UNDETERMINED": return "未确定";
-            case "OTHER": return "其他";
-            default: return feeMethod;
-        }
     }
 
     /**
@@ -342,6 +406,10 @@ public class CaseService {
         // 保存原始状态，用于检测变更
         String originalStatus = caseEntity.getStatus();
         String originalStage = caseEntity.getCurrentStage();
+
+        if (request.getCaseType() != null && !request.getCaseType().equals(caseEntity.getCaseType())) {
+            throw new InvalidParameterException("caseType", "案件类型建立后不可直接变更，以免既有流程和文件目录失配");
+        }
 
         // 更新基本信息
         if (request.getCaseName() != null) {
@@ -362,9 +430,6 @@ public class CaseService {
         if (request.getAcceptanceDate() != null) {
             caseEntity.setAcceptanceDate(request.getAcceptanceDate());
         }
-        if (request.getFilingDate() != null) {
-            caseEntity.setFilingDate(request.getFilingDate());
-        }
         if (request.getDeadlineDate() != null) {
             caseEntity.setDeadlineDate(request.getDeadlineDate());
         }
@@ -377,6 +442,18 @@ public class CaseService {
         if (request.getAgencyType() != null) caseEntity.setAgencyType(request.getAgencyType());
         if (request.getServiceStartDate() != null) caseEntity.setServiceStartDate(request.getServiceStartDate());
         if (request.getServiceEndDate() != null) caseEntity.setServiceEndDate(request.getServiceEndDate());
+        if (request.getConsultantClientId() != null) caseEntity.setClientId(request.getConsultantClientId());
+        if (request.getConsultantUnitName() != null) caseEntity.setConsultantUnitName(request.getConsultantUnitName());
+        if (request.getConsultantContactName() != null) caseEntity.setConsultantContactName(request.getConsultantContactName());
+        if (request.getConsultantContactDepartment() != null) caseEntity.setConsultantContactDepartment(request.getConsultantContactDepartment());
+        if (request.getConsultantContactTitle() != null) caseEntity.setConsultantContactTitle(request.getConsultantContactTitle());
+        if (request.getConsultantContactPhone() != null) caseEntity.setConsultantContactPhone(request.getConsultantContactPhone());
+        if (request.getConsultantContactEmail() != null) caseEntity.setConsultantContactEmail(request.getConsultantContactEmail());
+        if (request.getConsultantServiceScope() != null) caseEntity.setConsultantServiceScope(request.getConsultantServiceScope());
+        if (request.getConsultantResponseRequirement() != null) caseEntity.setConsultantResponseRequirement(request.getConsultantResponseRequirement());
+        if (request.getConsultantIncludedServices() != null) caseEntity.setConsultantIncludedServices(request.getConsultantIncludedServices());
+        if (request.getConsultantExcludedServices() != null) caseEntity.setConsultantExcludedServices(request.getConsultantExcludedServices());
+        if (request.getRenewalReminderDate() != null) caseEntity.setRenewalReminderDate(request.getRenewalReminderDate());
         if (request.getTrialStages() != null) caseEntity.setTrialStages(request.getTrialStages());
         if (request.getCourtCaseNumber() != null) caseEntity.setCourtCaseNumber(request.getCourtCaseNumber());
         if (request.getHearingDate() != null) caseEntity.setHearingDate(request.getHearingDate());
@@ -432,22 +509,26 @@ public class CaseService {
         }
 
         // 更新协办律师和助理
-        if (request.getCoOwnerIds() != null && !request.getCoOwnerIds().isEmpty()) {
+        if (request.getCoOwnerIds() != null) {
             // 先移除所有协办律师
             List<CaseMember> existingCoOwners = caseMemberService.getByCaseIdAndType(caseEntity.getId(), "CO_OWNER");
             existingCoOwners.forEach(member -> caseMemberService.removeMember(caseEntity.getId(), member.getUserId()));
-            // 添加新协办律师
-            caseMemberService.addMembers(caseEntity.getId(), request.getCoOwnerIds(), "CO_OWNER");
+            if (!request.getCoOwnerIds().isEmpty()) {
+                caseMemberService.addMembers(caseEntity.getId(), request.getCoOwnerIds(), "CO_OWNER");
+            }
             log.info("更新协办律师：{}人", request.getCoOwnerIds().size());
         }
-        if (request.getAssistantIds() != null && !request.getAssistantIds().isEmpty()) {
+        if (request.getAssistantIds() != null) {
             // 先移除所有助理
             List<CaseMember> existingAssistants = caseMemberService.getByCaseIdAndType(caseEntity.getId(), "ASSISTANT");
             existingAssistants.forEach(member -> caseMemberService.removeMember(caseEntity.getId(), member.getUserId()));
-            // 添加新助理
-            caseMemberService.addMembers(caseEntity.getId(), request.getAssistantIds(), "ASSISTANT");
+            if (!request.getAssistantIds().isEmpty()) {
+                caseMemberService.addMembers(caseEntity.getId(), request.getAssistantIds(), "ASSISTANT");
+            }
             log.info("更新助理：{}人", request.getAssistantIds().size());
         }
+
+        validateUpdatedCase(caseEntity, request);
 
         caseRepository.save(caseEntity);
 
@@ -483,11 +564,39 @@ public class CaseService {
         return getCaseDetail(caseId);
     }
 
+    private void validateUpdatedCase(Case caseEntity, CaseUpdateRequest request) {
+        if (!SUPPORTED_CASE_TYPES.contains(caseEntity.getCaseType())) {
+            throw new InvalidParameterException("caseType", "不支持的案件类型");
+        }
+        if ("CRIMINAL".equals(caseEntity.getCaseType()) && request.getSuspectName() != null
+                && !hasText(caseEntity.getSuspectName())) {
+            throw new InvalidParameterException("suspectName", "刑事案件犯罪嫌疑人/被告人不能为空");
+        }
+        boolean consultantFieldsChanged = request.getConsultantUnitName() != null
+                || request.getServiceStartDate() != null || request.getServiceEndDate() != null;
+        if ("CONSULTANT".equals(caseEntity.getCaseType()) && consultantFieldsChanged) {
+            if (!hasText(caseEntity.getConsultantUnitName())) {
+                throw new InvalidParameterException("consultantUnitName", "顾问单位不能为空");
+            }
+            if (caseEntity.getServiceStartDate() == null || caseEntity.getServiceEndDate() == null) {
+                throw new InvalidParameterException("serviceStartDate", "顾问案件服务期限不能为空");
+            }
+            if (caseEntity.getServiceStartDate().isAfter(caseEntity.getServiceEndDate())) {
+                throw new InvalidParameterException("serviceEndDate", "顾问服务结束时间不能早于开始时间");
+            }
+        }
+    }
+
     /**
      * 获取案件列表
      */
     @Transactional(readOnly = true)
     public PageResult<CaseListVO> getCaseList(CaseQueryRequest request, Long currentUserId) {
+        LocalDate startDate = parseQueryDate(request.getStartDate(), "startDate");
+        LocalDate endDate = parseQueryDate(request.getEndDate(), "endDate");
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            throw new InvalidParameterException("dateRange", "开始日期不能晚于结束日期");
+        }
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
         boolean hasAllCaseViewAccess = hasAllCaseViewAccess(currentUser);
@@ -562,6 +671,12 @@ public class CaseService {
             if (hasText(request.getCourt())) {
                 predicates.add(cb.like(root.get("court"), "%" + request.getCourt() + "%"));
             }
+            if (startDate != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("filingDate"), startDate));
+            }
+            if (endDate != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("filingDate"), endDate));
+            }
             if (hasText(request.getKeyword())) {
                 String keyword = "%" + request.getKeyword() + "%";
                 javax.persistence.criteria.Predicate nameCondition = cb.like(root.get("caseName"), keyword);
@@ -595,8 +710,9 @@ public class CaseService {
         Page<Case> page = caseRepository.findAll(spec, pageable);
 
         // 转换为VO
+        CaseActionPermissions actionPermissions = resolveCaseActionPermissions(currentUser);
         List<CaseListVO> records = page.getContent().stream()
-                .map(this::toListVO)
+                .map(caseEntity -> toListVO(caseEntity, currentUser, actionPermissions))
                 .collect(Collectors.toList());
 
         return PageResult.of(
@@ -609,6 +725,17 @@ public class CaseService {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private LocalDate parseQueryDate(String value, String parameter) {
+        if (!hasText(value)) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(value.trim());
+        } catch (DateTimeParseException e) {
+            throw new InvalidParameterException(parameter, "日期格式应为 YYYY-MM-DD");
+        }
     }
 
     /**
@@ -639,7 +766,7 @@ public class CaseService {
     }
 
     private boolean isCaseFilingAdministrator(User user) {
-        return user != null && "田颖思".equals(user.getRealName());
+        return userPermissionService.hasPermission(user, "CASE_FILING_MANAGE");
     }
 
     private List<Long> getDepartmentScopedUserIds(User currentUser) {
@@ -724,7 +851,10 @@ public class CaseService {
         // 设置案件程序列表
         vo.setProcedures(caseProcedureService.getByCaseId(caseId));
 
-        vo.setClientIds(resolveClientIds(caseEntity, parties));
+        List<Long> clientIds = resolveClientIds(caseEntity, parties);
+        vo.setClientIds(clientIds);
+        vo.setClientName(resolvePrimaryClientName(caseEntity, clientIds, parties));
+        vo.setConflictChecks(clientService.getConflictCheckRecordsByCaseId(caseId, null));
 
         // 设置阶段进度
         vo.setStageProgress(caseStageService.getStageProgress(caseId));
@@ -735,7 +865,25 @@ public class CaseService {
     @Transactional(readOnly = true)
     public CaseDetailVO getCaseDetail(Long caseId, Long currentUserId) {
         assertCaseVisible(caseId, currentUserId);
-        return getCaseDetail(caseId);
+        CaseDetailVO vo = getCaseDetail(caseId);
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
+        Case caseEntity = caseRepository.findById(caseId)
+                .orElseThrow(() -> new ResourceNotFoundException("案件", caseId));
+        CaseActionPermissions actionPermissions = resolveCaseActionPermissions(currentUser);
+        boolean manageable = isCaseManageableByUser(
+                caseEntity, currentUser, actionPermissions.canManageFilingCases);
+        boolean editable = manageable
+                && !CaseStatus.CLOSED.getCode().equals(caseEntity.getStatus())
+                && !CaseStatus.ARCHIVED.getCode().equals(caseEntity.getStatus());
+        vo.setCanEdit(editable && actionPermissions.canEdit);
+        vo.setCanDelete(manageable && actionPermissions.canDelete);
+        vo.setCanArchive(manageable
+                && CaseStatus.CLOSED.getCode().equals(caseEntity.getStatus())
+                && actionPermissions.canArchive);
+        vo.setCanChangeStatus(editable && actionPermissions.canEdit);
+        vo.setConflictChecks(clientService.getConflictCheckRecordsByCaseId(caseId, currentUserId));
+        return vo;
     }
 
     @Transactional(readOnly = true)
@@ -747,42 +895,82 @@ public class CaseService {
 
     @Transactional(readOnly = true)
     public void assertCaseEditable(Long caseId, Long currentUserId) {
-        Case caseEntity = caseRepository.findById(caseId)
-                .orElseThrow(() -> new ResourceNotFoundException("案件", caseId));
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
+        if (isCaseEditableByUser(caseId, currentUser)) {
+            return;
+        }
+        Case caseEntity = caseRepository.findById(caseId)
+                .orElseThrow(() -> new ResourceNotFoundException("案件", caseId));
         if ("CLOSED".equals(caseEntity.getStatus()) || "ARCHIVED".equals(caseEntity.getStatus())) {
             throw new InvalidParameterException("caseId", "案件已结案或归档，案件信息已锁定");
-        }
-        if (isDevelopmentAdmin(currentUser) || "主任".equals(currentUser.getPosition())
-                || isCaseFilingAdministrator(currentUser)) {
-            return;
         }
         if (isAdministrativeUser(currentUser)) {
             throw new InvalidParameterException("caseId", "行政管理账号可查看全案，但无权直接修改案件信息");
         }
-        if (Objects.equals(caseEntity.getOwnerId(), currentUserId)) {
-            return;
-        }
-        List<CaseMember> members = caseMemberRepository.findByCaseIdAndDeletedFalse(caseId);
-        if (members.stream().map(CaseMember::getUserId).anyMatch(currentUserId::equals)) {
-            return;
-        }
-        if (isDepartmentManager(currentUser) && currentUser.getDepartmentId() != null) {
-            User owner = userRepository.findById(caseEntity.getOwnerId()).orElse(null);
-            boolean ownerInDepartment = owner != null
-                    && Objects.equals(owner.getDepartmentId(), currentUser.getDepartmentId());
-            boolean memberInDepartment = members.stream()
-                    .map(CaseMember::getUserId)
-                    .map(userRepository::findById)
-                    .filter(Optional::isPresent)
-                    .map(Optional::get)
-                    .anyMatch(user -> Objects.equals(user.getDepartmentId(), currentUser.getDepartmentId()));
-            if (ownerInDepartment || memberInDepartment) {
-                return;
-            }
-        }
         throw new InvalidParameterException("caseId", "无权修改非本人或非本部门案件");
+    }
+
+    @Transactional(readOnly = true)
+    public void assertCaseManageable(Long caseId, Long currentUserId) {
+        Case caseEntity = caseRepository.findById(caseId)
+                .orElseThrow(() -> new ResourceNotFoundException("案件", caseId));
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
+        if (isCaseManageableByUser(caseEntity, currentUser)) {
+            return;
+        }
+        if (isAdministrativeUser(currentUser)) {
+            throw new InvalidParameterException("caseId", "行政管理账号可查看全案，但无权执行该案件操作");
+        }
+        throw new InvalidParameterException("caseId", "无权操作非本人或非本部门案件");
+    }
+
+    private boolean isCaseEditableByUser(Long caseId, User currentUser) {
+        Case caseEntity = caseRepository.findById(caseId)
+                .orElseThrow(() -> new ResourceNotFoundException("案件", caseId));
+        if ("CLOSED".equals(caseEntity.getStatus()) || "ARCHIVED".equals(caseEntity.getStatus())) {
+            return false;
+        }
+        return isCaseManageableByUser(caseEntity, currentUser);
+    }
+
+    private boolean isCaseManageableByUser(Case caseEntity, User currentUser) {
+        if (isDevelopmentAdmin(currentUser) || "主任".equals(currentUser.getPosition())) {
+            return true;
+        }
+        return isCaseManageableByUser(caseEntity, currentUser, isCaseFilingAdministrator(currentUser));
+    }
+
+    private boolean isCaseManageableByUser(
+            Case caseEntity, User currentUser, boolean caseFilingAdministrator) {
+        if (isDevelopmentAdmin(currentUser) || "主任".equals(currentUser.getPosition())
+                || caseFilingAdministrator) {
+            return true;
+        }
+        if (isAdministrativeUser(currentUser)) {
+            return false;
+        }
+        if (Objects.equals(caseEntity.getOwnerId(), currentUser.getId())) {
+            return true;
+        }
+        List<CaseMember> members = caseMemberRepository.findByCaseIdAndDeletedFalse(caseEntity.getId());
+        if (members.stream().map(CaseMember::getUserId).anyMatch(currentUser.getId()::equals)) {
+            return true;
+        }
+        if (!isDepartmentManager(currentUser) || currentUser.getDepartmentId() == null) {
+            return false;
+        }
+        User owner = userRepository.findById(caseEntity.getOwnerId()).orElse(null);
+        if (owner != null && Objects.equals(owner.getDepartmentId(), currentUser.getDepartmentId())) {
+            return true;
+        }
+        return members.stream()
+                .map(CaseMember::getUserId)
+                .map(userRepository::findById)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .anyMatch(user -> Objects.equals(user.getDepartmentId(), currentUser.getDepartmentId()));
     }
 
     @Transactional(readOnly = true)
@@ -840,6 +1028,33 @@ public class CaseService {
                 .collect(Collectors.toList());
     }
 
+    private String resolvePrimaryClientName(
+            Case caseEntity,
+            List<Long> clientIds,
+            List<com.lawfirm.vo.PartyVO> parties) {
+        if (clientIds != null && !clientIds.isEmpty()) {
+            String name = clientRepository.findById(clientIds.get(0))
+                    .map(Client::getClientName)
+                    .filter(this::hasText)
+                    .orElse(null);
+            if (hasText(name)) {
+                return name;
+            }
+        }
+        if ("CONSULTANT".equals(caseEntity.getCaseType()) && hasText(caseEntity.getConsultantUnitName())) {
+            return caseEntity.getConsultantUnitName();
+        }
+        if (parties == null) {
+            return null;
+        }
+        return parties.stream()
+                .filter(p -> Boolean.TRUE.equals(p.getIsClient()))
+                .map(com.lawfirm.vo.PartyVO::getName)
+                .filter(this::hasText)
+                .findFirst()
+                .orElse(null);
+    }
+
     /**
      * 删除案件（逻辑删除）
      */
@@ -887,24 +1102,7 @@ public class CaseService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void archiveCase(Long caseId, String archiveLocation) {
-        if (archiveLocation == null || archiveLocation.trim().isEmpty()) {
-            throw new InvalidParameterException("archiveLocation", "档案保管地不能为空");
-        }
-
-        Case caseEntity = caseRepository.findById(caseId)
-                .orElseThrow(() -> new ResourceNotFoundException("案件", caseId));
-
-        caseEntity.setStatus(CaseStatus.ARCHIVED.getCode());
-        caseEntity.setArchiveDate(java.time.LocalDate.now());
-        caseEntity.setArchiveLocation(archiveLocation);
-        caseRepository.save(caseEntity);
-
-        // 记录动态
-        caseTimelineService.createSystemTimeline(
-                caseId,
-                "CASE_ARCHIVED",
-                "案件已归档，保管地：" + archiveLocation
-        );
+        throw new InvalidParameterException("archiveWorkflow", "直接归档已停用，请在案件详情的智能归档中发起归档任务");
     }
 
     /**
@@ -912,6 +1110,8 @@ public class CaseService {
      * PRD要求（228行）：按案件名称和案号查重
      */
     public List<CaseListVO> checkDuplicate(String name, String caseNumber, Long currentUserId) {
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
         List<Case> duplicates = new ArrayList<>();
 
         if (name != null && !name.trim().isEmpty()) {
@@ -929,8 +1129,9 @@ public class CaseService {
                 .filter(c -> canAccessCase(c.getId(), currentUserId))
                 .collect(Collectors.toList());
 
+        CaseActionPermissions actionPermissions = resolveCaseActionPermissions(currentUser);
         return duplicates.stream()
-                .map(this::toListVO)
+                .map(caseEntity -> toListVO(caseEntity, currentUser, actionPermissions))
                 .collect(Collectors.toList());
     }
 
@@ -956,8 +1157,11 @@ public class CaseService {
             return request.getSuspectName() + (hasText(request.getCaseReason()) ? request.getCaseReason() : "刑事案件");
         }
         if ("CONSULTANT".equals(request.getCaseType())) {
-            String client = firstClientName(parties, "当事人");
-            return client + (hasText(request.getBusinessType()) ? request.getBusinessType() : "顾问服务");
+            String client = hasText(request.getConsultantUnitName())
+                    ? request.getConsultantUnitName()
+                    : firstClientName(parties, "顾问单位");
+            String year = request.getServiceStartDate() == null ? "" : request.getServiceStartDate().getYear() + "年度";
+            return client + year + (hasText(request.getBusinessType()) ? request.getBusinessType() : "法律顾问");
         }
         if ("NON_LITIGATION".equals(request.getCaseType())) {
             String client = firstClientName(parties, "当事人");
@@ -1011,35 +1215,89 @@ public class CaseService {
     }
 
     // 辅助方法
-    private CaseListVO toListVO(Case caseEntity) {
+    private CaseListVO toListVO(
+            Case caseEntity, User currentUser, CaseActionPermissions actionPermissions) {
         CaseListVO vo = new CaseListVO();
         BeanUtils.copyProperties(caseEntity, vo);
         vo.setCaseTypeDesc(getCaseTypeDesc(caseEntity.getCaseType()));
         vo.setStatusDesc(getStatusDesc(caseEntity.getStatus()));
         vo.setLevelDesc(getLevelDesc(caseEntity.getLevel()));
         vo.setOwnerName(getUserName(caseEntity.getOwnerId()));
+        vo.setNextHearingDate(caseEntity.getHearingDate());
+
+        boolean manageable = isCaseManageableByUser(
+                caseEntity, currentUser, actionPermissions.canManageFilingCases);
+        boolean locked = CaseStatus.CLOSED.getCode().equals(caseEntity.getStatus())
+                || CaseStatus.ARCHIVED.getCode().equals(caseEntity.getStatus());
+        vo.setCanEdit(manageable && !locked && actionPermissions.canEdit);
+        vo.setCanDelete(manageable && actionPermissions.canDelete);
+        vo.setCanArchive(manageable
+                && CaseStatus.CLOSED.getCode().equals(caseEntity.getStatus())
+                && actionPermissions.canArchive);
 
         // 获取当事人信息
         List<com.lawfirm.vo.PartyVO> parties = partyService.getByCaseId(caseEntity.getId());
-        String plaintiff = parties.stream()
-                .filter(p -> "PLAINTIFF".equals(p.getPartyRole()))
-                .map(com.lawfirm.vo.PartyVO::getName)
-                .findFirst()
-                .orElse("");
-        String defendant = parties.stream()
-                .filter(p -> "DEFENDANT".equals(p.getPartyRole()))
-                .map(com.lawfirm.vo.PartyVO::getName)
-                .findFirst()
-                .orElse("");
-        vo.setParties(plaintiff + " vs " + defendant);
+        vo.setParties(summarizeParties(caseEntity, parties));
 
         return vo;
+    }
+
+    private CaseActionPermissions resolveCaseActionPermissions(User currentUser) {
+        return new CaseActionPermissions(
+                userPermissionService.hasPermission(currentUser, "CASE_EDIT"),
+                userPermissionService.hasPermission(currentUser, "CASE_DELETE"),
+                userPermissionService.hasPermission(currentUser, "CASE_ARCHIVE"),
+                userPermissionService.hasPermission(currentUser, "CASE_FILING_MANAGE")
+        );
+    }
+
+    private static final class CaseActionPermissions {
+        private final boolean canEdit;
+        private final boolean canDelete;
+        private final boolean canArchive;
+        private final boolean canManageFilingCases;
+
+        private CaseActionPermissions(
+                boolean canEdit, boolean canDelete, boolean canArchive, boolean canManageFilingCases) {
+            this.canEdit = canEdit;
+            this.canDelete = canDelete;
+            this.canArchive = canArchive;
+            this.canManageFilingCases = canManageFilingCases;
+        }
     }
 
     private String getUserName(Long userId) {
         return userRepository.findById(userId)
                 .map(User::getRealName)
                 .orElse("未知");
+    }
+
+    private String summarizeParties(Case caseEntity, List<com.lawfirm.vo.PartyVO> parties) {
+        if ("CONSULTANT".equals(caseEntity.getCaseType())) {
+            String consultantUnit = hasText(caseEntity.getConsultantUnitName())
+                    ? caseEntity.getConsultantUnitName()
+                    : parties == null ? "" : parties.stream()
+                            .filter(p -> hasText(p.getName()))
+                            .map(com.lawfirm.vo.PartyVO::getName)
+                            .findFirst()
+                            .orElse("");
+            return hasText(consultantUnit) ? "顾问单位：" + consultantUnit : "-";
+        }
+        if (parties == null || parties.isEmpty()) return "-";
+        if ("CIVIL".equals(caseEntity.getCaseType())) {
+            String left = firstPartyByRoles(parties, "PLAINTIFF", "APPELLANT", "APPLICANT");
+            String right = firstPartyByRoles(parties, "DEFENDANT", "APPELLEE", "RESPONDENT");
+            if (hasText(left) && hasText(right)) return left + " vs " + right;
+        }
+        return parties.stream().limit(3)
+                .map(p -> (hasText(p.getPartyRoleDesc()) ? p.getPartyRoleDesc() + "：" : "") + p.getName())
+                .collect(Collectors.joining("；"));
+    }
+
+    private String firstPartyByRoles(List<com.lawfirm.vo.PartyVO> parties, String... roles) {
+        Set<String> accepted = new HashSet<>(Arrays.asList(roles));
+        return parties.stream().filter(p -> accepted.contains(p.getPartyRole()))
+                .map(com.lawfirm.vo.PartyVO::getName).filter(this::hasText).findFirst().orElse("");
     }
 
     private List<CaseDetailVO.MemberVO> getMembers(Long caseId, String memberType) {
@@ -1058,13 +1316,13 @@ public class CaseService {
     private String getCaseTypeDesc(String type) {
         if (type == null) return null;
         switch (type) {
-            case "CIVIL": return "民事";
+            case "CIVIL": return "民事诉讼";
             case "COMMERCIAL": return "商事";
-            case "ARBITRATION": return "仲裁";
+            case "ARBITRATION": return "商事仲裁";
             case "CRIMINAL": return "刑事";
             case "ADMINISTRATIVE": return "行政";
-            case "NON_LITIGATION": return "非诉";
-            case "CONSULTANT": return "顾问";
+            case "NON_LITIGATION": return "非诉专项";
+            case "CONSULTANT": return "法律顾问";
             default: return type;
         }
     }
@@ -1111,7 +1369,7 @@ public class CaseService {
         switch (caseType) {
             case "CIVIL": return "M";
             case "COMMERCIAL": return "S";
-            case "ARBITRATION": return "A";
+            case "ARBITRATION": return "R";
             case "CRIMINAL": return "C";
             case "ADMINISTRATIVE": return "A";
             case "NON_LITIGATION": return "N";
@@ -1481,27 +1739,8 @@ public class CaseService {
      * 批量归档
      */
     @Transactional
-    public void batchArchiveCases(List<Long> caseIds, Long operatorId) {
-        List<Case> cases = requireBatchCases(caseIds);
-        for (Case caseEntity : cases) {
-            assertCaseVisible(caseEntity.getId(), operatorId);
-            if (!CaseStatus.CLOSED.getCode().equals(caseEntity.getStatus())) {
-                throw new InvalidParameterException("caseIds", "只有已结案案件可以归档：" + caseEntity.getCaseName());
-            }
-        }
-        for (Case caseEntity : cases) {
-            caseEntity.setArchiveDate(LocalDate.now());
-            caseEntity.setStatus(CaseStatus.ARCHIVED.getCode());
-            caseEntity.setUpdatedAt(LocalDateTime.now());
-            caseTimelineService.createSystemTimeline(
-                    caseEntity.getId(),
-                    "CASE_ARCHIVED",
-                    "案件已通过批量操作归档"
-            );
-        }
-
-        caseRepository.saveAll(cases);
-        log.info("Batch archive cases completed: count={}, operator={}", caseIds.size(), operatorId);
+    public void batchArchiveCases(List<Long> caseIds, String archiveLocation, Long operatorId) {
+        throw new InvalidParameterException("archiveWorkflow", "批量直接归档已停用，请逐案完成智能归档与行政复核");
     }
 
     /**
@@ -1511,7 +1750,7 @@ public class CaseService {
     public void batchDeleteCases(List<Long> caseIds, Long operatorId) {
         List<Case> cases = requireBatchCases(caseIds);
         for (Case caseEntity : cases) {
-            assertCaseVisible(caseEntity.getId(), operatorId);
+            assertCaseManageable(caseEntity.getId(), operatorId);
         }
         for (Case caseEntity : cases) {
             caseEntity.setDeleted(true);

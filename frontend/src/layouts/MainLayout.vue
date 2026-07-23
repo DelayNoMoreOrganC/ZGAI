@@ -60,9 +60,8 @@
       <!-- 顶部栏 -->
       <el-header class="header">
         <div class="header-left">
-          <el-icon class="collapse-btn" @click="toggleSidebar">
-            <Fold v-if="!isCollapse" />
-            <Expand v-else />
+          <el-icon v-if="isMobile" class="collapse-btn" @click="toggleSidebar">
+            <Expand />
           </el-icon>
           <el-breadcrumb v-if="!isMobile" separator="/">
             <el-breadcrumb-item v-for="item in breadcrumbs" :key="item.path" :to="item.path">
@@ -87,14 +86,25 @@
             <el-icon><Search /></el-icon>
           </el-button>
 
-          <el-button v-if="!isMobile && canCreateClient" class="quick-create" @click="router.push('/client/create')">
+          <el-button v-if="!isMobile && showQuickCreateClient" class="quick-create" @click="router.push('/client/create')">
             <el-icon><UserFilled /></el-icon>
             新建客户
           </el-button>
-          <el-button v-if="!isMobile && canCreateCase" type="primary" class="quick-create primary" @click="router.push('/case/create')">
+          <el-button v-if="!isMobile && showQuickCreateCase" type="primary" class="quick-create primary" @click="router.push('/case/create')">
             <el-icon><FolderAdd /></el-icon>
             新建案件
           </el-button>
+
+          <el-tooltip content="案件 AI 助手" placement="bottom">
+            <el-button circle class="header-btn" @click="router.push('/ai/case-workbench')">
+              <el-icon><MagicStick /></el-icon>
+            </el-button>
+          </el-tooltip>
+          <el-tooltip content="审批与通知" placement="bottom">
+            <el-button circle class="header-btn" @click="router.push('/approval')">
+              <el-icon><Bell /></el-icon>
+            </el-button>
+          </el-tooltip>
 
           <!-- 用户头像 -->
           <el-dropdown @command="handleUserAction">
@@ -132,60 +142,30 @@
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useUserStore, useAppStore } from '@/stores'
+import { useUserStore } from '@/stores'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
-const appStore = useAppStore()
 
-// Emoji到Element Plus图标组件名称的映射（使用全局注册的组件名）
-const emojiToIconName = {
-  '📊': 'DataAnalysis',
-  '🔍': 'Search',
-  '📅': 'Calendar',
-  '⚖️': 'Files',
-  '👥': 'User',
-  '📁': 'FolderOpened',
-  '💰': 'Finance',
-  '✅': 'CircleCheck',
-  '🏢': 'OfficeBuilding',
-  '📚': 'Reading',
-  '📝': 'Document',
-  '📈': 'TrendCharts',
-  '🔧': 'Tools',
-  '⚙️': 'Setting'
-}
-
-const getIconName = (emoji) => {
-  return emojiToIconName[emoji] || 'Document'
-}
+const getIconName = icon => icon || 'Document'
 
 // 响应式相关
 const windowWidth = ref(window.innerWidth)
 const isMobile = computed(() => windowWidth.value < 768)
-const isTablet = computed(() => windowWidth.value >= 768 && windowWidth.value < 992)
-const isDesktop = computed(() => windowWidth.value >= 992)
 
 // 移动端侧边栏抽屉状态
 const mobileSidebarVisible = ref(false)
 
-// 侧边栏状态 - 移动端自动折叠
-const isCollapse = computed(() => {
-  // 移动端始终折叠
-  if (isMobile.value) {
-    return true
-  }
-  // 平板和小屏幕桌面端根据store状态
-  return !appStore.isSidebarOpened
-})
+// 导航始终展示文字与内嵌子菜单，避免折叠模式把二级功能变成悬浮弹层。
+const isCollapse = computed(() => false)
 
 const sidebarWidth = computed(() => {
   if (isMobile.value) {
     return '0px' // 移动端完全隐藏
   }
-  return isCollapse.value ? '76px' : '248px'
+  return '248px'
 })
 
 // 当前页面标题（移动端）
@@ -197,15 +177,20 @@ const currentPageTitle = computed(() => {
 // 当前激活的菜单
 const activeMenu = computed(() => {
   const { path } = route
+  const standaloneMenus = [
+    '/case/create', '/case/archive', '/case/trash',
+    '/client/create', '/client/conflict-check',
+    '/finance/invoices', '/ai/case-workbench',
+    '/knowledge/rag', '/knowledge/yuandian', '/knowledge/list'
+  ]
+  if (standaloneMenus.includes(path)) return path
   if (path.startsWith('/case/')) {
     return '/case/list'
-  }
-  if (path === '/client/conflict-check') {
-    return '/client/conflict-check'
   }
   if (path.startsWith('/client/')) {
     return '/client/list'
   }
+  if (path === '/finance') return '/finance/invoices'
   return path
 })
 
@@ -222,23 +207,32 @@ const isFinanceUser = computed(() => {
 const canUseLegalCalendar = computed(() => !isAdministrativeUser.value && !isFinanceUser.value)
 const canCreateCase = computed(() => userStore.hasPermission('CASE_CREATE'))
 const canCreateClient = computed(() => userStore.hasPermission('CLIENT_CREATE'))
+const showQuickCreateCase = computed(() => canCreateCase.value && !route.path.startsWith('/case'))
+const showQuickCreateClient = computed(() => canCreateClient.value && !route.path.startsWith('/client'))
 
 // 菜单路由
 const menuRoutes = computed(() => {
   const routes = [
-    { path: '/dashboard', meta: { title: '总览', icon: '📊' } },
+    { path: '/dashboard', meta: { title: '工作台', icon: 'House' } },
+    {
+      path: '/calendar',
+      meta: { title: '日程管理', icon: 'Calendar' },
+      visible: canUseLegalCalendar.value
+    },
     {
       path: '/case',
-      meta: { title: '案件管理', icon: '⚖️' },
+      meta: { title: '案件管理', icon: 'Files' },
       permission: 'CASE_VIEW',
       children: [
         { path: '/case/list', meta: { title: '全部案件' } },
-        { path: '/case/create', meta: { title: '新建案件' }, permission: 'CASE_CREATE' }
+        { path: '/case/create', meta: { title: '新建案件' }, permission: 'CASE_CREATE' },
+        { path: '/case/archive', meta: { title: '归档中心' }, permission: 'CASE_VIEW' },
+        { path: '/case/trash', meta: { title: '回收站' }, permission: 'CASE_DELETE' }
       ]
     },
     {
       path: '/client',
-      meta: { title: '客户管理', icon: '👥' },
+      meta: { title: '客户管理', icon: 'User' },
       permission: 'CLIENT_VIEW',
       children: [
         { path: '/client/list', meta: { title: '全部客户' } },
@@ -248,41 +242,37 @@ const menuRoutes = computed(() => {
     },
     {
       path: '/finance',
-      meta: { title: '财务管理', icon: '💰' },
+      meta: { title: '财务管理', icon: 'Money' },
       children: [
         { path: '/finance/invoices', meta: { title: '发票申请' } }
       ]
     },
     {
       path: '/approval',
-      meta: { title: '审批管理', icon: '✅' },
+      meta: { title: '审批管理', icon: 'CircleCheck' },
       permission: 'APPROVAL_VIEW'
     },
     {
-      path: '/knowledge',
-      meta: { title: 'AI知识库', icon: '📚' },
+      path: '/ai',
+      meta: { title: 'AI管理', icon: 'Cpu' },
+      permission: 'CASE_VIEW',
       children: [
-        { path: '/knowledge/rag', meta: { title: 'AI知识问答' } },
-        { path: '/knowledge/list', meta: { title: '法规/制度库' } }
+        { path: '/ai/case-workbench', meta: { title: '案件AI助手' } },
+        { path: '/knowledge/rag', meta: { title: '知识问答' } }
       ]
     },
     {
-      path: '/tools',
-      meta: { title: '智能工具', icon: '🔧' },
+      path: '/knowledge',
+      meta: { title: '知识库管理', icon: 'Reading' },
       children: [
-        { path: '/legacy-materials', meta: { title: '旧资料检索' }, permission: 'CASE_VIEW' },
-        { path: '/tools/ssb', meta: { title: '省时宝' } },
-        { path: '/tools/ac', meta: { title: 'AC精算' } },
-        { path: '/tools', meta: { title: '常用计算工具' } }
+        { path: '/knowledge/yuandian', meta: { title: '元典法律检索' } },
+        { path: '/knowledge/list', meta: { title: '法规/制度库' } }
       ]
     }
   ]
-  if (canUseLegalCalendar.value) {
-    routes.splice(1, 0, { path: '/calendar', meta: { title: '日程', icon: '📅' } })
-  }
 
   return routes
-    .filter(item => !item.permission || userStore.hasPermission(item.permission))
+    .filter(item => item.visible !== false && (!item.permission || userStore.hasPermission(item.permission)))
     .map(item => ({
       ...item,
       children: item.children?.filter(child => !child.permission || userStore.hasPermission(child.permission))
@@ -322,13 +312,7 @@ const handleSearch = () => {
 
 // 切换侧边栏
 const toggleSidebar = () => {
-  if (isMobile.value) {
-    // 移动端显示抽屉式侧边栏
-    mobileSidebarVisible.value = !mobileSidebarVisible.value
-  } else {
-    // 桌面端切换折叠状态
-    appStore.toggleSidebar()
-  }
+  mobileSidebarVisible.value = !mobileSidebarVisible.value
 }
 
 // 关闭移动端侧边栏
@@ -385,11 +369,6 @@ onMounted(async () => {
     }
   }
 
-  // 移动端初始化时自动折叠侧边栏
-  if (isMobile.value) {
-    appStore.closeSidebar()
-  }
-
 })
 
 onBeforeUnmount(() => {
@@ -401,9 +380,7 @@ onBeforeUnmount(() => {
 .main-layout {
   height: 100vh;
   width: 100vw;
-  background:
-    radial-gradient(circle at 10% 0%, rgba(255, 255, 255, 0.95), transparent 34%),
-    linear-gradient(135deg, #eef2f6 0%, #f7f8fb 42%, #edf1f5 100%);
+  background: var(--zg-bg);
   color: #1d1d1f;
 
   .sidebar {
@@ -451,12 +428,12 @@ onBeforeUnmount(() => {
       .brand-mark {
         width: 38px;
         height: 38px;
-        border-radius: 10px;
+        border-radius: 8px;
         display: flex;
         align-items: center;
         justify-content: center;
         margin-top: 18px;
-        background: linear-gradient(145deg, #24272d, #5e6674);
+        background: #30343b;
         color: #fff;
         font-size: 18px;
         font-weight: 700;
@@ -494,7 +471,7 @@ onBeforeUnmount(() => {
         height: 38px;
         line-height: 38px;
         margin: 4px 0;
-        border-radius: 9px;
+        border-radius: 7px;
         color: #4f5865;
         font-size: 14px;
         font-weight: 500;
@@ -534,7 +511,7 @@ onBeforeUnmount(() => {
       right: 14px;
       bottom: 16px;
       padding: 12px;
-      border-radius: 12px;
+      border-radius: 8px;
       background: rgba(255, 255, 255, 0.62);
       border: 1px solid rgba(218, 222, 228, 0.8);
 
@@ -622,7 +599,7 @@ onBeforeUnmount(() => {
 
           :deep(.el-input__wrapper) {
             height: 36px;
-            border-radius: 10px;
+            border-radius: 8px;
             background: rgba(242, 244, 247, 0.88);
             box-shadow: inset 0 0 0 1px rgba(224, 228, 233, 0.9);
           }
@@ -630,7 +607,7 @@ onBeforeUnmount(() => {
 
         .quick-create {
           height: 36px;
-          border-radius: 10px;
+          border-radius: 8px;
           border-color: rgba(211, 216, 224, 0.95);
           color: #374151;
           background: rgba(255, 255, 255, 0.72);
@@ -650,7 +627,7 @@ onBeforeUnmount(() => {
           gap: 8px;
           cursor: pointer;
           padding: 4px 8px;
-          border-radius: 10px;
+          border-radius: 8px;
           transition: background-color 0.18s ease;
 
           &:hover {
@@ -677,7 +654,7 @@ onBeforeUnmount(() => {
       :deep(.calendar-section),
       :deep(.todo-section),
       :deep(.ai-upload-section) {
-        border-radius: 12px;
+        border-radius: 8px;
         border: 1px solid rgba(224, 228, 235, 0.86);
         box-shadow: 0 10px 30px rgba(31, 41, 55, 0.06);
       }
@@ -755,18 +732,31 @@ onBeforeUnmount(() => {
   }
 }
 
-@media (min-width: 769px) and (max-width: 991px) {
+@media (min-width: 769px) and (max-width: 1199px) {
   .main-layout {
     .sidebar {
-      width: 76px !important;
+      width: 248px !important;
     }
 
     .main-container {
       .header {
         .search-input {
-          width: 200px;
+          width: 180px;
+        }
+
+        .quick-create {
+          display: none;
         }
       }
+    }
+  }
+}
+
+@media (min-width: 769px) and (max-width: 900px) {
+  .main-layout .main-container .header {
+    .search-input,
+    .user-name {
+      display: none;
     }
   }
 }

@@ -1,12 +1,33 @@
-version: '3.8'
-
 services:
+  archive-worker:
+    build:
+      context: .
+      dockerfile: archive-worker/Dockerfile
+    container_name: zgai-archive-worker
+    environment:
+      ARCHIVE_WORKER_TOKEN: ${ARCHIVE_WORKER_TOKEN}
+      ARCHIVE_ALLOWED_ROOTS: /data/case-files
+      ARCHIVE_OCR_CACHE: /data/archive-cache
+      ARCHIVE_CJK_FONT: /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
+      LM_STUDIO_BASE_URL: ${LM_STUDIO_BASE_URL:-http://host.docker.internal:1234/v1}
+      LM_STUDIO_MODEL: ${LM_STUDIO_MODEL:-qwen/qwen3.6-35b-a3b}
+      LM_STUDIO_API_KEY: ${LM_STUDIO_API_KEY:-}
+      LM_STUDIO_TIMEOUT: ${ARCHIVE_WORKER_TIMEOUT_SECONDS:-300}
+    volumes:
+      - ${CASE_FILE_LIBRARY_ROOT:-./case-files}:/data/case-files
+      - archive_ocr_cache:/data/archive-cache
+    ports:
+      - "127.0.0.1:8091:8091"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
   qdrant:
     image: qdrant/qdrant:v1.12.0
     container_name: lawfirm-qdrant
     ports:
-      - "6333:6333"  # HTTP API
-      - "6334:6334"  # gRPC API
+      - "127.0.0.1:6333:6333"  # HTTP API，仅供本机后端访问
+      - "127.0.0.1:6334:6334"  # gRPC API，仅供本机后端访问
     volumes:
       - qdrant_storage:/qdrant/storage
     environment:
@@ -14,8 +35,9 @@ services:
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__GRPC_PORT=6334
     restart: unless-stopped
-    command: ./qdrant --config-path /qdrant/config/production.yaml
 
 volumes:
+  archive_ocr_cache:
+    driver: local
   qdrant_storage:
     driver: local

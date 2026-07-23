@@ -3,7 +3,10 @@ package com.lawfirm.service;
 import com.lawfirm.dto.*;
 import com.lawfirm.entity.*;
 import com.lawfirm.enums.ApprovalStatus;
+import com.lawfirm.exception.InvalidParameterException;
+import com.lawfirm.exception.ResourceNotFoundException;
 import com.lawfirm.repository.*;
+import com.lawfirm.util.CaseFeeFormatter;
 import com.lawfirm.util.PageResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +15,7 @@ import org.springframework.data.domain.*;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -36,9 +40,13 @@ public class ApprovalService {
     private final UserRepository userRepository;
     private final CaseRepository caseRepository;
     private final CaseDocumentRepository caseDocumentRepository;
+    private final ConflictCheckRecordRepository conflictCheckRecordRepository;
     private final NotificationService notificationService;
     private final CaseTimelineService caseTimelineService;
     private final CaseFileLibraryService caseFileLibraryService;
+    private final UserPermissionService userPermissionService;
+    private final ConflictWaiverAttachmentService conflictWaiverAttachmentService;
+    private final SealAttachmentService sealAttachmentService;
 
     /**
      * 审批类型常量
@@ -50,13 +58,33 @@ public class ApprovalService {
     public static final String TYPE_PURCHASE = "PURCHASE";  // 采购申请
     public static final String TYPE_LICENSE = "LICENSE";  // 证照借用
     public static final String TYPE_CASE_FILING = "CASE_FILING";  // 立案审批
-    public static final String TYPE_CASE_FILING_DIRECTOR = "CASE_FILING_DIRECTOR";  // 免费代理主任终审
+    public static final String TYPE_CASE_FILING_DIRECTOR = "CASE_FILING_DIRECTOR";  // 主任终审
+    private static final List<String> PROCESSED_STATUSES = Arrays.asList(
+            ApprovalStatus.APPROVED.getCode(),
+            ApprovalStatus.REJECTED.getCode(),
+            ApprovalStatus.WITHDRAWN.getCode(),
+            ApprovalStatus.TRANSFERRED.getCode());
 
     /**
      * 创建审批
      */
     @Transactional
     public ApprovalDTO createApproval(ApprovalCreateRequest request, Long currentUserId) {
+        if (TYPE_SEAL.equals(request.getApprovalType())) {
+            throw new InvalidParameterException("approvalType", "用印申请必须通过专用入口上传或选择用印文件");
+        }
+        return createApprovalInternal(request, currentUserId);
+    }
+
+    @Transactional
+    public ApprovalDTO createSealApproval(ApprovalCreateRequest request, Long currentUserId) {
+        if (!TYPE_SEAL.equals(request.getApprovalType())) {
+            throw new InvalidParameterException("approvalType", "审批类型必须为用印申请");
+        }
+        return createApprovalInternal(request, currentUserId);
+    }
+
+    private ApprovalDTO createApprovalInternal(ApprovalCreateRequest request, Long currentUserId) {
         Approval approval = new Approval();
         BeanUtils.copyProperties(request, approval);
         approval.setApplicantId(currentUserId);
@@ -66,7 +94,7 @@ public class ApprovalService {
         // 如果关联案件，验证案件是否存在
         if (request.getCaseId() != null) {
             Case caseEntity = caseRepository.findById(request.getCaseId())
-                    .orElseThrow(() -> new RuntimeException("案件不存在"));
+                    .orElseThrow(() -> new ResourceNotFoundException("案件", request.getCaseId()));
             // 可以在这里添加更多业务逻辑
         }
 
@@ -85,23 +113,27 @@ public class ApprovalService {
     @Transactional
     public void approveApproval(Long approvalId, String comments, Long approverId) {
         Approval approval = approvalRepository.findById(approvalId)
-                .orElseThrow(() -> new RuntimeException("审批单不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException("审批单", approvalId));
 
         User approver = userRepository.findById(approverId)
-                .orElseThrow(() -> new RuntimeException("审批人不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException("审批人", approverId));
 
         // 验证审批人
         if (!canOperateApprovalAsApprover(approval, approver)) {
-            throw new RuntimeException("您不是当前审批人");
+            throw new AccessDeniedException("您不是当前审批人");
         }
 
         // 验证状态
         if (!ApprovalStatus.PENDING.getCode().equals(approval.getStatus())) {
-            throw new RuntimeException("审批单状态不正确");
+            throw new InvalidParameterException("审批单状态不正确");
         }
 
-        if (isCaseFilingApproval(approval) && !hasText(comments)) {
-            throw new RuntimeException("立案审批意见不能为空");
+        if ((isCaseFilingApproval(approval) || TYPE_SEAL.equals(approval.getApprovalType())) && !hasText(comments)) {
+            throw new InvalidParameterException(
+                    TYPE_SEAL.equals(approval.getApprovalType()) ? "用印审批意见不能为空" : "立案审批意见不能为空");
+        }
+        if (TYPE_SEAL.equals(approval.getApprovalType()) && sealAttachmentService.list(approvalId).isEmpty()) {
+            throw new InvalidParameterException("用印申请缺少待审文件，请驳回并由申请人重新提交");
         }
 
         // 更新审批单状态
@@ -114,13 +146,24 @@ public class ApprovalService {
         // 记录流程
         recordFlow(approvalId, approverId, "APPROVE", comments);
 
+        boolean filingHandled = false;
         if (approval.getCaseId() != null) {
             if (TYPE_CASE_FILING.equals(approval.getApprovalType())) {
                 approveCaseFilingAdminStep(approval, comments, approverId);
+                filingHandled = true;
             } else if (TYPE_CASE_FILING_DIRECTOR.equals(approval.getApprovalType())) {
                 approveCaseFilingFinal(approval, comments, approverId);
+                filingHandled = true;
             }
-        } else {
+        }
+        if (TYPE_SEAL.equals(approval.getApprovalType())) {
+            sealAttachmentService.markDecision(approvalId, ApprovalStatus.APPROVED.getCode(), approverId, approval.getApprovedTime());
+            if (approval.getCaseId() != null) {
+                caseTimelineService.createSystemTimeline(approval.getCaseId(), "SEAL_APPROVAL_APPROVED",
+                        "公章用印审批已通过：" + approval.getTitle());
+            }
+        }
+        if (!filingHandled) {
             notifyApplicant(
                     approval,
                     "审批申请已通过",
@@ -135,23 +178,23 @@ public class ApprovalService {
     @Transactional
     public void rejectApproval(Long approvalId, String comments, Long approverId) {
         Approval approval = approvalRepository.findById(approvalId)
-                .orElseThrow(() -> new RuntimeException("审批单不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException("审批单", approvalId));
 
         User approver = userRepository.findById(approverId)
-                .orElseThrow(() -> new RuntimeException("审批人不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException("审批人", approverId));
 
         // 验证审批人
         if (!canOperateApprovalAsApprover(approval, approver)) {
-            throw new RuntimeException("您不是当前审批人");
+            throw new AccessDeniedException("您不是当前审批人");
         }
 
         // 验证状态
         if (!ApprovalStatus.PENDING.getCode().equals(approval.getStatus())) {
-            throw new RuntimeException("审批单状态不正确");
+            throw new InvalidParameterException("审批单状态不正确");
         }
 
         if (!hasText(comments)) {
-            throw new RuntimeException("驳回理由不能为空");
+            throw new InvalidParameterException("驳回理由不能为空");
         }
 
         // 更新审批单状态
@@ -163,6 +206,13 @@ public class ApprovalService {
 
         // 记录流程
         recordFlow(approvalId, approverId, "REJECT", comments);
+        if (TYPE_SEAL.equals(approval.getApprovalType())) {
+            sealAttachmentService.markDecision(approvalId, ApprovalStatus.REJECTED.getCode(), approverId, approval.getApprovedTime());
+            if (approval.getCaseId() != null) {
+                caseTimelineService.createSystemTimeline(approval.getCaseId(), "SEAL_APPROVAL_REJECTED",
+                        "公章用印审批已驳回：" + comments);
+            }
+        }
         notifyApplicant(
                 approval,
                 isCaseFilingApproval(approval) ? "立案申请已驳回" : "审批申请已驳回",
@@ -181,24 +231,24 @@ public class ApprovalService {
     @Transactional
     public void transferApproval(Long approvalId, Long newApproverId, String comments, Long currentApproverId) {
         Approval approval = approvalRepository.findById(approvalId)
-                .orElseThrow(() -> new RuntimeException("审批单不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException("审批单", approvalId));
 
         User currentApprover = userRepository.findById(currentApproverId)
-                .orElseThrow(() -> new RuntimeException("审批人不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException("审批人", currentApproverId));
 
         // 验证当前审批人
         if (!canOperateApprovalAsApprover(approval, currentApprover)) {
-            throw new RuntimeException("您不是当前审批人");
+            throw new AccessDeniedException("您不是当前审批人");
         }
 
         // 验证新审批人
         if (!userRepository.existsById(newApproverId)) {
-            throw new RuntimeException("新审批人不存在");
+            throw new ResourceNotFoundException("新审批人", newApproverId);
         }
 
         // 验证状态
         if (!ApprovalStatus.PENDING.getCode().equals(approval.getStatus())) {
-            throw new RuntimeException("审批单状态不正确");
+            throw new InvalidParameterException("审批单状态不正确");
         }
 
         Long oldApproverId = approval.getCurrentApproverId();
@@ -225,21 +275,35 @@ public class ApprovalService {
     @Transactional
     public void withdrawApproval(Long approvalId, Long applicantId) {
         Approval approval = approvalRepository.findById(approvalId)
-                .orElseThrow(() -> new RuntimeException("审批单不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException("审批单", approvalId));
 
         // 验证申请人
         if (!approval.getApplicantId().equals(applicantId)) {
-            throw new RuntimeException("您不是申请人，无法撤回");
+            throw new AccessDeniedException("您不是申请人，无法撤回");
         }
 
         // 验证状态
         if (!ApprovalStatus.PENDING.getCode().equals(approval.getStatus())) {
-            throw new RuntimeException("只能撤回待审批的单据");
+            throw new InvalidParameterException("只能撤回待审批的单据");
         }
 
         // 更新状态
         approval.setStatus(ApprovalStatus.WITHDRAWN.getCode());
         approvalRepository.save(approval);
+
+        if (TYPE_SEAL.equals(approval.getApprovalType())) {
+            sealAttachmentService.markDecision(
+                    approvalId,
+                    ApprovalStatus.WITHDRAWN.getCode(),
+                    applicantId,
+                    LocalDateTime.now());
+            if (approval.getCaseId() != null) {
+                caseTimelineService.createSystemTimeline(
+                        approval.getCaseId(),
+                        "SEAL_APPROVAL_WITHDRAWN",
+                        "公章用印申请已由申请人撤回：" + approval.getTitle());
+            }
+        }
 
         // 记录流程
         recordFlow(approvalId, applicantId, "WITHDRAW", "申请人撤回");
@@ -251,16 +315,16 @@ public class ApprovalService {
     @Transactional
     public void urgeApproval(Long approvalId, Long applicantId) {
         Approval approval = approvalRepository.findById(approvalId)
-                .orElseThrow(() -> new RuntimeException("审批单不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException("审批单", approvalId));
 
         // 验证申请人
         if (!approval.getApplicantId().equals(applicantId)) {
-            throw new RuntimeException("您不是申请人，无法催办");
+            throw new AccessDeniedException("您不是申请人，无法催办");
         }
 
         // 验证状态
         if (!ApprovalStatus.PENDING.getCode().equals(approval.getStatus())) {
-            throw new RuntimeException("只能催办待审批的单据");
+            throw new InvalidParameterException("只能催办待审批的单据");
         }
 
         // 记录流程（作为催办记录）
@@ -296,11 +360,16 @@ public class ApprovalService {
 
         boolean hasAllAccess = hasAllApprovalAccess(currentUserId);
         if (!hasAllAccess && request.getApplicantId() != null && !Objects.equals(request.getApplicantId(), currentUserId)) {
-            throw new RuntimeException("无权查看他人发起的审批");
+            throw new AccessDeniedException("无权查看他人发起的审批");
         }
         if (!hasAllAccess && request.getCurrentApproverId() != null && !Objects.equals(request.getCurrentApproverId(), currentUserId)) {
-            throw new RuntimeException("无权查看他人的审批待办");
+            throw new AccessDeniedException("无权查看他人的审批待办");
         }
+
+        String normalizedKeyword = hasText(request.getKeyword()) ? request.getKeyword().trim() : null;
+        List<Long> matchingApplicantIds = normalizedKeyword == null
+                ? Collections.emptyList()
+                : userRepository.findActiveIdsByNameOrUsername(normalizedKeyword);
 
         Specification<Approval> spec = (root, query, cb) -> {
             List<javax.persistence.criteria.Predicate> predicates = new ArrayList<>();
@@ -310,8 +379,10 @@ public class ApprovalService {
                 predicates.add(cb.equal(root.get("approvalType"), request.getApprovalType()));
             }
 
-            if (request.getStatus() != null) {
+            if (hasText(request.getStatus())) {
                 predicates.add(cb.equal(root.get("status"), request.getStatus()));
+            } else if ("PROCESSED".equals(request.getStatusGroup())) {
+                predicates.add(root.get("status").in(PROCESSED_STATUSES));
             }
 
             if (request.getApplicantId() != null) {
@@ -331,13 +402,29 @@ public class ApprovalService {
                 predicates.add(cb.equal(root.get("caseId"), request.getCaseId()));
             }
 
-            if (request.getKeyword() != null) {
-                String keyword = "%" + request.getKeyword() + "%";
+            if (normalizedKeyword != null) {
+                String keyword = "%" + normalizedKeyword.toLowerCase(Locale.ROOT) + "%";
                 javax.persistence.criteria.Predicate titleCondition =
-                        cb.like(root.get("title"), keyword);
+                        cb.like(cb.lower(root.get("title")), keyword);
                 javax.persistence.criteria.Predicate contentCondition =
-                        cb.like(root.get("content"), keyword);
-                predicates.add(cb.or(titleCondition, contentCondition));
+                        cb.like(cb.lower(root.get("content")), keyword);
+                if (matchingApplicantIds.isEmpty()) {
+                    predicates.add(cb.or(titleCondition, contentCondition));
+                } else {
+                    predicates.add(cb.or(
+                            titleCondition,
+                            contentCondition,
+                            root.get("applicantId").in(matchingApplicantIds)));
+                }
+            }
+
+            if (request.getStartDate() != null) {
+                predicates.add(cb.greaterThanOrEqualTo(
+                        root.get("applyTime"), request.getStartDate().atStartOfDay()));
+            }
+            if (request.getEndDate() != null) {
+                predicates.add(cb.lessThan(
+                        root.get("applyTime"), request.getEndDate().plusDays(1).atStartOfDay()));
             }
 
             // 排除已删除
@@ -369,7 +456,7 @@ public class ApprovalService {
      */
     public ApprovalDTO getApprovalDetail(Long approvalId, Long currentUserId) {
         Approval approval = approvalRepository.findById(approvalId)
-                .orElseThrow(() -> new RuntimeException("审批单不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException("审批单", approvalId));
         assertApprovalVisible(approval, currentUserId);
         return toDTO(approval);
     }
@@ -379,7 +466,7 @@ public class ApprovalService {
      */
     public List<ApprovalFlow> getApprovalFlow(Long approvalId, Long currentUserId) {
         Approval approval = approvalRepository.findById(approvalId)
-                .orElseThrow(() -> new RuntimeException("审批单不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException("审批单", approvalId));
         assertApprovalVisible(approval, currentUserId);
         List<ApprovalFlow> flows = approvalFlowRepository.findByApprovalIdOrderByActionTimeAsc(approvalId);
         flows.forEach(flow -> flow.setApproverName(getUserName(flow.getApproverId())));
@@ -391,14 +478,14 @@ public class ApprovalService {
      */
     public List<Map<String, String>> getApprovalTypes() {
         List<Map<String, String>> types = new ArrayList<>();
-        types.add(createTypeItem(TYPE_SEAL, "用印申请"));
+        types.add(createTypeItem(TYPE_SEAL, "公章用印审批"));
         types.add(createTypeItem(TYPE_REIMBURSEMENT, "费用报销"));
         types.add(createTypeItem(TYPE_INVOICE, "开票申请"));
         types.add(createTypeItem(TYPE_LEAVE, "请假出差"));
         types.add(createTypeItem(TYPE_PURCHASE, "采购申请"));
         types.add(createTypeItem(TYPE_LICENSE, "证照借用"));
         types.add(createTypeItem(TYPE_CASE_FILING, "立案审批"));
-        types.add(createTypeItem(TYPE_CASE_FILING_DIRECTOR, "免费代理主任终审"));
+        types.add(createTypeItem(TYPE_CASE_FILING_DIRECTOR, "立案主任终审"));
         return types;
     }
 
@@ -406,7 +493,9 @@ public class ApprovalService {
 
     private void approveCaseFilingAdminStep(Approval approval, String comments, Long approverId) {
         Case caseEntity = caseRepository.findById(approval.getCaseId())
-                .orElseThrow(() -> new RuntimeException("案件不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException("案件", approval.getCaseId()));
+
+        assertFormalConflictReviewCompleted(caseEntity.getId());
 
         caseTimelineService.createSystemTimeline(
                 caseEntity.getId(),
@@ -414,62 +503,44 @@ public class ApprovalService {
                 "行政管理已完成立案初审：" + (comments == null ? "" : comments)
         );
 
-        if ("FREE".equals(caseEntity.getFeeMethod())) {
-            Long directorId = findUserIdByPosition("主任");
-            if (directorId == null) {
-                throw new RuntimeException("未找到身份类别为“主任”的终审人，请先在用户管理中配置主任账号");
-            }
-
-            Approval directorApproval = new Approval();
-            directorApproval.setApprovalType(TYPE_CASE_FILING_DIRECTOR);
-            directorApproval.setTitle("免费代理主任终审：" + caseEntity.getCaseName());
-            directorApproval.setContent("行政管理已完成初审，请主任对免费代理立案申请进行终审。"
-                    + "\n案件名称：" + caseEntity.getCaseName()
-                    + "\n免费理由：" + (caseEntity.getFreeReason() == null ? "" : caseEntity.getFreeReason()));
-            directorApproval.setCaseId(caseEntity.getId());
-            directorApproval.setApplicantId(approval.getApplicantId());
-            directorApproval.setCurrentApproverId(directorId);
-            directorApproval.setStatus(ApprovalStatus.PENDING.getCode());
-            directorApproval.setApplyTime(LocalDateTime.now());
-            directorApproval = approvalRepository.save(directorApproval);
-            recordFlow(directorApproval.getId(), approverId, "SUBMIT", "行政管理初审通过，提交主任终审");
-            sendApprovalPendingNotification(directorApproval);
-            notifyApplicant(
-                    approval,
-                    "立案行政初审已通过",
-                    String.format("您发起的立案审批「%s」已通过行政初审，现已提交主任终审。", approval.getTitle())
-            );
-
-            caseTimelineService.createSystemTimeline(
-                    caseEntity.getId(),
-                    "CASE_FILING_DIRECTOR_REVIEW",
-                    "免费代理案件已提交主任终审：" + getUserName(directorId)
-            );
-            return;
-        }
-
-        approveCaseFilingFinal(approval, comments, approverId);
-    }
-
-    private Long findUserIdByPosition(String position) {
-        return userRepository.findAll().stream()
-                .filter(user -> !Boolean.TRUE.equals(user.getDeleted()))
-                .filter(user -> user.getStatus() == null || user.getStatus() == 1)
-                .filter(user -> matchesPosition(user.getPosition(), position))
-                .sorted(Comparator.comparing((User user) -> user.getDepartmentId() == null))
+        Long directorId = userPermissionService.findFirstActiveUserByPermission(
+                        "CASE_FILING_FINAL_APPROVE", "MANAGER")
                 .map(User::getId)
-                .findFirst()
                 .orElse(null);
-    }
+        if (directorId == null) {
+            throw new InvalidParameterException("未找到具有立案主任终审权限的账号，请先在角色权限中配置");
+        }
 
-    private boolean matchesPosition(String actual, String expected) {
-        if (actual == null || actual.trim().isEmpty() || expected == null || expected.trim().isEmpty()) {
-            return false;
-        }
-        if ("行政管理".equals(expected)) {
-            return actual.startsWith("行政管理");
-        }
-        return expected.equals(actual);
+        Approval directorApproval = new Approval();
+        directorApproval.setApprovalType(TYPE_CASE_FILING_DIRECTOR);
+        directorApproval.setTitle("立案主任终审：" + caseEntity.getCaseName());
+        String freeReason = "FREE".equals(caseEntity.getFeeMethod())
+                ? "\n免费理由：" + (caseEntity.getFreeReason() == null ? "" : caseEntity.getFreeReason())
+                : "";
+        directorApproval.setContent("行政管理已完成初审，请主任进行立案终审。"
+                + "\n案件名称：" + caseEntity.getCaseName()
+                + "\n行政初审意见：" + (comments == null ? "" : comments)
+                + "\n收费方式：" + CaseFeeFormatter.format(caseEntity)
+                + freeReason);
+        directorApproval.setCaseId(caseEntity.getId());
+        directorApproval.setApplicantId(approval.getApplicantId());
+        directorApproval.setCurrentApproverId(directorId);
+        directorApproval.setStatus(ApprovalStatus.PENDING.getCode());
+        directorApproval.setApplyTime(LocalDateTime.now());
+        directorApproval = approvalRepository.save(directorApproval);
+        recordFlow(directorApproval.getId(), approverId, "SUBMIT", "行政管理初审通过，提交主任终审");
+        sendApprovalPendingNotification(directorApproval);
+        notifyApplicant(
+                approval,
+                "立案行政初审已通过",
+                String.format("您发起的立案审批「%s」已通过行政初审，现已提交主任终审。", approval.getTitle())
+        );
+
+        caseTimelineService.createSystemTimeline(
+                caseEntity.getId(),
+                "CASE_FILING_DIRECTOR_REVIEW",
+                "案件已提交主任终审：" + getUserName(directorId)
+        );
     }
 
     private void approveCaseFilingFinal(Approval approval, String comments, Long approverId) {
@@ -478,12 +549,10 @@ public class ApprovalService {
 
         ensureOfficialCaseNumber(caseEntity);
         String folderPath = caseFileLibraryService.ensureCaseFolder(caseEntity).toString();
-        createConflictCheckReport(caseEntity, approval, comments, approverId, folderPath);
+        archiveConflictCheckReports(caseEntity, approval, comments, approverId, folderPath);
 
         caseEntity.setStatus("ACTIVE");
-        if (caseEntity.getFilingDate() == null) {
-            caseEntity.setFilingDate(java.time.LocalDate.now());
-        }
+        caseEntity.setFilingDate(approval.getApprovedTime().toLocalDate());
         caseRepository.save(caseEntity);
 
         caseTimelineService.createSystemTimeline(
@@ -558,7 +627,7 @@ public class ApprovalService {
             case TYPE_CASE_FILING_DIRECTOR:
                 return "主任终审";
             case TYPE_SEAL:
-                return "用印申请";
+                return "公章用印审批";
             case TYPE_REIMBURSEMENT:
                 return "费用报销";
             case TYPE_INVOICE:
@@ -589,6 +658,7 @@ public class ApprovalService {
             case "CIVIL": return "民";
             case "CRIMINAL": return "刑";
             case "ADMINISTRATIVE": return "行";
+            case "ARBITRATION": return "仲";
             case "NON_LITIGATION": return "非";
             case "CONSULTANT": return "顾";
             default: return "案";
@@ -597,7 +667,7 @@ public class ApprovalService {
 
     private void rejectCaseFiling(Approval approval, String comments, Long approverId) {
         Case caseEntity = caseRepository.findById(approval.getCaseId())
-                .orElseThrow(() -> new RuntimeException("案件不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException("案件", approval.getCaseId()));
         caseEntity.setStatus("FILING_REJECTED");
         caseRepository.save(caseEntity);
 
@@ -608,7 +678,78 @@ public class ApprovalService {
         );
     }
 
-    private void createConflictCheckReport(Case caseEntity, Approval approval, String comments, Long approverId, String folderPath) {
+    private void assertFormalConflictReviewCompleted(Long caseId) {
+        List<ConflictCheckRecord> records = conflictCheckRecordRepository.findByCaseIdOrderByCreatedAtAsc(caseId);
+        // 历史申请可能没有结构化记录，继续沿用审批意见，避免升级后锁死存量流程。
+        if (records.isEmpty()) {
+            return;
+        }
+        if (records.stream().anyMatch(record -> !"COMPLETED".equals(record.getReviewStatus()))) {
+            throw new InvalidParameterException("请先完成全部委托方的正式利冲审查，再同意立案");
+        }
+        if (records.stream().anyMatch(record -> "REJECTED".equals(record.getReviewDecision()))) {
+            throw new InvalidParameterException("正式利冲审查存在不通过结论，不能同意立案；请驳回申请并说明原因");
+        }
+        if (records.stream().anyMatch(record -> "CONDITIONAL".equals(record.getReviewDecision())
+                && !conflictWaiverAttachmentService.hasAttachment(record.getId()))) {
+            throw new InvalidParameterException("附条件通过的利冲审查缺少书面豁免或风险处置依据原件");
+        }
+    }
+
+    private void archiveConflictCheckReports(
+            Case caseEntity, Approval approval, String comments, Long approverId, String folderPath) {
+        List<ConflictCheckRecord> records = conflictCheckRecordRepository.findByCaseIdOrderByCreatedAtAsc(caseEntity.getId());
+        if (records.isEmpty()) {
+            createLegacyConflictCheckReport(caseEntity, comments, approverId, folderPath);
+            return;
+        }
+        for (ConflictCheckRecord record : records) {
+            if (record.getArchivedDocumentId() != null) {
+                continue;
+            }
+            archiveConflictCheckRecord(caseEntity, record, approval, approverId, folderPath);
+        }
+    }
+
+    private void archiveConflictCheckRecord(
+            Case caseEntity, ConflictCheckRecord record, Approval approval, Long approverId, String folderPath) {
+        List<CaseDocument> waiverDocuments = conflictWaiverAttachmentService.archiveForCase(
+                caseEntity, record, approverId);
+        String reportNo = formatConflictReportNo(record);
+        String fileName = "利冲审查报告_" + reportNo + ".txt";
+        String folder = "01_立案材料";
+        Path reportPath = Paths.get(folderPath, folder, fileName);
+        String report = String.join("\n",
+                "ZGAI 利益冲突审查报告",
+                "报告编号：" + reportNo,
+                "关联案件：" + caseEntity.getCaseName(),
+                "律所案号：" + caseEntity.getCaseNumber(),
+                "检查对象：" + record.getSubjectName(),
+                "系统风险等级：" + nullToDash(record.getConflictLevel()),
+                "系统初筛结论：" + nullToDash(record.getConclusion()),
+                "关联主体命中：" + nullToDash(record.getMatchedRelatedSubjects()),
+                "正式审查结论：" + conflictDecisionLabel(record.getReviewDecision()),
+                "审查意见：" + nullToDash(record.getReviewConclusion()),
+                "豁免或风险处置依据：" + nullToDash(record.getWaiverBasis()),
+                "书面依据原件：" + (waiverDocuments.isEmpty() ? "无" : waiverDocuments.stream()
+                        .map(CaseDocument::getDocumentName)
+                        .collect(Collectors.joining("、"))),
+                "行政复核人：" + (record.getReviewedBy() == null ? "-" : getUserName(record.getReviewedBy())),
+                "行政复核时间：" + (record.getReviewedAt() == null ? "-" : record.getReviewedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))),
+                "主任终审人：" + getUserName(approverId),
+                "主任终审意见：" + nullToDash(approval.getApprovalNotes()),
+                "归档时间：" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+                "",
+                "说明：本报告由系统初筛、行政正式审查和主任终审记录共同形成。",
+                "");
+
+        CaseDocument document = writeConflictReportDocument(caseEntity, reportPath, fileName, folder, report, approverId);
+        record.setArchivedDocumentId(document.getId());
+        record.setArchivedAt(LocalDateTime.now());
+        conflictCheckRecordRepository.save(record);
+    }
+
+    private void createLegacyConflictCheckReport(Case caseEntity, String comments, Long approverId, String folderPath) {
         String fileName = "利冲审查报告_" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now()) + ".txt";
         String folder = "01_立案材料";
         Path reportPath = Paths.get(folderPath, folder, fileName);
@@ -620,6 +761,11 @@ public class ApprovalService {
                 + "审查时间：" + LocalDateTime.now() + "\n"
                 + "审查结论：" + (comments == null || comments.trim().isEmpty() ? "通过" : comments.trim()) + "\n";
 
+        writeConflictReportDocument(caseEntity, reportPath, fileName, folder, report, approverId);
+    }
+
+    private CaseDocument writeConflictReportDocument(
+            Case caseEntity, Path reportPath, String fileName, String folder, String report, Long approverId) {
         try {
             Files.createDirectories(reportPath.getParent());
             Files.write(reportPath, report.getBytes(StandardCharsets.UTF_8));
@@ -642,7 +788,7 @@ public class ApprovalService {
         document.setTags("立案审批,利冲审查");
         document.setKnowledgeEligible(false);
         document.setIndexStatus("FORBIDDEN");
-        caseDocumentRepository.save(document);
+        return caseDocumentRepository.save(document);
     }
 
     private void recordFlow(Long approvalId, Long approverId, String action, String comments) {
@@ -662,14 +808,91 @@ public class ApprovalService {
         dto.setApplicantName(getUserName(approval.getApplicantId()));
         dto.setCurrentApproverName(getUserName(approval.getCurrentApproverId()));
         dto.setStatusDesc(getStatusDesc(approval.getStatus()));
+        if (TYPE_SEAL.equals(approval.getApprovalType())) {
+            dto.setSealAttachments(sealAttachmentService.list(approval.getId()));
+        }
 
         if (approval.getCaseId() != null) {
             caseRepository.findById(approval.getCaseId()).ifPresent(c -> {
                 dto.setCaseName(c.getCaseName());
+                if (isCaseFilingApproval(approval)) {
+                    dto.setContent(withCurrentFeeSummary(dto.getContent(), c));
+                }
             });
+            dto.setConflictChecks(conflictCheckRecordRepository.findByCaseIdOrderByCreatedAtAsc(approval.getCaseId()).stream()
+                    .map(this::toConflictCheckRecordDTO)
+                    .collect(Collectors.toList()));
         }
 
         return dto;
+    }
+
+    private String withCurrentFeeSummary(String content, Case caseEntity) {
+        String feeLine = "收费方式：" + CaseFeeFormatter.format(caseEntity);
+        if (!hasText(content)) {
+            return feeLine;
+        }
+        java.util.regex.Pattern feeLinePattern = java.util.regex.Pattern.compile("(?m)^收费方式：[^\\r\\n]*");
+        if (feeLinePattern.matcher(content).find()) {
+            return feeLinePattern.matcher(content).replaceFirst(java.util.regex.Matcher.quoteReplacement(feeLine));
+        }
+        return content + "\n" + feeLine;
+    }
+
+    private ConflictCheckRecordDTO toConflictCheckRecordDTO(ConflictCheckRecord record) {
+        ConflictCheckRecordDTO dto = new ConflictCheckRecordDTO();
+        dto.setId(record.getId());
+        dto.setReportNo(formatConflictReportNo(record));
+        dto.setSubjectName(record.getSubjectName());
+        dto.setCaseId(record.getCaseId());
+        dto.setCheckedByName(record.getCheckedBy() == null ? null : getUserName(record.getCheckedBy()));
+        dto.setConflictLevel(record.getConflictLevel());
+        dto.setConclusion(record.getConclusion());
+        dto.setMatchedClientCount(countCsvItems(record.getMatchedClientIds()));
+        dto.setMatchedCaseCount(countCsvItems(record.getMatchedCaseIds()));
+        dto.setMatchedRelatedSubjectCount(countCsvItems(record.getMatchedRelatedSubjects()));
+        dto.setMatchedRelatedSubjects(record.getMatchedRelatedSubjects());
+        dto.setCheckedAt(record.getCreatedAt());
+        dto.setReviewStatus(hasText(record.getReviewStatus()) ? record.getReviewStatus() : "PENDING_REVIEW");
+        dto.setReviewDecision(record.getReviewDecision());
+        dto.setReviewConclusion(record.getReviewConclusion());
+        dto.setWaiverBasis(record.getWaiverBasis());
+        dto.setReviewedByName(record.getReviewedBy() == null ? null : getUserName(record.getReviewedBy()));
+        dto.setReviewedAt(record.getReviewedAt());
+        dto.setArchivedDocumentId(record.getArchivedDocumentId());
+        dto.setArchivedAt(record.getArchivedAt());
+        dto.setCanDownload(true);
+        dto.setWaiverAttachments(conflictWaiverAttachmentService.list(record.getId()));
+        return dto;
+    }
+
+    private String formatConflictReportNo(ConflictCheckRecord record) {
+        String date = record.getCreatedAt() == null
+                ? "00000000"
+                : record.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        return String.format("LC-%s-%06d", date, record.getId() == null ? 0L : record.getId());
+    }
+
+    private int countCsvItems(String value) {
+        if (!hasText(value)) {
+            return 0;
+        }
+        return (int) Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(this::hasText)
+                .distinct()
+                .count();
+    }
+
+    private String conflictDecisionLabel(String decision) {
+        if ("PASSED".equals(decision)) return "无冲突，通过";
+        if ("REJECTED".equals(decision)) return "存在冲突，不通过";
+        if ("CONDITIONAL".equals(decision)) return "附条件通过";
+        return "尚未审查";
+    }
+
+    private String nullToDash(String value) {
+        return hasText(value) ? value.trim() : "-";
     }
 
     private String getUserName(Long userId) {
@@ -689,14 +912,14 @@ public class ApprovalService {
 
     private void assertApprovalVisible(Approval approval, Long currentUserId) {
         if (approval == null) {
-            throw new RuntimeException("审批单不存在");
+            throw new ResourceNotFoundException("审批单不存在");
         }
         if (hasAllApprovalAccess(currentUserId)
                 || Objects.equals(approval.getApplicantId(), currentUserId)
                 || Objects.equals(approval.getCurrentApproverId(), currentUserId)) {
             return;
         }
-        throw new RuntimeException("无权查看该审批");
+        throw new AccessDeniedException("无权查看该审批");
     }
 
     private boolean hasAllApprovalAccess(Long userId) {

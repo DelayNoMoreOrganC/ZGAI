@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 @Table(name = "work_report", indexes = {
         @Index(name = "idx_reporter_id", columnList = "reporter_id"),
         @Index(name = "idx_report_date", columnList = "report_date"),
-        @Index(name = "idx_created_at", columnList = "created_at")
+        @Index(name = "idx_work_report_created_at", columnList = "created_at")
 })
 @Data
 @EqualsAndHashCode(callSuper = true)

@@ -47,6 +47,9 @@ backend/backups/
 .env
 .env.local
 .env.*.local
+deploy/**/.env.demo
+deploy/**/.env.nas
+deploy/**/.env.cloud
 
 # === Python 缓存 ===
 __pycache__/

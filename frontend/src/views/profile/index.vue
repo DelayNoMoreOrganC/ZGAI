@@ -2,7 +2,17 @@
   <div class="profile-page">
     <PageHeader title="个人中心" />
 
-    <section class="profile-section">
+    <el-alert
+      v-if="requiresPasswordChange"
+      class="password-alert"
+      title="首次登录，请先设置新密码"
+      description="完成密码修改后，方可进入案件、客户及其他业务功能。"
+      type="warning"
+      :closable="false"
+      show-icon
+    />
+
+    <section v-if="!requiresPasswordChange" class="profile-section">
       <div class="identity-row">
         <el-avatar :size="56" :src="user.avatar">{{ initials }}</el-avatar>
         <div>
@@ -39,16 +49,19 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
 import { changePassword } from '@/api/auth'
 import { useUserStore } from '@/stores'
 
 const userStore = useUserStore()
+const router = useRouter()
 const formRef = ref()
 const submitting = ref(false)
 const isMobile = computed(() => window.innerWidth < 768)
 const user = computed(() => userStore.userInfo || {})
+const requiresPasswordChange = computed(() => userStore.requiresPasswordChange)
 const initials = computed(() => (user.value.realName || user.value.username || 'Z').charAt(0))
 
 const form = reactive({
@@ -92,6 +105,10 @@ const submit = async () => {
     form.confirmPassword = ''
     formRef.value?.clearValidate()
     ElMessage.success('密码已更新')
+    await userStore.getUserInfo()
+    if (!userStore.requiresPasswordChange) {
+      router.replace('/dashboard')
+    }
   } finally {
     submitting.value = false
   }
@@ -113,6 +130,10 @@ const submit = async () => {
 
 .profile-section + .profile-section {
   margin-top: 16px;
+}
+
+.password-alert {
+  margin-bottom: 16px;
 }
 
 .identity-row {

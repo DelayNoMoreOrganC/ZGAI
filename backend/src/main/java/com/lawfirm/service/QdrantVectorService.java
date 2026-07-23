@@ -4,32 +4,52 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.lawfirm.config.QdrantConfig;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class QdrantVectorService {
 
     private final QdrantConfig config;
     private final Gson gson = new Gson();
-    private final OkHttpClient client = new OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.SECONDS)
-            .writeTimeout(10, TimeUnit.SECONDS)
-            .build();
+    private final OkHttpClient client;
+
+    @Autowired
+    public QdrantVectorService(QdrantConfig config) {
+        this(config, buildClient(config));
+    }
+
+    QdrantVectorService(QdrantConfig config, OkHttpClient client) {
+        this.config = config;
+        this.client = client;
+    }
+
+    private static OkHttpClient buildClient(QdrantConfig config) {
+        int timeout = Math.max(1, config.getTimeoutSeconds());
+        return new OkHttpClient.Builder()
+                .connectTimeout(timeout, TimeUnit.SECONDS)
+                .readTimeout(timeout, TimeUnit.SECONDS)
+                .writeTimeout(timeout, TimeUnit.SECONDS)
+                .build();
+    }
 
     /**
      * 初始化Qdrant集合
      */
     public void initializeCollection() {
+        if (!config.isEnabled()) {
+            log.info("Qdrant 已通过配置停用");
+            return;
+        }
         try {
             // 检查集合是否存在
             if (collectionExists()) {
@@ -73,13 +93,12 @@ public class QdrantVectorService {
     private void createCollection() {
         try {
             JsonObject requestBody = new JsonObject();
-            requestBody.addProperty("vector_size", config.getVectorSize());
-            requestBody.addProperty("distance", config.getDistance());
+            JsonObject vectors = new JsonObject();
+            vectors.addProperty("size", config.getVectorSize());
+            vectors.addProperty("distance", config.getDistance());
+            requestBody.add("vectors", vectors);
 
-            // 使用优化的索引参数
-            JsonObject params = new JsonObject();
-            params.addProperty("hnsw_config", buildHnswConfig());
-            requestBody.add("params", params);
+            requestBody.add("hnsw_config", buildHnswConfig());
 
             Request request = new Request.Builder()
                     .url(String.format("%s/collections/%s", config.getHttpUrl(), config.getCollectionName()))
@@ -104,11 +123,11 @@ public class QdrantVectorService {
     /**
      * HNSW索引配置优化
      */
-    private String buildHnswConfig() {
-        JsonObject config = new JsonObject();
-        config.addProperty("m", 16);  // 连接数，越大越准确但内存占用高
-        config.addProperty("ef_construct", 100);  // 构建时的搜索范围
-        return gson.toJson(config);
+    private JsonObject buildHnswConfig() {
+        JsonObject hnsw = new JsonObject();
+        hnsw.addProperty("m", 16);
+        hnsw.addProperty("ef_construct", 100);
+        return hnsw;
     }
 
     /**
@@ -119,6 +138,7 @@ public class QdrantVectorService {
      * @param payload 元数据（如articleId, title等）
      */
     public void insertPoint(long pointId, List<Double> vector, JsonObject payload) {
+        validateVector(vector);
         try {
             JsonObject point = new JsonObject();
             point.addProperty("id", pointId);
@@ -164,6 +184,7 @@ public class QdrantVectorService {
         try {
             JsonArray pointsArray = new JsonArray();
             for (VectorPoint point : points) {
+                validateVector(point.vector);
                 JsonObject pointJson = new JsonObject();
                 pointJson.addProperty("id", point.id);
                 pointJson.add("vector", gson.toJsonTree(point.vector));
@@ -206,6 +227,7 @@ public class QdrantVectorService {
      * @return 检索结果
      */
     public List<SearchResult> search(List<Double> queryVector, int topK, double scoreThreshold) {
+        validateVector(queryVector);
         try {
             JsonObject searchRequest = new JsonObject();
             searchRequest.add("vector", gson.toJsonTree(queryVector));
@@ -286,6 +308,76 @@ public class QdrantVectorService {
         } catch (Exception e) {
             log.error("获取集合信息失败", e);
             return null;
+        }
+    }
+
+    public Map<String, Object> healthStatus() {
+        if (!config.isEnabled()) {
+            return statusWithoutProbe("disabled");
+        }
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("collection", config.getCollectionName());
+        status.put("configuredDimension", config.getVectorSize());
+        JsonObject info = getCollectionInfo();
+        if (info == null) {
+            status.put("status", "unavailable");
+            status.put("actualDimension", null);
+            return status;
+        }
+
+        Integer actualDimension = extractVectorSize(info);
+        status.put("actualDimension", actualDimension);
+        if (actualDimension == null) {
+            status.put("status", "degraded");
+        } else if (actualDimension != config.getVectorSize()) {
+            status.put("status", "incompatible");
+        } else {
+            status.put("status", "ready");
+        }
+        return status;
+    }
+
+    public Map<String, Object> standbyStatus() {
+        return statusWithoutProbe(config.isEnabled() ? "standby" : "disabled");
+    }
+
+    public boolean isEnabled() {
+        return config.isEnabled();
+    }
+
+    private Map<String, Object> statusWithoutProbe(String state) {
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("collection", config.getCollectionName());
+        status.put("configuredDimension", config.getVectorSize());
+        status.put("actualDimension", null);
+        status.put("status", state);
+        return status;
+    }
+
+    private Integer extractVectorSize(JsonObject info) {
+        try {
+            JsonObject vectors = info.getAsJsonObject("result")
+                    .getAsJsonObject("config")
+                    .getAsJsonObject("params")
+                    .getAsJsonObject("vectors");
+            if (vectors.has("size")) {
+                return vectors.get("size").getAsInt();
+            }
+            if (vectors.entrySet().size() == 1) {
+                JsonObject namedVector = vectors.entrySet().iterator().next().getValue().getAsJsonObject();
+                return namedVector.has("size") ? namedVector.get("size").getAsInt() : null;
+            }
+        } catch (Exception ignored) {
+            // Health endpoints must degrade cleanly when Qdrant changes or returns partial data.
+        }
+        return null;
+    }
+
+    private void validateVector(List<Double> vector) {
+        int actual = vector == null ? 0 : vector.size();
+        if (actual != config.getVectorSize()) {
+            throw new IllegalArgumentException("Qdrant 向量维度不匹配，配置 "
+                    + config.getVectorSize() + "，实际 " + actual);
         }
     }
 

@@ -75,6 +75,15 @@ public class DataBackup extends LogicalDeleteEntity {
     @Column(name = "error_message", length = 1000)
     private String errorMessage;
 
+    @Column(name = "content_sha256", length = 64)
+    private String contentSha256;
+
+    @Column(name = "verification_status", length = 20)
+    private String verificationStatus;
+
+    @Column(name = "verified_at")
+    private LocalDateTime verifiedAt;
+
     // Getters and Setters
     @JsonIgnore
     public String getFilePath() {
@@ -156,6 +165,30 @@ public class DataBackup extends LogicalDeleteEntity {
 
     public void setErrorMessage(String errorMessage) {
         this.errorMessage = errorMessage;
+    }
+
+    public String getContentSha256() {
+        return contentSha256;
+    }
+
+    public void setContentSha256(String contentSha256) {
+        this.contentSha256 = contentSha256;
+    }
+
+    public String getVerificationStatus() {
+        return verificationStatus;
+    }
+
+    public void setVerificationStatus(String verificationStatus) {
+        this.verificationStatus = verificationStatus;
+    }
+
+    public LocalDateTime getVerifiedAt() {
+        return verifiedAt;
+    }
+
+    public void setVerifiedAt(LocalDateTime verifiedAt) {
+        this.verifiedAt = verifiedAt;
     }
 
     public Long getId() {

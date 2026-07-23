@@ -40,7 +40,6 @@ public class CaseController {
     private final CaseTimelineService caseTimelineService;
     private final CaseStageService caseStageService;
     private final UserRepository userRepository;
-    private final ArchivePdfService archivePdfService;
     private final ExcelExportService excelExportService;
     private final com.lawfirm.security.SecurityUtils securityUtils;
 
@@ -108,7 +107,7 @@ public class CaseController {
     @AuditLog(value = "删除案件", operationType = "DELETE", logParams = false)
     public Result<Void> deleteCase(@PathVariable Long id) {
         Long currentUserId = securityUtils.getCurrentUserId();
-        caseService.assertCaseVisible(id, currentUserId);
+        caseService.assertCaseManageable(id, currentUserId);
         caseService.deleteCase(id);
         return Result.success();
     }
@@ -121,7 +120,7 @@ public class CaseController {
     @AuditLog(value = "恢复案件", operationType = "RESTORE", logParams = false)
     public Result<String> restoreCase(@PathVariable Long id) {
         Long currentUserId = securityUtils.getCurrentUserId();
-        caseService.assertCaseVisible(id, currentUserId);
+        caseService.assertCaseManageable(id, currentUserId);
         caseService.restoreCase(id);
         return Result.success("案件恢复成功");
     }
@@ -184,7 +183,7 @@ public class CaseController {
             @PathVariable Long id,
             @Valid @RequestBody ArchiveRequest request) {
         Long currentUserId = securityUtils.getCurrentUserId();
-        caseService.assertCaseVisible(id, currentUserId);
+        caseService.assertCaseManageable(id, currentUserId);
         caseService.archiveCase(id, request.getArchiveLocation());
         return Result.success();
     }
@@ -500,8 +499,8 @@ public class CaseController {
     @AuditLog(value = "生成归档PDF", operationType = "EXPORT", logParams = false)
     public Result<String> generateArchivePdf(@PathVariable Long id) {
         assertCaseVisible(id);
-        String pdfUrl = archivePdfService.generateArchivePdf(id);
-        return Result.success("PDF生成成功", pdfUrl);
+        throw new com.lawfirm.exception.InvalidParameterException(
+                "archiveWorkflow", "旧归档PDF入口已停用，请在案件详情的智能归档中生成预览或正式电子卷宗");
     }
 
     /**
@@ -511,7 +510,8 @@ public class CaseController {
     @PreAuthorize("hasAuthority('CASE_VIEW')")
     public void downloadArchivePdf(@PathVariable Long id, javax.servlet.http.HttpServletResponse response) {
         assertCaseVisible(id);
-        archivePdfService.downloadArchivePdf(id, response);
+        throw new com.lawfirm.exception.InvalidParameterException(
+                "archiveWorkflow", "旧归档PDF入口已停用，请从智能归档任务下载版本化电子卷宗");
     }
 
     // ========== 请求DTO ==========

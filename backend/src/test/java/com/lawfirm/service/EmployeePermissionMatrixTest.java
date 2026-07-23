@@ -44,9 +44,16 @@ class EmployeePermissionMatrixTest {
         assertTrue(employee.contains("CASE_EDIT"));
         assertFalse(administrative.contains("CASE_EDIT"));
         assertTrue(administrative.contains("APPROVAL_EDIT"));
+        assertTrue(administrative.contains("SEAL_APPROVE"));
+        assertFalse(employee.contains("SEAL_APPROVE"));
+        assertTrue(administrative.contains("CASE_FILING_REVIEW"));
+        assertTrue(administrative.contains("CASE_ARCHIVE_REVIEW"));
+        assertFalse(employee.contains("CASE_ARCHIVE_REVIEW"));
+        assertTrue(administrative.contains("CLIENT_VIEW_ALL"));
         assertFalse(employee.contains("SYSTEM_CONFIG"));
         assertFalse(administrative.contains("SYSTEM_CONFIG"));
         assertTrue(director.contains("SYSTEM_CONFIG"));
         assertTrue(director.contains("AI_CONFIG"));
+        assertTrue(director.contains("CASE_FILING_FINAL_APPROVE"));
     }
 }

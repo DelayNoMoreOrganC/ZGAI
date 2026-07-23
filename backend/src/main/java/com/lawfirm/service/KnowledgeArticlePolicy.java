@@ -76,12 +76,19 @@ public final class KnowledgeArticlePolicy {
         return REFERENCE_MATERIAL.equals(source);
     }
 
+    public static boolean requiresReview(String source) {
+        return LAW_REGULATION.equals(source)
+                || FIRM_POLICY.equals(source)
+                || REFERENCE_MATERIAL.equals(source);
+    }
+
     public static boolean isRagIndexable(KnowledgeArticle article) {
         if (article == null || Boolean.TRUE.equals(article.getDeleted())) {
             return false;
         }
         if (!Boolean.TRUE.equals(article.getKnowledgeEligible())
                 || !Boolean.TRUE.equals(article.getIsPublic())
+                || !"APPROVED".equals(article.getReviewStatus())
                 || !isSharedRagSource(article.getKnowledgeSource())) {
             return false;
         }

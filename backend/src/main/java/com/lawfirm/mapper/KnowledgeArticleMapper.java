@@ -20,14 +20,16 @@ public interface KnowledgeArticleMapper {
      */
     @Insert("INSERT INTO knowledge_article " +
             "(title, article_type, knowledge_source, category, tags, summary, content, attachment_path, " +
-            "source_reference, issuing_authority, document_number, effective_date, validity_status, authorization_confirmed, " +
-            "knowledge_eligible, index_status, " +
+            "source_reference, source_url, source_relative_path, content_sha256, collected_at, " +
+            "issuing_authority, document_number, effective_date, validity_status, authorization_confirmed, " +
+            "review_status, reviewed_by, reviewed_at, review_reason, knowledge_eligible, index_status, " +
             "view_count, like_count, is_top, is_public, author_id, author_name, updater_id, " +
             "created_at, updated_at, deleted) " +
             "VALUES " +
             "(#{title}, #{articleType}, #{knowledgeSource}, #{category}, #{tags}, #{summary}, #{content}, #{attachmentPath}, " +
-            "#{sourceReference}, #{issuingAuthority}, #{documentNumber}, #{effectiveDate}, #{validityStatus}, #{authorizationConfirmed}, " +
-            "#{knowledgeEligible}, #{indexStatus}, " +
+            "#{sourceReference}, #{sourceUrl}, #{sourceRelativePath}, #{contentSha256}, #{collectedAt}, " +
+            "#{issuingAuthority}, #{documentNumber}, #{effectiveDate}, #{validityStatus}, #{authorizationConfirmed}, " +
+            "#{reviewStatus}, #{reviewedBy}, #{reviewedAt}, #{reviewReason}, #{knowledgeEligible}, #{indexStatus}, " +
             "#{viewCount}, #{likeCount}, #{isTop}, #{isPublic}, #{authorId}, #{authorName}, #{updaterId}, " +
             "#{createdAt}, #{updatedAt}, #{deleted})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
@@ -40,9 +42,13 @@ public interface KnowledgeArticleMapper {
             "title = #{title}, article_type = #{articleType}, knowledge_source = #{knowledgeSource}, " +
             "category = #{category}, tags = #{tags}, summary = #{summary}, content = #{content}, " +
             "attachment_path = #{attachmentPath}, knowledge_eligible = #{knowledgeEligible}, " +
-            "source_reference = #{sourceReference}, issuing_authority = #{issuingAuthority}, " +
+            "source_reference = #{sourceReference}, source_url = #{sourceUrl}, " +
+            "source_relative_path = #{sourceRelativePath}, content_sha256 = #{contentSha256}, collected_at = #{collectedAt}, " +
+            "issuing_authority = #{issuingAuthority}, " +
             "document_number = #{documentNumber}, effective_date = #{effectiveDate}, " +
             "validity_status = #{validityStatus}, authorization_confirmed = #{authorizationConfirmed}, " +
+            "review_status = #{reviewStatus}, reviewed_by = #{reviewedBy}, reviewed_at = #{reviewedAt}, " +
+            "review_reason = #{reviewReason}, " +
             "index_status = #{indexStatus}, is_top = #{isTop}, is_public = #{isPublic}, " +
             "updater_id = #{updaterId}, updated_at = #{updatedAt} " +
             "WHERE id = #{id} AND deleted = 0")
@@ -239,4 +245,14 @@ public interface KnowledgeArticleMapper {
      */
     @Select("SELECT COUNT(*) FROM knowledge_article WHERE deleted = 0 AND author_id = #{authorId}")
     int countMyArticles(@Param("authorId") Long authorId);
+
+    @Select("SELECT * FROM knowledge_article WHERE deleted = 0 AND review_status = 'PENDING_REVIEW' " +
+            "ORDER BY created_at ASC LIMIT #{pageSize} OFFSET #{offset}")
+    List<KnowledgeArticle> selectPendingReview(
+            @Param("offset") int offset,
+            @Param("pageSize") int pageSize
+    );
+
+    @Select("SELECT COUNT(*) FROM knowledge_article WHERE deleted = 0 AND review_status = 'PENDING_REVIEW'")
+    int countPendingReview();
 }

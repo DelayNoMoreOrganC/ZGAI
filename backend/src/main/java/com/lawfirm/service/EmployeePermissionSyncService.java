@@ -67,12 +67,22 @@ public class EmployeePermissionSyncService {
     @Value("${employee-sync.workbook-path:}")
     private String workbookPath;
 
+    @Value("${permission-bootstrap.client-all-view-users:}")
+    private String clientAllViewUsers;
+
+    @Value("${permission-bootstrap.invoice-processors:}")
+    private String invoiceProcessors;
+
+    @Value("${permission-bootstrap.case-filing-managers:}")
+    private String caseFilingManagers;
+
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void syncFromEmployeeWorkbook() {
         Map<String, Role> roles;
         try {
             roles = syncRolesAndPermissions();
+            syncConfiguredCapabilityRoles(roles);
             log.info("系统角色权限基线已校准");
         } catch (Exception e) {
             log.error("系统角色权限基线校准失败：{}", e.getMessage(), e);
@@ -101,6 +111,7 @@ public class EmployeePermissionSyncService {
             Map<String, Department> departments = syncDepartments(orgRows, employees);
             int userCount = syncUsers(employees, departments, roles);
             syncDepartmentLeaders(orgRows, departments);
+            syncConfiguredCapabilityRoles(roles);
 
             log.info("员工权限同步完成：部门 {} 个，员工 {} 人，来源 {}", departments.size(), userCount, sourcePath);
         } catch (Exception e) {
@@ -211,10 +222,19 @@ public class EmployeePermissionSyncService {
         assignPermissions(roles.get("LAWYER_ASSISTANT"), permissions, employeePermissions());
         assignPermissions(roles.get("TRAINEE"), permissions, employeePermissions());
         assignPermissions(roles.get("FINANCE"), permissions, concat(employeePermissions(),
-                "FINANCE_VIEW", "FINANCE_EDIT", "CLIENT_IMPORT", "CLIENT_EXPORT", "CASE_IMPORT", "CASE_EXPORT"));
+                "FINANCE_VIEW", "FINANCE_EDIT", "INVOICE_PROCESS", "CLIENT_VIEW_ALL",
+                "CLIENT_IMPORT", "CLIENT_EXPORT", "CASE_IMPORT", "CASE_EXPORT"));
         assignPermissions(roles.get("ADMINISTRATIVE"), permissions, administrativePermissions());
-        assignPermissions(roles.get("ADMINISTRATIVE1"), permissions, administrativePermissions());
+        assignPermissions(roles.get("ADMINISTRATIVE1"), permissions,
+                concat(administrativePermissions(), "CASE_FILING_MANAGE"));
         assignPermissions(roles.get("ADMINISTRATIVE2"), permissions, administrativePermissions());
+        assignPermissions(roles.get("CLIENT_AUDITOR"), permissions,
+                Arrays.asList("CLIENT_VIEW", "CLIENT_VIEW_ALL"));
+        assignPermissions(roles.get("INVOICE_PROCESSOR"), permissions,
+                Arrays.asList("FINANCE_VIEW", "FINANCE_EDIT", "INVOICE_PROCESS", "CLIENT_VIEW_ALL"));
+        assignPermissions(roles.get("CASE_FILING_ADMIN"), permissions,
+                Arrays.asList("CASE_VIEW", "CASE_EDIT", "APPROVAL_VIEW", "APPROVAL_EDIT",
+                        "CASE_FILING_REVIEW", "CASE_FILING_MANAGE", "CLIENT_VIEW_ALL"));
 
         return roles;
     }
@@ -226,10 +246,12 @@ public class EmployeePermissionSyncService {
         definitions.put("CASE_EDIT", "编辑案件");
         definitions.put("CASE_DELETE", "删除案件");
         definitions.put("CASE_ARCHIVE", "案件归档");
+        definitions.put("CASE_ARCHIVE_REVIEW", "行政复核归档");
         definitions.put("CASE_IMPORT", "导入案件");
         definitions.put("CASE_EXPORT", "导出案件");
         definitions.put("CLIENT_CREATE", "新建客户");
         definitions.put("CLIENT_VIEW", "查看客户");
+        definitions.put("CLIENT_VIEW_ALL", "查看全所客户");
         definitions.put("CLIENT_EDIT", "编辑客户");
         definitions.put("CLIENT_DELETE", "删除客户");
         definitions.put("CLIENT_IMPORT", "导入客户");
@@ -240,11 +262,16 @@ public class EmployeePermissionSyncService {
         definitions.put("APPROVAL_VIEW", "查看审批");
         definitions.put("APPROVAL_EDIT", "处理审批");
         definitions.put("APPROVAL_DELETE", "删除审批");
+        definitions.put("SEAL_APPROVE", "公章用印审批");
+        definitions.put("CASE_FILING_REVIEW", "立案行政初审");
+        definitions.put("CASE_FILING_FINAL_APPROVE", "立案主任终审");
+        definitions.put("CASE_FILING_MANAGE", "修订审批中案件");
         definitions.put("TODO_VIEW", "查看待办");
         definitions.put("TODO_EDIT", "编辑待办");
         definitions.put("TODO_DELETE", "删除待办");
         definitions.put("FINANCE_VIEW", "查看财务");
         definitions.put("FINANCE_EDIT", "处理财务");
+        definitions.put("INVOICE_PROCESS", "处理开票申请");
         definitions.put("USER_VIEW", "查看用户");
         definitions.put("USER_EDIT", "编辑用户");
         definitions.put("ROLE_VIEW", "查看角色");
@@ -253,6 +280,7 @@ public class EmployeePermissionSyncService {
         definitions.put("SYSTEM_CONFIG", "系统配置");
         definitions.put("WORK_REPORT_REVIEW", "审核工作报告");
         definitions.put("KNOWLEDGE_DELETE", "删除知识库");
+        definitions.put("KNOWLEDGE_MANAGE", "审核与发布知识库");
         definitions.put("STATISTICS_VIEW", "查看统计");
         definitions.put("STATISTICS_EXPORT", "导出统计");
         return definitions;
@@ -270,7 +298,35 @@ public class EmployeePermissionSyncService {
         definitions.put("ADMINISTRATIVE", "行政管理");
         definitions.put("ADMINISTRATIVE1", "行政管理1");
         definitions.put("ADMINISTRATIVE2", "行政管理2");
+        definitions.put("CLIENT_AUDITOR", "客户全库查看");
+        definitions.put("INVOICE_PROCESSOR", "开票处理人");
+        definitions.put("CASE_FILING_ADMIN", "立案行政管理");
         return definitions;
+    }
+
+    private void syncConfiguredCapabilityRoles(Map<String, Role> roles) {
+        assignConfiguredRole(clientAllViewUsers, roles.get("CLIENT_AUDITOR"));
+        assignConfiguredRole(invoiceProcessors, roles.get("INVOICE_PROCESSOR"));
+        assignConfiguredRole(caseFilingManagers, roles.get("CASE_FILING_ADMIN"));
+    }
+
+    private void assignConfiguredRole(String configuredUsers, Role role) {
+        if (!StringUtils.hasText(configuredUsers) || role == null) {
+            return;
+        }
+        Arrays.stream(configuredUsers.split(","))
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .forEach(account -> findUser(account).ifPresent(user -> {
+                    boolean assigned = userRoleRepository.findByUserId(user.getId()).stream()
+                            .anyMatch(userRole -> role.getId().equals(userRole.getRoleId()));
+                    if (!assigned) {
+                        UserRole userRole = new UserRole();
+                        userRole.setUserId(user.getId());
+                        userRole.setRoleId(role.getId());
+                        userRoleRepository.save(userRole);
+                    }
+                }));
     }
 
     private Role ensureRole(String code, String name) {
@@ -327,6 +383,7 @@ public class EmployeePermissionSyncService {
             user.setDeleted(false);
             if (newUser) {
                 user.setPassword(passwordEncoder.encode(defaultPassword(employee.phone)));
+                user.setMustChangePassword(true);
             }
             user = userRepository.save(user);
             assignUserRoles(user, employee.position, roles);
@@ -474,7 +531,8 @@ public class EmployeePermissionSyncService {
                 "CASE_CREATE", "CASE_VIEW",
                 "CLIENT_CREATE", "CLIENT_VIEW", "CLIENT_EDIT",
                 "DOCUMENT_VIEW",
-                "APPROVAL_VIEW", "APPROVAL_EDIT",
+                "APPROVAL_VIEW", "APPROVAL_EDIT", "SEAL_APPROVE",
+                "CASE_FILING_REVIEW", "CASE_ARCHIVE_REVIEW", "CLIENT_VIEW_ALL",
                 "TODO_VIEW", "TODO_EDIT",
                 "USER_VIEW", "STATISTICS_VIEW", "WORK_REPORT_REVIEW"
         );

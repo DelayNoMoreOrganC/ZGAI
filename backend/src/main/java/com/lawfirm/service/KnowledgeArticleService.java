@@ -57,6 +57,7 @@ public class KnowledgeArticleService {
         article.setSummary(dto.getSummary());
         article.setContent(dto.getContent());
         article.setAttachmentPath(attachmentPath);
+        applyReviewGate(article, null);
         article.setIsTop(dto.getIsTop() != null ? dto.getIsTop() : false);
         article.setViewCount(0);
         article.setLikeCount(0);
@@ -90,6 +91,7 @@ public class KnowledgeArticleService {
         }
         assertCanModify(article);
 
+        String previousSource = article.getKnowledgeSource();
         article.setTitle(dto.getTitle());
         article.setArticleType(dto.getArticleType());
         article.setIsPublic(dto.getIsPublic() != null ? dto.getIsPublic() : true);
@@ -100,6 +102,7 @@ public class KnowledgeArticleService {
         article.setSummary(dto.getSummary());
         article.setContent(dto.getContent());
         article.setIsTop(dto.getIsTop());
+        applyReviewGate(article, previousSource);
 
         // 更新修改人和时间
         article.setUpdaterId(securityUtils.getCurrentUserId());
@@ -325,6 +328,19 @@ public class KnowledgeArticleService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public Page<KnowledgeArticleVO> getPendingReviewArticles(Pageable pageable) {
+        int offset = (int) pageable.getOffset();
+        int pageSize = pageable.getPageSize();
+        List<KnowledgeArticle> articles = articleMapper.selectPendingReview(offset, pageSize);
+        int total = articleMapper.countPendingReview();
+        return new PageImpl<>(
+                articles.stream().map(this::toVO).collect(Collectors.toList()),
+                pageable,
+                total
+        );
+    }
+
     /**
      * Entity转VO
      */
@@ -342,6 +358,14 @@ public class KnowledgeArticleService {
         vo.setAttachmentPath(entity.getAttachmentPath() == null ? null : "AVAILABLE");
         vo.setAttachmentName(resolveAttachmentName(entity.getAttachmentPath()));
         vo.setSourceReference(entity.getSourceReference());
+        vo.setSourceUrl(entity.getSourceUrl());
+        vo.setSourceRelativePath(entity.getSourceRelativePath());
+        vo.setContentSha256(entity.getContentSha256());
+        vo.setReviewStatus(entity.getReviewStatus());
+        vo.setReviewedBy(entity.getReviewedBy());
+        vo.setReviewedAt(entity.getReviewedAt());
+        vo.setReviewReason(entity.getReviewReason());
+        vo.setCollectedAt(entity.getCollectedAt());
         vo.setIssuingAuthority(entity.getIssuingAuthority());
         vo.setDocumentNumber(entity.getDocumentNumber());
         vo.setEffectiveDate(entity.getEffectiveDate());
@@ -384,6 +408,19 @@ public class KnowledgeArticleService {
         article.setAuthorizationConfirmed(Boolean.TRUE.equals(dto.getAuthorizationConfirmed()));
     }
 
+    private void applyReviewGate(KnowledgeArticle article, String previousSource) {
+        boolean requiresReview = KnowledgeArticlePolicy.requiresReview(article.getKnowledgeSource())
+                || KnowledgeArticlePolicy.requiresReview(previousSource);
+        if (!requiresReview) return;
+        article.setReviewStatus("PENDING_REVIEW");
+        article.setReviewedBy(null);
+        article.setReviewedAt(null);
+        article.setReviewReason(null);
+        article.setIsPublic(false);
+        article.setKnowledgeEligible(false);
+        article.setIndexStatus("FORBIDDEN");
+    }
+
     private String normalizeKnowledgeSource(String source, String articleType) {
         if (source != null && !source.trim().isEmpty()) {
             return validateKnowledgeSource(source);
@@ -413,7 +450,8 @@ public class KnowledgeArticleService {
         Long currentUserId = securityUtils.getCurrentUserId();
         boolean sharedKnowledge = Boolean.TRUE.equals(article.getIsPublic())
                 && !"CASE_DEPOSIT".equals(article.getKnowledgeSource());
-        if (sharedKnowledge || currentUserId.equals(article.getAuthorId()) || securityUtils.isAdmin()) {
+        if (sharedKnowledge || currentUserId.equals(article.getAuthorId()) || securityUtils.isAdmin()
+                || securityUtils.hasAuthority("KNOWLEDGE_MANAGE")) {
             return;
         }
         throw new RuntimeException("无权查看该知识库文章");

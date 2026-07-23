@@ -1,6 +1,7 @@
 package com.lawfirm.vo;
 
 import lombok.Data;
+import com.lawfirm.dto.ConflictCheckRecordDTO;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -33,6 +34,17 @@ public class CaseDetailVO {
     private String agencyType;
     private LocalDate serviceStartDate;
     private LocalDate serviceEndDate;
+    private String consultantUnitName;
+    private String consultantContactName;
+    private String consultantContactDepartment;
+    private String consultantContactTitle;
+    private String consultantContactPhone;
+    private String consultantContactEmail;
+    private String consultantServiceScope;
+    private String consultantResponseRequirement;
+    private String consultantIncludedServices;
+    private String consultantExcludedServices;
+    private LocalDate renewalReminderDate;
     private String trialStages;
     private String courtCaseNumber;
     private LocalDate hearingDate;
@@ -83,6 +95,16 @@ public class CaseDetailVO {
      * 关联客户ID列表
      */
     private List<Long> clientIds;
+
+    /**
+     * 主委托客户名称，供案件详情直接展示。
+     */
+    private String clientName;
+
+    /**
+     * 与本案立案流程绑定的利冲检查及正式审查记录。
+     */
+    private List<ConflictCheckRecordDTO> conflictChecks;
 
     /**
      * 关联案件列表

@@ -44,7 +44,15 @@
             <el-icon><Upload /></el-icon>
             导入文档
           </el-link>
-          <el-link @click="loadMyArticles" style="display: block; margin-top: 10px;">
+          <el-link v-if="canManageKnowledge" @click="openSourceDialog" style="display: block; margin-top: 10px;">
+            <el-icon><Connection /></el-icon>
+            来源同步
+          </el-link>
+          <el-link v-if="canManageKnowledge" @click="showPendingReviews" style="display: block; margin-top: 10px;">
+            <el-icon><DocumentChecked /></el-icon>
+            待审核知识
+          </el-link>
+          <el-link @click="showMyArticles" style="display: block; margin-top: 10px;">
             <el-icon><User /></el-icon>
             我的文章
           </el-link>
@@ -110,6 +118,14 @@
           <div class="list-header">
             <h3>{{ currentTitle }}</h3>
             <div class="header-actions">
+              <el-button v-if="canManageKnowledge" @click="showPendingReviews">
+                <el-icon><DocumentChecked /></el-icon>
+                待审核
+              </el-button>
+              <el-button v-if="canManageKnowledge" @click="openSourceDialog">
+                <el-icon><Connection /></el-icon>
+                来源同步
+              </el-button>
               <el-button @click="openImportDialog">
                 <el-icon><Upload /></el-icon>
                 导入文档
@@ -142,6 +158,7 @@
                   <el-tag size="small" :type="getIndexStatusType(article.indexStatus)">
                     {{ formatIndexStatus(article.indexStatus) }}
                   </el-tag>
+                  <el-tag v-if="article.reviewStatus === 'PENDING_REVIEW'" size="small" type="warning">待审核</el-tag>
                   <el-tag
                     v-if="article.knowledgeSource === 'LAW_REGULATION'"
                     size="small"
@@ -176,6 +193,10 @@
                   {{ article.likeCount }}
                 </span>
                 <span class="date">{{ formatDate(article.createdAt) }}</span>
+                <span v-if="canManageKnowledge && article.reviewStatus === 'PENDING_REVIEW'" class="review-actions" @click.stop>
+                  <el-button link type="success" @click="reviewArticle(article, 'APPROVED')">批准</el-button>
+                  <el-button link type="danger" @click="reviewArticle(article, 'REJECTED')">驳回</el-button>
+                </span>
               </div>
             </div>
           </div>
@@ -262,7 +283,7 @@
             <el-icon class="upload-icon"><UploadFilled /></el-icon>
             <div class="el-upload__text">拖入文件，或点击选择</div>
             <template #tip>
-              <div class="el-upload__tip">支持 PDF、DOCX、TXT、MD；扫描版 PDF 需先完成 OCR</div>
+              <div class="el-upload__tip">支持 PDF、DOCX、TXT、MD；扫描版 PDF 将在本机自动 OCR，原件不会发送云端</div>
             </template>
           </el-upload>
         </el-form-item>
@@ -295,24 +316,99 @@
         <el-button type="primary" :loading="importing" @click="submitImport">导入</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="sourceDialogVisible" title="知识来源同步" width="min(920px, 92vw)" :close-on-click-modal="false">
+      <el-tabs v-model="sourceTab">
+        <el-tab-pane label="国家法律法规数据库" name="flk">
+          <div class="starter-import">
+            <div>
+              <strong>基础法规库</strong>
+              <p>从国家法律法规数据库加载 11 项常用现行法律及司法解释，下载后仍需审核发布。</p>
+            </div>
+            <el-button type="primary" :loading="sourceLoading" @click="loadStarterLaws">加载基础法规</el-button>
+          </div>
+          <el-input v-model="flkUrls" type="textarea" :rows="6"
+            placeholder="每行一个 https://flk.npc.gov.cn 法规详情链接，单批最多50条" />
+          <div class="source-actions">
+            <el-button type="primary" :loading="sourceLoading" @click="createFlkPreview">生成预览</el-button>
+            <span>网站拒绝自动下载时，项目会标记为“需补传”，不会绕过访问限制。</span>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane label="律所制度" name="policy">
+          <div class="policy-scan">
+            <div>
+              <strong>NAS 制度目录</strong>
+              <p>只读扫描文件名、相对路径和哈希，不修改源文件。</p>
+            </div>
+            <el-button type="primary" :loading="sourceLoading" @click="scanPolicies">开始扫描</el-button>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+
+        <el-table :data="importBatches" size="small" highlight-current-row @row-click="loadImportItems">
+        <el-table-column prop="id" label="批次" width="80" />
+        <el-table-column prop="sourceType" label="来源" width="130">
+          <template #default="{ row }">{{ row.sourceType === 'FLK' ? '法律法规' : '律所制度' }}</template>
+        </el-table-column>
+        <el-table-column prop="itemCount" label="文件/链接" width="100" />
+        <el-table-column prop="status" label="状态" min-width="140">
+          <template #default="{ row }">{{ formatImportStatus(row.status) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="210">
+          <template #default="{ row }">
+            <el-button v-if="row.sourceType === 'FLK' && ['DISCOVERED', 'PENDING_REVIEW', 'FAILED'].includes(row.status)"
+              link type="primary" @click.stop="stageBatch(row)">重新尝试下载</el-button>
+            <el-button link type="success" @click.stop="confirmBatch(row)">生成待审核条目</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-table v-if="importItems.length" :data="importItems" size="small" class="item-table"
+        @selection-change="handleImportSelectionChange">
+        <el-table-column type="selection" width="44" :selectable="isImportItemConfirmable" />
+        <el-table-column prop="title" label="导入项目" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="sourceRelativePath" label="相对路径" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="status" label="状态" width="130">
+          <template #default="{ row }">{{ formatImportStatus(row.status) }}</template>
+        </el-table-column>
+        <el-table-column prop="errorMessage" label="处理说明" min-width="220" show-overflow-tooltip />
+        <el-table-column label="补传官方文件" width="140">
+          <template #default="{ row }">
+            <el-upload v-if="row.status === 'NEEDS_UPLOAD'" action="#" :show-file-list="false" :auto-upload="false"
+              accept=".pdf,.doc,.docx,.txt,.md"
+              :on-change="file => uploadOfficialAttachment(row, file)">
+              <el-button link type="primary">选择文件</el-button>
+            </el-upload>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Document, Tickets, Reading, DocumentChecked, Collection,
-  Plus, User, Search, Star, View, FolderOpened, PriceTag, Upload, UploadFilled, OfficeBuilding
+  Plus, User, Search, Star, View, FolderOpened, PriceTag, Upload, UploadFilled, OfficeBuilding, Connection
 } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import request from '@/utils/request'
-import { importKnowledgeDocument } from '@/api/knowledge'
+import {
+  confirmKnowledgeImport, createStarterFlkImport, getKnowledgeImportBatches, getKnowledgeImportItems,
+  getPendingKnowledgeReviews, importKnowledgeDocument, previewFlkImport, reviewKnowledgeArticle,
+  scanFirmPolicies, stageKnowledgeImport, uploadKnowledgeImportAttachment
+} from '@/api/knowledge'
+import { useUserStore } from '@/stores'
 
 const router = useRouter()
+const userStore = useUserStore()
+const canManageKnowledge = computed(() => userStore.hasPermission('KNOWLEDGE_MANAGE'))
 
 const activeSource = ref('')
+const listMode = ref('catalog')
 const searchKeyword = ref('')
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -325,6 +421,14 @@ const importing = ref(false)
 const importFile = ref(null)
 const importFileList = ref([])
 const importForm = ref(defaultImportForm())
+const sourceDialogVisible = ref(false)
+const sourceTab = ref('flk')
+const sourceLoading = ref(false)
+const flkUrls = ref('')
+const importBatches = ref([])
+const importItems = ref([])
+const selectedImportBatchId = ref(null)
+const selectedImportItemIds = ref([])
 
 function defaultImportForm() {
   return {
@@ -345,6 +449,8 @@ function defaultImportForm() {
 }
 
 const currentTitle = computed(() => {
+  if (listMode.value === 'mine') return '我的文章'
+  if (listMode.value === 'review') return '待审核知识'
   if (searchKeyword.value) return `搜索结果：${searchKeyword.value}`
   const sourceMap = {
     LAW_REGULATION: '法律法规',
@@ -372,6 +478,7 @@ const loadTopArticles = async () => {
 // 加载文章列表
 const loadArticles = async () => {
   try {
+    listMode.value = 'catalog'
     const params = { page: currentPage.value - 1, size: pageSize.value }
     let url = '/knowledge'
 
@@ -399,14 +506,15 @@ const loadArticles = async () => {
 // 加载我的文章
 const loadMyArticles = async () => {
   try {
+    listMode.value = 'mine'
     activeSource.value = ''
     searchKeyword.value = ''
     const { data } = await request({
       url: '/knowledge/my',
       method: 'get',
       params: {
-        page: 0,
-        size: 100
+        page: currentPage.value - 1,
+        size: pageSize.value
       }
     })
     articles.value = data.content || []
@@ -417,8 +525,36 @@ const loadMyArticles = async () => {
   }
 }
 
+const showMyArticles = () => {
+  currentPage.value = 1
+  loadMyArticles()
+}
+
+const loadPendingReviews = async () => {
+  if (!canManageKnowledge.value) return
+  try {
+    listMode.value = 'review'
+    activeSource.value = ''
+    searchKeyword.value = ''
+    const { data } = await getPendingKnowledgeReviews({
+      page: currentPage.value - 1,
+      size: pageSize.value
+    })
+    articles.value = data.content || []
+    total.value = data.totalElements || 0
+  } catch (error) {
+    console.error('加载待审核知识失败:', error)
+  }
+}
+
+const showPendingReviews = () => {
+  currentPage.value = 1
+  loadPendingReviews()
+}
+
 // 类型切换
 const handleSourceChange = (source) => {
+  listMode.value = 'catalog'
   activeSource.value = source
   searchKeyword.value = ''
   currentPage.value = 1
@@ -427,13 +563,16 @@ const handleSourceChange = (source) => {
 
 // 搜索
 const handleSearch = () => {
+  listMode.value = 'catalog'
   currentPage.value = 1
   loadArticles()
 }
 
 // 分页
 const handlePageChange = () => {
-  loadArticles()
+  if (listMode.value === 'mine') loadMyArticles()
+  else if (listMode.value === 'review') loadPendingReviews()
+  else loadArticles()
 }
 
 // 查看文章
@@ -490,7 +629,8 @@ const submitImport = async () => {
       if (value) data.append(key, value)
     })
     await importKnowledgeDocument(data)
-    ElMessage.success('知识文档导入成功')
+    const requiresReview = ['LAW_REGULATION', 'FIRM_POLICY', 'REFERENCE_MATERIAL'].includes(importForm.value.knowledgeSource)
+    ElMessage.success(requiresReview ? '文档已提交审核，可在“我的文章”查看' : '知识文档导入成功')
     importDialogVisible.value = false
     currentPage.value = 1
     await Promise.all([loadArticles(), loadTopArticles()])
@@ -500,6 +640,117 @@ const submitImport = async () => {
     importing.value = false
   }
 }
+
+const refreshBatches = async () => {
+  if (!canManageKnowledge.value) return
+  const response = await getKnowledgeImportBatches()
+  importBatches.value = response.data || []
+}
+
+const openSourceDialog = async () => {
+  sourceDialogVisible.value = true
+  importItems.value = []
+  selectedImportBatchId.value = null
+  selectedImportItemIds.value = []
+  await refreshBatches()
+}
+
+const createFlkPreview = async () => {
+  const urls = flkUrls.value.split(/\r?\n/).map(value => value.trim()).filter(Boolean)
+  if (!urls.length) return ElMessage.warning('请粘贴法规详情链接')
+  sourceLoading.value = true
+  try {
+    await previewFlkImport(urls)
+    flkUrls.value = ''
+    await refreshBatches()
+    ElMessage.success('法规链接预览已建立')
+  } finally { sourceLoading.value = false }
+}
+
+const loadStarterLaws = async () => {
+  sourceLoading.value = true
+  try {
+    const response = await createStarterFlkImport()
+    const batch = response.data
+    await stageKnowledgeImport(batch.id)
+    await refreshBatches()
+    await loadImportItems(batch)
+    ElMessage.success('基础法规已下载并暂存，请核对后生成待审核条目')
+  } finally { sourceLoading.value = false }
+}
+
+const scanPolicies = async () => {
+  sourceLoading.value = true
+  try {
+    await scanFirmPolicies()
+    await refreshBatches()
+    ElMessage.success('NAS制度目录扫描完成')
+  } finally { sourceLoading.value = false }
+}
+
+const loadImportItems = async row => {
+  const response = await getKnowledgeImportItems(row.id)
+  importItems.value = response.data || []
+  selectedImportBatchId.value = row.id
+  selectedImportItemIds.value = []
+}
+
+const handleImportSelectionChange = rows => {
+  selectedImportItemIds.value = rows.map(row => row.id)
+}
+
+const isImportItemConfirmable = row => row.status === 'STAGED'
+  || (importBatches.value.find(batch => batch.id === row.batchId)?.sourceType === 'FIRM_POLICY' && row.status === 'DISCOVERED')
+
+const stageBatch = async row => {
+  sourceLoading.value = true
+  try {
+    await stageKnowledgeImport(row.id)
+    await Promise.all([refreshBatches(), loadImportItems(row)])
+  } finally { sourceLoading.value = false }
+}
+
+const confirmBatch = async row => {
+  sourceLoading.value = true
+  try {
+    const itemIds = selectedImportBatchId.value === row.id ? selectedImportItemIds.value : []
+    await confirmKnowledgeImport(row.id, itemIds)
+    await Promise.all([refreshBatches(), loadImportItems(row), loadArticles()])
+    ElMessage.success('已生成待审核知识条目')
+  } finally { sourceLoading.value = false }
+}
+
+const uploadOfficialAttachment = async (row, uploadFile) => {
+  if (!uploadFile.raw) return
+  await uploadKnowledgeImportAttachment(row.id, uploadFile.raw)
+  const batch = importBatches.value.find(item => item.id === row.batchId)
+  if (batch) await loadImportItems(batch)
+  ElMessage.success('官方文件已暂存')
+}
+
+const reviewArticle = async (article, decision) => {
+  let reason = ''
+  if (decision === 'REJECTED') {
+    const result = await ElMessageBox.prompt('请输入驳回原因', '驳回知识条目', { inputValidator: value => Boolean(value?.trim()) || '请填写原因' })
+    reason = result.value
+  } else {
+    await ElMessageBox.confirm('确认该条目来源与内容无误，并允许进入全所知识检索？', '批准发布', { type: 'warning' })
+  }
+  await reviewKnowledgeArticle(article.id, decision, reason)
+  await (listMode.value === 'review' ? loadPendingReviews() : loadArticles())
+  ElMessage.success(decision === 'APPROVED' ? '已批准发布' : '已驳回')
+}
+
+const formatImportStatus = status => ({
+  DISCOVERED: '待处理',
+  NEEDS_UPLOAD: '需补传',
+  STAGED: '已暂存',
+  CONVERSION_REQUIRED: '需转换格式',
+  PENDING_REVIEW: '待审核',
+  APPROVED: '已批准',
+  REJECTED: '已驳回',
+  FAILED: '处理失败'
+}[status] || status || '-')
 
 // 格式化类型
 const formatType = (type) => {
@@ -830,6 +1081,34 @@ onMounted(() => {
   .upload-icon {
     font-size: 34px;
     color: #606266;
+  }
+
+  .starter-import,
+  .source-actions,
+  .policy-scan {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 14px 0 18px;
+  }
+
+  .starter-import p,
+  .source-actions span,
+  .policy-scan p {
+    color: var(--zg-text-secondary);
+    font-size: 13px;
+  }
+
+  .starter-import { margin-bottom: 16px; }
+  .starter-import p, .policy-scan p { margin: 4px 0 0; }
+  .item-table { margin-top: 18px; }
+  .review-actions { display: inline-flex; align-items: center; }
+
+  @media (max-width: 768px) {
+    .knowledge-container { flex-direction: column; }
+    .sidebar { width: 100%; }
+    .starter-import, .source-actions, .policy-scan { align-items: stretch; flex-direction: column; }
   }
 }
 </style>

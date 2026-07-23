@@ -52,7 +52,8 @@ public class CaseBatchController {
     public Result<Void> batchArchiveCases(@Valid @RequestBody BatchOperationRequest request) {
         try {
             Long currentUserId = securityUtils.getCurrentUserId();
-            caseService.batchArchiveCases(request.getCaseIds(), currentUserId);
+            caseService.batchArchiveCases(
+                    request.getCaseIds(), request.getArchiveLocation(), currentUserId);
             return Result.success();
         } catch (Exception e) {
             log.error("Batch archive cases failed: {}", e.getMessage(), e);

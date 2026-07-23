@@ -1,6 +1,7 @@
 package com.lawfirm.controller;
 
 import com.lawfirm.dto.AIDocumentRecognitionResult;
+import com.lawfirm.exception.BusinessException;
 import com.lawfirm.security.SecurityUtils;
 import com.lawfirm.service.AIDocumentService;
 import com.lawfirm.service.CaseService;
@@ -8,6 +9,7 @@ import com.lawfirm.util.Result;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -58,6 +60,8 @@ public class AIDocumentController {
 
             return Result.success("文档识别成功", result);
 
+        } catch (AccessDeniedException | BusinessException e) {
+            throw e;
         } catch (IllegalArgumentException e) {
             return Result.validationError(e.getMessage());
         } catch (Exception e) {
@@ -111,6 +115,8 @@ public class AIDocumentController {
 
             return Result.success("批量识别完成", results);
 
+        } catch (AccessDeniedException | BusinessException e) {
+            throw e;
         } catch (IllegalArgumentException e) {
             return Result.validationError(e.getMessage());
         } catch (Exception e) {

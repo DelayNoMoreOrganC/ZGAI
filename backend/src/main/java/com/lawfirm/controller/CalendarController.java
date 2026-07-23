@@ -37,7 +37,7 @@ public class CalendarController {
      */
     @PostMapping
     public Result<CalendarDTO> createCalendar(@Valid @RequestBody CalendarDTO dto) {
-        assertCaseVisibleIfPresent(dto.getCaseId());
+        assertCaseEditableIfPresent(dto.getCaseId());
         try {
             Long userId = securityUtils.getCurrentUserId();
             CalendarDTO result = calendarService.createCalendar(dto, userId);
@@ -58,7 +58,7 @@ public class CalendarController {
     @PutMapping("/{id}")
     public Result<CalendarDTO> updateCalendar(@PathVariable Long id, @Valid @RequestBody CalendarDTO dto) {
         assertCalendarEditable(id);
-        assertCaseVisibleIfPresent(dto.getCaseId());
+        assertCaseEditableIfPresent(dto.getCaseId());
         try {
             CalendarDTO result = calendarService.updateCalendar(id, dto);
             return Result.success(result);
@@ -172,8 +172,8 @@ public class CalendarController {
      */
     @GetMapping("/case/{caseId}")
     public Result<List<CalendarDTO>> getCalendarsByCase(@PathVariable Long caseId) {
+        assertCaseVisible(caseId);
         try {
-            assertCaseVisible(caseId);
             List<CalendarDTO> result = calendarService.getCalendarsByCase(caseId);
             return Result.success(result);
         } catch (Exception e) {
@@ -234,14 +234,17 @@ public class CalendarController {
         CalendarDTO calendar = calendarService.getCalendarById(calendarId);
         Long currentUserId = securityUtils.getCurrentUserId();
         if (currentUserId.equals(calendar.getCreatedBy()) || securityUtils.isAdmin()) {
+            if (calendar.getCaseId() != null) {
+                caseService.assertCaseEditable(calendar.getCaseId(), currentUserId);
+            }
             return;
         }
         throw new AccessDeniedException("无权修改该日程");
     }
 
-    private void assertCaseVisibleIfPresent(Long caseId) {
+    private void assertCaseEditableIfPresent(Long caseId) {
         if (caseId != null) {
-            assertCaseVisible(caseId);
+            caseService.assertCaseEditable(caseId, securityUtils.getCurrentUserId());
         }
     }
 }

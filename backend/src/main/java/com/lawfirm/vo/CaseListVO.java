@@ -152,4 +152,9 @@ public class CaseListVO {
      * 是否可以删除
      */
     private Boolean canDelete;
+
+    /**
+     * 是否可以归档
+     */
+    private Boolean canArchive;
 }

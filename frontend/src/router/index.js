@@ -22,6 +22,12 @@ const routes = [
         component: () => import('@/views/dashboard/index.vue'),
         meta: { title: '工作台', icon: '📊' }
       },
+      {
+        path: 'ai/case-workbench',
+        name: 'AICaseWorkbench',
+        component: () => import('@/views/ai/case-workbench.vue'),
+        meta: { title: '案件AI助手', icon: '🤖', requiredPermission: 'CASE_VIEW' }
+      },
       // 全局搜索
       {
         path: 'search',
@@ -65,7 +71,7 @@ const routes = [
             path: ':id',
             name: 'CaseDetail',
             component: () => import('@/views/case/detail.vue'),
-            redirect: '/case/:id/basic',
+            redirect: to => ({ name: 'CaseBasic', params: { id: to.params.id } }),
             meta: { title: '案件详情' },
             children: [
               {
@@ -97,6 +103,12 @@ const routes = [
                 name: 'CaseTimeline',
                 component: () => import('@/views/case/tabs/timeline.vue'),
                 meta: { title: '案件动态' }
+              },
+              {
+                path: 'archive',
+                name: 'CaseArchiveWorkflow',
+                component: () => import('@/views/case/tabs/archive.vue'),
+                meta: { title: '智能归档', requiredPermission: 'CASE_VIEW' }
               }
             ]
           },
@@ -104,7 +116,7 @@ const routes = [
             path: 'archive',
             name: 'CaseArchive',
             component: () => import('@/views/case/archive.vue'),
-            meta: { title: '归档库' }
+            meta: { title: '归档中心' }
           },
           {
             path: 'trash',
@@ -214,6 +226,12 @@ const routes = [
             meta: { title: '知识库' }
           },
           {
+            path: 'yuandian',
+            name: 'YuandianLegalSearch',
+            component: () => import('@/views/knowledge/yuandian.vue'),
+            meta: { title: '元典法律检索' }
+          },
+          {
             path: 'create',
             name: 'KnowledgeCreate',
             component: () => import('@/views/knowledge/edit.vue'),
@@ -285,13 +303,13 @@ const routes = [
         path: 'tools/ssb',
         name: 'ToolsSsb',
         component: () => import('@/views/tools/index.vue'),
-        meta: { title: '省时宝' }
+        meta: { title: '省时宝', externalTool: true }
       },
       {
         path: 'tools/ac',
         name: 'ToolsAc',
         component: () => import('@/views/tools/index.vue'),
-        meta: { title: 'AC精算' }
+        meta: { title: 'AC精算', externalTool: true }
       },
       // ===== 不良资产管理 =====
       {
@@ -404,6 +422,11 @@ router.beforeEach(async (to, from) => {
     return
   }
 
+  if (to.meta.externalTool && import.meta.env.VITE_ENABLE_EXTERNAL_TOOLS !== 'true') {
+    ElMessage.info('该外部工具当前未启用')
+    return { path: '/dashboard' }
+  }
+
   // 检查是否需要登录
   if (to.meta.requiresAuth !== false && !userStore.isLoggedIn) {
     return {
@@ -412,7 +435,7 @@ router.beforeEach(async (to, from) => {
     }
   }
 
-  if (userStore.isLoggedIn && userStore.permissions.length === 0) {
+  if (userStore.isLoggedIn && !userStore.sessionValidated) {
     try {
       await userStore.getUserInfo()
     } catch {
@@ -421,6 +444,10 @@ router.beforeEach(async (to, from) => {
         query: { redirect: to.fullPath }
       }
     }
+  }
+
+  if (userStore.requiresPasswordChange && to.path !== '/profile') {
+    return { path: '/profile', query: { passwordChange: 'required' } }
   }
 
   const requiredPermission = [...to.matched]

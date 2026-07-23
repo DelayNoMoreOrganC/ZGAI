@@ -19,7 +19,7 @@ import java.time.LocalDate;
     @Index(name = "idx_category", columnList = "category"),
     @Index(name = "idx_type", columnList = "article_type"),
     @Index(name = "idx_tags", columnList = "tags"),
-    @Index(name = "idx_created_at", columnList = "created_at")
+    @Index(name = "idx_knowledge_created_at", columnList = "created_at")
 })
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -87,6 +87,31 @@ public class KnowledgeArticle extends LogicalDeleteEntity {
      */
     @Column(name = "source_reference", length = 500)
     private String sourceReference;
+
+    @Column(name = "source_url", length = 1000)
+    private String sourceUrl;
+
+    @Column(name = "source_relative_path", length = 1000)
+    private String sourceRelativePath;
+
+    @Column(name = "content_sha256", length = 64)
+    private String contentSha256;
+
+    @Column(name = "collected_at")
+    private LocalDateTime collectedAt;
+
+    /** APPROVED, PENDING_REVIEW or REJECTED. */
+    @Column(name = "review_status", length = 30)
+    private String reviewStatus = "APPROVED";
+
+    @Column(name = "reviewed_by")
+    private Long reviewedBy;
+
+    @Column(name = "reviewed_at")
+    private LocalDateTime reviewedAt;
+
+    @Column(name = "review_reason", length = 1000)
+    private String reviewReason;
 
     @Column(name = "issuing_authority", length = 200)
     private String issuingAuthority;

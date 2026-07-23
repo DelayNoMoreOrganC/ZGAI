@@ -55,6 +55,17 @@ export function updateCaseStatus(id, data) {
   })
 }
 
+export function rollbackCaseStatus(id, data) {
+  return request({
+    url: `/cases/${id}/status/rollback`,
+    method: 'put',
+    data: {
+      targetStage: data.status,
+      reason: data.reason || ''
+    }
+  })
+}
+
 // 归档案件
 export function archiveCase(id, data) {
   return request({
@@ -443,11 +454,11 @@ export function batchCloseCases(caseIds) {
 }
 
 // 批量归档
-export function batchArchiveCases(caseIds) {
+export function batchArchiveCases(caseIds, archiveLocation) {
   return request({
     url: '/cases/batch/archive',
     method: 'put',
-    data: { caseIds }
+    data: { caseIds, archiveLocation }
   })
 }
 

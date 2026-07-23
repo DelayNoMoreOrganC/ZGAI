@@ -120,6 +120,13 @@ class HighRiskControllerSecurityTest {
         assertClassPolicy(AiChatController.class, "isAuthenticated()");
         assertClassPolicy(AIDocumentController.class, "isAuthenticated()");
         assertClassPolicy(AIFeaturesController.class, "isAuthenticated()");
+        assertClassPolicy(OcrController.class, "isAuthenticated()");
+    }
+
+    @Test
+    void documentGenerationUsesCaseViewAuthorityInsteadOfNarrowRoleNames() throws Exception {
+        assertPolicy(DocGenerateController.class, "generateDocument", "hasAuthority('CASE_VIEW')",
+                com.lawfirm.dto.DocGenerateRequest.class);
     }
 
     @Test
@@ -143,9 +150,61 @@ class HighRiskControllerSecurityTest {
     }
 
     @Test
+    void knowledgeImportAndReviewRequireDedicatedAuthority() {
+        assertEveryPublicEndpointUses(KnowledgeImportController.class, "hasAuthority('KNOWLEDGE_MANAGE')");
+    }
+
+    @Test
+    void pendingKnowledgeReviewRequiresDedicatedAuthority() throws Exception {
+        assertPolicy(KnowledgeArticleController.class, "getPendingReviewArticles",
+                "hasAuthority('KNOWLEDGE_MANAGE')", int.class, int.class);
+    }
+
+    @Test
     void caseCreationRequiresDedicatedAuthority() throws Exception {
         assertPolicy(CaseController.class, "createCase", "hasAuthority('CASE_CREATE')",
                 com.lawfirm.dto.CaseCreateRequest.class);
+    }
+
+    @Test
+    void archiveWorkflowSeparatesLawyerAndAdministrativeAuthorities() throws Exception {
+        assertPolicy(ArchiveWorkflowController.class, "create", "hasAuthority('CASE_ARCHIVE')",
+                Long.class, com.lawfirm.dto.ArchiveJobCreateRequest.class);
+        assertPolicy(ArchiveWorkflowController.class, "patchDocuments", "hasAuthority('CASE_ARCHIVE')",
+                Long.class, com.lawfirm.dto.ArchiveDocumentPatchRequest.class);
+        assertPolicy(ArchiveWorkflowController.class, "uploadSupplement", "hasAuthority('CASE_ARCHIVE')",
+                Long.class, org.springframework.web.multipart.MultipartFile.class, Integer.class);
+        assertPolicy(ArchiveWorkflowController.class, "patchFields", "hasAuthority('CASE_ARCHIVE')",
+                Long.class, com.lawfirm.dto.ArchiveFieldsPatchRequest.class);
+        assertPolicy(ArchiveWorkflowController.class, "submit", "hasAuthority('CASE_ARCHIVE')", Long.class);
+        assertPolicy(ArchiveWorkflowController.class, "review", "hasAuthority('CASE_ARCHIVE_REVIEW')",
+                Long.class, com.lawfirm.dto.ArchiveReviewRequest.class);
+    }
+
+    @Test
+    void formalConflictReviewRequiresFilingReviewAuthority() throws Exception {
+        assertPolicy(ClientController.class, "reviewConflictCheck", "hasAuthority('CASE_FILING_REVIEW')",
+                Long.class, com.lawfirm.dto.ConflictCheckReviewRequest.class);
+        assertPolicy(ClientController.class, "uploadConflictWaiverAttachment", "hasAuthority('CASE_FILING_REVIEW')",
+                Long.class, org.springframework.web.multipart.MultipartFile.class);
+    }
+
+    @Test
+    void clientRelationshipWritesRequireClientEditAuthority() throws Exception {
+        assertPolicy(ClientController.class, "createClientRelation", "hasAuthority('CLIENT_EDIT')",
+                Long.class, com.lawfirm.dto.ClientSubjectRelationDTO.class);
+        assertPolicy(ClientController.class, "deleteClientRelation", "hasAuthority('CLIENT_EDIT')",
+                Long.class, Long.class);
+    }
+
+    @Test
+    void clientCommunicationWritesRequireClientEditAuthority() throws Exception {
+        assertPolicy(ClientController.class, "createCommunication", "hasAuthority('CLIENT_EDIT')",
+                Long.class, com.lawfirm.dto.CommunicationRecordDTO.class);
+        assertPolicy(ClientController.class, "updateCommunication", "hasAuthority('CLIENT_EDIT')",
+                Long.class, Long.class, com.lawfirm.dto.CommunicationRecordDTO.class);
+        assertPolicy(ClientController.class, "deleteCommunication", "hasAuthority('CLIENT_EDIT')",
+                Long.class, Long.class);
     }
 
     @Test
@@ -161,11 +220,11 @@ class HighRiskControllerSecurityTest {
         assertPolicy(ApprovalController.class, "createApproval", "hasAuthority('APPROVAL_EDIT')",
                 com.lawfirm.dto.ApprovalCreateRequest.class);
         assertPolicy(ApprovalController.class, "approveApproval", "hasAuthority('APPROVAL_EDIT')",
-                Long.class, java.util.Map.class);
+                Long.class, com.lawfirm.dto.ApprovalDecisionRequest.class);
         assertPolicy(ApprovalController.class, "rejectApproval", "hasAuthority('APPROVAL_EDIT')",
-                Long.class, java.util.Map.class);
+                Long.class, com.lawfirm.dto.ApprovalDecisionRequest.class);
         assertPolicy(ApprovalController.class, "transferApproval", "hasAuthority('APPROVAL_EDIT')",
-                Long.class, java.util.Map.class);
+                Long.class, com.lawfirm.dto.ApprovalTransferRequest.class);
         assertPolicy(ApprovalController.class, "withdrawApproval", "hasAuthority('APPROVAL_EDIT')", Long.class);
         assertPolicy(ApprovalController.class, "urgeApproval", "hasAuthority('APPROVAL_VIEW')", Long.class);
         assertPolicy(ApprovalController.class, "getApprovalList", "hasAuthority('APPROVAL_VIEW')",
@@ -184,6 +243,16 @@ class HighRiskControllerSecurityTest {
         assertEveryMutationAudited(CaseBatchController.class);
         assertEveryMutationAudited(FinanceController.class);
         assertEveryMutationAudited(KnowledgeArticleController.class);
+        assertEveryMutationAudited(KnowledgeImportController.class);
+        assertEveryMutationAudited(BackupController.class);
+        assertEveryMutationAudited(OcrController.class);
+    }
+
+    @Test
+    void passwordChangesAreAuditedWithoutPasswordBodies() throws Exception {
+        assertMutationAudited(AuthController.class.getMethod("changePassword", String.class,
+                AuthController.ChangePasswordRequest.class));
+        assertMutationAudited(UserController.class.getMethod("changePassword", java.util.Map.class));
     }
 
     private void assertEveryPublicEndpointUses(Class<?> controllerClass, String expected) {
@@ -219,10 +288,16 @@ class HighRiskControllerSecurityTest {
             if (!mutation) {
                 continue;
             }
-            com.lawfirm.annotation.AuditLog audit = method.getAnnotation(com.lawfirm.annotation.AuditLog.class);
-            assertNotNull(audit, controllerClass.getSimpleName() + "." + method.getName() + " must be audited");
-            org.junit.jupiter.api.Assertions.assertFalse(audit.logParams(),
-                    controllerClass.getSimpleName() + "." + method.getName() + " must not log request bodies");
+            assertMutationAudited(method);
         }
+    }
+
+    private void assertMutationAudited(Method method) {
+        com.lawfirm.annotation.AuditLog audit = method.getAnnotation(com.lawfirm.annotation.AuditLog.class);
+        assertNotNull(audit, method.getDeclaringClass().getSimpleName() + "." + method.getName()
+                + " must be audited");
+        org.junit.jupiter.api.Assertions.assertFalse(audit.logParams(),
+                method.getDeclaringClass().getSimpleName() + "." + method.getName()
+                        + " must not log request bodies");
     }
 }

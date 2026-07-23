@@ -2,7 +2,7 @@
   <div class="client">
     <PageHeader title="客户管理">
       <template #extra>
-        <el-button type="primary" @click="handleCreate" class="create-btn">
+        <el-button v-if="canCreate" type="primary" @click="handleCreate">
           <el-icon><Plus /></el-icon>
           新建客户
         </el-button>
@@ -16,6 +16,8 @@
         placeholder="搜索客户名称、案源人、承办人..."
         clearable
         class="search-input"
+        @keyup.enter="handleSearch"
+        @clear="handleSearch"
       >
         <template #prefix>
           <el-icon><Search /></el-icon>
@@ -23,8 +25,12 @@
       </el-input>
 
       <el-select v-model="filterType" placeholder="客户类型" clearable class="filter-select">
-        <el-option label="个人" value="个人" />
-        <el-option label="企业" value="企业" />
+        <el-option
+          v-for="type in clientTypeOptions"
+          :key="type"
+          :label="type"
+          :value="type"
+        />
       </el-select>
 
       <el-select v-model="filterDepartmentId" placeholder="所属部门" clearable filterable class="filter-select">
@@ -44,9 +50,22 @@
     </div>
 
     <!-- 客户列表 -->
-    <el-table :data="clientList" border v-loading="loading" class="client-table"
-      :header-cell-style="{ background: '#f0f5ff', color: '#333', fontWeight: '600' }"
-      :row-class-name="tableRowClassName">
+    <DataTable
+      :table-data="clientList"
+      :loading="loading"
+      :total="total"
+      :current-page="currentPage"
+      :page-size="pageSize"
+      :show-index="false"
+      :show-actions="true"
+      :action-width="actionWidth"
+      :show-empty-action="canCreate && !hasActiveFilters"
+      empty-action-text="新建客户"
+      empty-text="暂无符合条件的客户"
+      @size-change="handleSizeChange"
+      @current-change="handleCurrentChange"
+      @empty-action="handleCreate"
+    >
       <el-table-column prop="name" label="客户名称" width="200">
         <template #default="{ row }">
           <el-link type="primary" @click="handleViewDetail(row)">
@@ -57,8 +76,8 @@
 
       <el-table-column prop="type" label="类型" width="100">
         <template #default="{ row }">
-          <el-tag :type="row.type === '个人' || row.type === 'personal' ? 'primary' : 'success'" size="small">
-            {{ row.type === '个人' || row.type === 'personal' ? '个人' : '企业' }}
+          <el-tag :type="getClientTypeTag(row.type)" size="small" effect="plain">
+            {{ row.type || '-' }}
           </el-tag>
         </template>
       </el-table-column>
@@ -81,179 +100,45 @@
           <span v-else>0 个案件</span>
         </template>
       </el-table-column>
-      <el-table-column prop="totalAmount" label="总收费(万元)" width="130">
-        <template #default="{ row }">
-          {{ row.totalAmount || '0' }}
-        </template>
-      </el-table-column>
       <el-table-column prop="departmentName" label="所属部门" width="130">
         <template #default="{ row }">
-          <el-tag v-if="row.departmentName" type="info">{{ row.departmentName }}</el-tag>
+          <el-tag v-if="row.departmentName" type="info" effect="plain">{{ row.departmentName }}</el-tag>
           <span v-else>-</span>
         </template>
       </el-table-column>
       <el-table-column prop="createTime" label="创建时间" width="160" sortable />
-      <el-table-column label="操作" width="200" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="handleViewDetail(row)">
-            详情
-          </el-button>
-          <el-button link type="primary" size="small" @click="handleEdit(row)">
-            编辑
-          </el-button>
-          <el-button link type="danger" size="small" @click="handleDelete(row)">
-            删除
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+      <template #actions="{ row }">
+        <el-button link type="primary" size="small" @click="handleViewDetail(row)">
+          详情
+        </el-button>
+        <el-button v-if="canEditRow(row)" link type="primary" size="small" @click="handleEdit(row)">
+          编辑
+        </el-button>
+        <el-button v-if="canDeleteRow(row)" link type="danger" size="small" @click="handleDelete(row)">
+          删除
+        </el-button>
+      </template>
+    </DataTable>
 
-    <div class="pagination">
-      <el-pagination
-        v-model:current-page="currentPage"
-        v-model:page-size="pageSize"
-        :page-sizes="[10, 20, 50, 100]"
-        :total="total"
-        layout="total, sizes, prev, pager, next"
-      />
-    </div>
-
-    <!-- 客户详情对话框 -->
-    <el-dialog v-model="detailDialogVisible" title="客户详情" width="900px">
-      <el-tabs v-model="detailActiveTab">
-        <el-tab-pane label="基本信息" name="basic">
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="客户名称">
-              {{ currentClient.name }}
-            </el-descriptions-item>
-            <el-descriptions-item label="客户类型">
-              <el-tag :type="currentClient.type === '个人' || currentClient.type === 'personal' ? 'primary' : 'success'">
-                {{ currentClient.type === '个人' || currentClient.type === 'personal' ? '个人' : '企业' }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="联系人">
-              {{ currentClient.contact }}
-            </el-descriptions-item>
-            <el-descriptions-item label="联系电话">
-              {{ currentClient.phone }}
-            </el-descriptions-item>
-            <el-descriptions-item label="邮箱">
-              {{ currentClient.email }}
-            </el-descriptions-item>
-            <el-descriptions-item label="案源人">
-              {{ currentClient.sourceUserNames || '-' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="承办人">
-              {{ currentClient.clientOwnerNames || currentClient.ownerName || '-' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="所属部门">
-              {{ currentClient.departmentName || '-' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="地址" :span="2">
-              {{ currentClient.address }}
-            </el-descriptions-item>
-            <el-descriptions-item label="备注" :span="2">
-              {{ currentClient.remark }}
-            </el-descriptions-item>
-          </el-descriptions>
-        </el-tab-pane>
-
-        <el-tab-pane label="关联案件" name="cases">
-          <el-table :data="currentClient.cases || []" border>
-            <el-table-column prop="caseName" label="案件名称" />
-            <el-table-column prop="caseNumber" label="案号" width="150" />
-            <el-table-column prop="caseType" label="案件类型" width="100" />
-            <el-table-column prop="status" label="状态" width="100">
-              <template #default="{ row }">
-                <el-tag>{{ row.status }}</el-tag>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-
-        <el-tab-pane label="沟通记录" name="communications">
-          <div class="communications-section">
-            <el-button type="primary" size="small" @click="handleAddCommunication">
-              <el-icon><Plus /></el-icon>
-              添加记录
-            </el-button>
-
-            <el-timeline class="communication-timeline">
-              <el-timeline-item
-                v-for="record in currentClient.communications || []"
-                :key="record.id"
-                :timestamp="record.date"
-              >
-                <el-card>
-                  <div class="communication-header">
-                    <span class="communicator">{{ record.communicator }}</span>
-                    <span class="method">{{ record.method }}</span>
-                  </div>
-                  <div class="communication-content">{{ record.content }}</div>
-                </el-card>
-              </el-timeline-item>
-            </el-timeline>
-          </div>
-        </el-tab-pane>
-
-        <el-tab-pane label="收费统计" name="fees">
-          <div class="fee-stats">
-            <div class="stat-item">
-              <span class="label">总收费：</span>
-              <span class="value">¥{{ currentClient.totalAmount || '0' }}</span>
-            </div>
-            <div class="stat-item">
-              <span class="label">已收：</span>
-              <span class="value received">¥{{ currentClient.receivedAmount || '0' }}</span>
-            </div>
-            <div class="stat-item">
-              <span class="label">待收：</span>
-              <span class="value pending">¥{{ currentClient.pendingAmount || '0' }}</span>
-            </div>
-          </div>
-        </el-tab-pane>
-
-        <el-tab-pane label="利益冲突检索" name="conflict">
-          <div class="conflict-section">
-            <el-button type="primary" @click="handleConflictCheck">
-              <el-icon><Search /></el-icon>
-              执行利益冲突检索
-            </el-button>
-
-            <div v-if="conflictResult" class="conflict-result">
-              <h4>检索结果</h4>
-              <el-alert
-                :type="conflictResult.hasConflict ? 'error' : 'success'"
-                :title="conflictResult.hasConflict ? '发现利益冲突' : '未发现利益冲突'"
-                :description="conflictResult.description"
-                show-icon
-              />
-            </div>
-          </div>
-        </el-tab-pane>
-      </el-tabs>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
+import DataTable from '@/components/DataTable.vue'
 import { useRouter } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 import {
   getClientList,
-  getClientDetail,
-  getClientCases,
-  getCommunications,
-  deleteClient,
-  searchClients,
-  conflictCheck
+  deleteClient
 } from '@/api/client'
 import { getDepartmentList } from '@/api/department'
 
 const router = useRouter()
+const userStore = useUserStore()
 const loading = ref(false)
 const searchKeyword = ref('')
 const filterType = ref('')
@@ -262,13 +147,40 @@ const departmentOptions = ref([])
 const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
-const detailDialogVisible = ref(false)
-const detailActiveTab = ref('basic')
-const conflictResult = ref(null)
-
-const currentClient = ref({})
-
 const clientList = ref([])
+const clientTypeOptions = ['个人', '企业', '金融机构', '事业单位', '党政机关', '社会团体', '其他']
+
+const canCreate = computed(() => userStore.hasPermission('CLIENT_CREATE'))
+const canEdit = computed(() => userStore.hasPermission('CLIENT_EDIT'))
+const canDelete = computed(() => userStore.hasPermission('CLIENT_DELETE'))
+const hasActiveFilters = computed(() => Boolean(
+  searchKeyword.value.trim() || filterType.value || filterDepartmentId.value
+))
+const actionWidth = computed(() => 72 + (canEdit.value ? 52 : 0) + (canDelete.value ? 52 : 0))
+
+const isPrivilegedEditor = computed(() => {
+  const username = userStore.userInfo?.username
+  const position = userStore.userInfo?.position
+  return username === 'admin' || position === '主任'
+})
+
+const parseUserIds = (value) => String(value || '')
+  .split(',')
+  .map(id => Number(id.trim()))
+  .filter(Number.isFinite)
+
+const isRelatedUser = (client) => {
+  const currentUserId = Number(userStore.userId)
+  if (!Number.isFinite(currentUserId)) return false
+  return [
+    ...parseUserIds(client.sourceUserIds),
+    ...parseUserIds(client.clientOwnerIds),
+    Number(client.ownerId)
+  ].some(id => Number.isFinite(id) && id === currentUserId)
+}
+
+const canEditRow = (client) => canEdit.value && (isPrivilegedEditor.value || isRelatedUser(client))
+const canDeleteRow = (client) => canDelete.value && (isPrivilegedEditor.value || isRelatedUser(client))
 
 const normalizeClient = (client = {}) => ({
   ...client,
@@ -301,20 +213,18 @@ const fetchClientList = async () => {
     loading.value = true
     const params = {
       page: currentPage.value,
-      size: pageSize.value
+      size: pageSize.value,
+      keyword: searchKeyword.value.trim() || undefined,
+      clientType: filterType.value || undefined,
+      departmentId: filterDepartmentId.value || undefined
     }
     const res = await getClientList(params)
     const pageData = res.data || {}
-    let records = normalizeClients(pageData.records || [])
-    if (filterType.value) {
-      records = records.filter(client => client.type === filterType.value)
-    }
-    if (filterDepartmentId.value) {
-      records = records.filter(client => client.departmentId === filterDepartmentId.value)
-    }
-    clientList.value = records
+    clientList.value = normalizeClients(pageData.records || [])
     total.value = pageData.total || 0
   } catch (error) {
+    clientList.value = []
+    total.value = 0
     console.error('加载客户列表失败:', error)
     ElMessage.error('加载客户列表失败')
   } finally {
@@ -341,61 +251,39 @@ const handleCreate = () => {
   router.push('/client/create')
 }
 
-const handleSearch = async () => {
-  try {
-    if (!searchKeyword.value.trim()) {
-      fetchClientList()
-      return
-    }
-    loading.value = true
-    const res = await searchClients(searchKeyword.value)
-    clientList.value = normalizeClients(res.data || [])
-    total.value = res.data?.length || 0
-  } catch (error) {
-    console.error('搜索客户失败:', error)
-    ElMessage.error('搜索客户失败')
-  } finally {
-    loading.value = false
-  }
+const handleSearch = () => {
+  currentPage.value = 1
+  fetchClientList()
 }
 
 const handleReset = () => {
   searchKeyword.value = ''
   filterType.value = ''
   filterDepartmentId.value = ''
+  currentPage.value = 1
   fetchClientList()
 }
 
-const handleViewDetail = async (client) => {
-  try {
-    loading.value = true
-    const [detailRes, casesRes, communicationsRes] = await Promise.all([
-      getClientDetail(client.id),
-      getClientCases(client.id),
-      getCommunications(client.id, { page: 0, size: 20 })
-    ])
+const handleSizeChange = (size) => {
+  pageSize.value = size
+  currentPage.value = 1
+  fetchClientList()
+}
 
-    currentClient.value = {
-      ...normalizeClient(detailRes.data || client),
-      cases: casesRes.data || [],
-      communications: (communicationsRes.data || []).map(record => ({
-        ...record,
-        date: formatDate(record.communicationDate),
-        communicator: record.operatorId ? `记录人 #${record.operatorId}` : '系统',
-        method: record.communicationType,
-        content: record.content
-      })),
-      totalAmount: client.totalAmount || '0',
-      receivedAmount: client.receivedAmount || '0',
-      pendingAmount: client.pendingAmount || '0'
-    }
-    detailDialogVisible.value = true
-  } catch (error) {
-    console.error('加载客户详情失败:', error)
-    ElMessage.error('加载客户详情失败')
-  } finally {
-    loading.value = false
-  }
+const handleCurrentChange = (page) => {
+  currentPage.value = page
+  fetchClientList()
+}
+
+const getClientTypeTag = (type) => {
+  if (type === '个人') return 'primary'
+  if (type === '金融机构') return 'warning'
+  if (type === '党政机关' || type === '事业单位') return 'info'
+  return 'success'
+}
+
+const handleViewDetail = (client) => {
+  router.push(`/client/${client.id}`)
 }
 
 // 查看关联案件
@@ -414,7 +302,7 @@ const handleEdit = (client) => {
 const handleDelete = async (client) => {
   try {
     await ElMessageBox.confirm(
-      `确定要删除客户"${client.name}"吗？删除后可进入回收站恢复。`,
+      `确定要删除客户"${client.name}"吗？存在关联案件时不能删除。`,
       '提示',
       {
         confirmButtonText: '确定',
@@ -425,6 +313,9 @@ const handleDelete = async (client) => {
 
     await deleteClient(client.id)
     ElMessage.success('删除成功')
+    if (clientList.value.length === 1 && currentPage.value > 1) {
+      currentPage.value -= 1
+    }
     fetchClientList()
   } catch (error) {
     if (error !== 'cancel') {
@@ -434,269 +325,47 @@ const handleDelete = async (client) => {
   }
 }
 
-const handleAddCommunication = () => {
-  ElMessage.info('请先在客户详情中添加沟通记录')
-}
-
-const handleConflictCheck = async () => {
-  try {
-    if (!currentClient.value.id) {
-      ElMessage.warning('请先选择客户')
-      return
-    }
-
-    ElMessage.info('正在执行利益冲突检索...')
-
-    const response = await conflictCheck(currentClient.value.id)
-
-    if (response.success) {
-      conflictResult.value = response.data
-      ElMessage.success(conflictResult.value.hasConflict ? '发现利益冲突' : '未发现利益冲突')
-    } else {
-      ElMessage.error('利益冲突检索失败')
-    }
-  } catch (error) {
-    console.error('利益冲突检索失败:', error)
-    ElMessage.error('利益冲突检索失败')
-  }
-}
-
-const tableRowClassName = ({ rowIndex }) => {
-  return rowIndex % 2 === 0 ? 'even-row' : 'odd-row'
-}
 </script>
 
 <style scoped lang="scss">
 .client {
   .filter-section {
     display: flex;
-    gap: 12px;
-    margin-bottom: 20px;
-    padding: 24px;
-    background: #fff;
-    border-radius: 12px;
-    flex-wrap: wrap;
-    border: 1px solid #e6f7ff;
-    box-shadow: 0 2px 12px rgba(24, 144, 255, 0.08);
     align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding: 16px;
+    background: #fff;
+    border: 1px solid var(--zg-border-color, #e5e7eb);
+    border-radius: 8px;
+    flex-wrap: wrap;
 
     .search-input {
-      width: 300px;
-
-      :deep(.el-input__wrapper) {
-        border-radius: 8px;
-        border: 1px solid #d9d9d0;
-        transition: all 0.3s;
-
-        &:hover {
-          border-color: #1890ff;
-        }
-
-        &.is-focus {
-          border-color: #1890ff;
-          box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
-        }
-      }
+      width: min(340px, 100%);
     }
 
     .filter-select {
-      width: 150px;
-
-      :deep(.el-select__wrapper) {
-        border-radius: 8px;
-        border: 1px solid #d9d9d0;
-        transition: all 0.3s;
-
-        &:hover {
-          border-color: #1890ff;
-        }
-
-        &.is-focus {
-          border-color: #1890ff;
-          box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
-        }
-      }
-    }
-
-    .search-btn {
-      background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
-      border: none;
-      border-radius: 8px;
-      padding: 8px 20px;
-      box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3);
-      transition: all 0.3s;
-
-      &:hover {
-        background: linear-gradient(135deg, #40a9ff 0%, #1890ff 100%);
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
-      }
-    }
-
-    .reset-btn {
-      border-radius: 8px;
-      padding: 8px 20px;
-      border: 1px solid #d9d9d0;
-      transition: all 0.3s;
-
-      &:hover {
-        border-color: #1890ff;
-        color: #1890ff;
-        background: #f0f5ff;
-      }
+      width: 160px;
     }
   }
 
-  .create-btn {
-    background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
-    border: none;
-    border-radius: 8px;
-    padding: 10px 24px;
-    box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3);
-    transition: all 0.3s;
-
-    &:hover {
-      background: linear-gradient(135deg, #40a9ff 0%, #1890ff 100%);
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
-    }
+  :deep(.data-table) {
+    padding: 0;
   }
 
-  .client-table {
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 2px 12px rgba(24, 144, 255, 0.08);
+  @media (max-width: 760px) {
+    .filter-section {
+      align-items: stretch;
+      padding: 12px;
 
-    :deep(.el-table__header-wrapper) {
-      th {
-        background: #f0f5ff !important;
-        color: #333 !important;
-        font-weight: 600;
-        border-bottom: 2px solid #1890ff;
-      }
-    }
-
-    :deep(.el-table__body-wrapper) {
-      .el-table__row {
-        transition: all 0.3s;
-
-        &.even-row {
-          background: #ffffff;
-
-          &:hover {
-            background: #f0f5ff !important;
-          }
-        }
-
-        &.odd-row {
-          background: #fafcfe;
-
-          &:hover {
-            background: #f0f5ff !important;
-          }
-        }
-
-        td {
-          border-bottom: 1px solid #f0f0f0;
-        }
-      }
-    }
-
-    :deep(.el-table__border) {
-      border: 1px solid #e6f7ff;
-    }
-  }
-
-  .pagination {
-    margin-top: 20px;
-    display: flex;
-    justify-content: flex-end;
-    padding: 16px;
-    background: #fff;
-    border-radius: 12px;
-    box-shadow: 0 2px 12px rgba(24, 144, 255, 0.08);
-
-    :deep(.el-pagination) {
-      .btn-prev,
-      .btn-next,
-      .el-pager li {
-        border-radius: 6px;
-        transition: all 0.3s;
-
-        &:hover {
-          background: #f0f5ff;
-          color: #1890ff;
-        }
-
-        &.is-active {
-          background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
-          color: #fff;
-        }
-      }
-    }
-  }
-
-  .communications-section {
-    .communication-timeline {
-      margin-top: 20px;
-
-      .communication-header {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 8px;
-
-        .communicator {
-          font-weight: 500;
-          color: #333;
-        }
-
-        .method {
-          font-size: 12px;
-          color: #909399;
-        }
+      .search-input,
+      .filter-select {
+        width: 100%;
       }
 
-      .communication-content {
-        color: #606266;
-        line-height: 1.6;
-      }
-    }
-  }
-
-  .fee-stats {
-    .stat-item {
-      display: inline-block;
-      margin-right: 30px;
-      margin-bottom: 15px;
-      font-size: 16px;
-
-      .label {
-        color: #666;
-      }
-
-      .value {
-        font-weight: bold;
-        color: #333;
-
-        &.received {
-          color: #52c41a;
-        }
-
-        &.pending {
-          color: #faad14;
-        }
-      }
-    }
-  }
-
-  .conflict-section {
-    .conflict-result {
-      margin-top: 20px;
-
-      h4 {
-        margin: 0 0 10px;
-        font-size: 14px;
-        color: #333;
+      .search-btn,
+      .reset-btn {
+        flex: 1;
       }
     }
   }

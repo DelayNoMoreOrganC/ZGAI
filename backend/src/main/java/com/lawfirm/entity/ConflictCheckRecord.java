@@ -5,6 +5,8 @@ import javax.validation.constraints.NotBlank;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.time.LocalDateTime;
+
 /**
  * 利益冲突检查记录。
  */
@@ -14,7 +16,8 @@ import lombok.EqualsAndHashCode;
 @Table(name = "conflict_check_record", indexes = {
     @Index(name = "idx_conflict_check_subject", columnList = "subject_name"),
     @Index(name = "idx_conflict_check_operator", columnList = "checked_by"),
-    @Index(name = "idx_conflict_check_level", columnList = "conflict_level")
+    @Index(name = "idx_conflict_check_level", columnList = "conflict_level"),
+    @Index(name = "idx_conflict_check_case", columnList = "case_id")
 })
 public class ConflictCheckRecord extends BaseEntity {
 
@@ -44,6 +47,9 @@ public class ConflictCheckRecord extends BaseEntity {
     @Column(name = "checked_by")
     private Long checkedBy;
 
+    @Column(name = "case_id")
+    private Long caseId;
+
     @Column(name = "matched_client_ids", length = 1000)
     private String matchedClientIds;
 
@@ -53,6 +59,9 @@ public class ConflictCheckRecord extends BaseEntity {
     @Column(name = "similar_names", length = 1000)
     private String similarNames;
 
+    @Column(name = "matched_related_subjects", length = 2000)
+    private String matchedRelatedSubjects;
+
     @Column(name = "conflict_level", length = 30)
     private String conflictLevel;
 
@@ -61,4 +70,28 @@ public class ConflictCheckRecord extends BaseEntity {
 
     @Column(name = "remark", length = 1000)
     private String remark;
+
+    @Column(name = "review_status", length = 30)
+    private String reviewStatus = "PENDING_REVIEW";
+
+    @Column(name = "review_decision", length = 30)
+    private String reviewDecision;
+
+    @Column(name = "review_conclusion", length = 1000)
+    private String reviewConclusion;
+
+    @Column(name = "waiver_basis", length = 2000)
+    private String waiverBasis;
+
+    @Column(name = "reviewed_by")
+    private Long reviewedBy;
+
+    @Column(name = "reviewed_at")
+    private LocalDateTime reviewedAt;
+
+    @Column(name = "archived_document_id")
+    private Long archivedDocumentId;
+
+    @Column(name = "archived_at")
+    private LocalDateTime archivedAt;
 }

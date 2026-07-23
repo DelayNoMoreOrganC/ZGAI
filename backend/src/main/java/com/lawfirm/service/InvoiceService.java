@@ -42,8 +42,8 @@ public class InvoiceService {
     private final CaseRepository caseRepository;
     private final UserRepository userRepository;
     private final TodoRepository todoRepository;
+    private final UserPermissionService userPermissionService;
 
-    private static final String CASHIER_NAME = "黄智明";
     private static final String STATUS_PENDING = "PENDING";
     private static final String STATUS_FEEDBACK_UPLOADED = "FEEDBACK_UPLOADED";
     private static final String STATUS_COMPLETED = "COMPLETED";
@@ -91,7 +91,7 @@ public class InvoiceService {
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new IllegalArgumentException("当前用户不存在"));
         boolean applicant = invoice.getApplicantId() != null && invoice.getApplicantId().equals(currentUserId);
-        boolean financeUser = isFinanceUser(currentUser);
+        boolean financeUser = canProcessInvoices(currentUser);
         if (!applicant && !financeUser) {
             throw new IllegalArgumentException("无权修改该开票申请");
         }
@@ -135,7 +135,7 @@ public class InvoiceService {
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new IllegalArgumentException("当前用户不存在"));
         boolean applicant = invoice.getApplicantId() != null && invoice.getApplicantId().equals(currentUserId);
-        boolean financeUser = isFinanceUser(currentUser);
+        boolean financeUser = canViewAllInvoices(currentUser);
         if (!applicant && !financeUser) {
             throw new IllegalArgumentException("无权查看该反馈文件");
         }
@@ -159,7 +159,7 @@ public class InvoiceService {
 
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new IllegalArgumentException("当前用户不存在"));
-        if (!isFinanceUser(currentUser)) {
+        if (!canProcessInvoices(currentUser)) {
             throw new IllegalArgumentException("仅财务管理人员可处理开票申请");
         }
         if (STATUS_COMPLETED.equals(invoice.getStatus())) {
@@ -217,7 +217,7 @@ public class InvoiceService {
                 .orElseThrow(() -> new IllegalArgumentException("开票申请不存在"));
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new IllegalArgumentException("当前用户不存在"));
-        if (!isFinanceUser(currentUser)) {
+        if (!canProcessInvoices(currentUser)) {
             throw new IllegalArgumentException("仅财务管理人员可确认完成开票");
         }
         if (STATUS_COMPLETED.equals(invoice.getStatus())) {
@@ -266,7 +266,7 @@ public class InvoiceService {
      */
     public List<InvoiceDTO> getInvoicesByCase(Long caseId, Long currentUserId) {
         User currentUser = requireCurrentUser(currentUserId);
-        List<Invoice> invoices = isFinanceUser(currentUser)
+        List<Invoice> invoices = canViewAllInvoices(currentUser)
                 ? invoiceRepository.findByCaseId(caseId)
                 : invoiceRepository.findByCaseIdAndApplicantId(caseId, currentUserId);
         return invoices.stream()
@@ -279,7 +279,7 @@ public class InvoiceService {
      */
     public List<InvoiceDTO> getInvoicesByStatus(String status, Long currentUserId) {
         User currentUser = requireCurrentUser(currentUserId);
-        List<Invoice> invoices = isFinanceUser(currentUser)
+        List<Invoice> invoices = canViewAllInvoices(currentUser)
                 ? invoiceRepository.findByStatus(status)
                 : invoiceRepository.findByStatusAndApplicantId(status, currentUserId);
         return invoices.stream()
@@ -292,7 +292,7 @@ public class InvoiceService {
      */
     public List<InvoiceDTO> getInvoicesByDateRange(LocalDate startDate, LocalDate endDate, Long currentUserId) {
         User currentUser = requireCurrentUser(currentUserId);
-        List<Invoice> invoices = isFinanceUser(currentUser)
+        List<Invoice> invoices = canViewAllInvoices(currentUser)
                 ? invoiceRepository.findByBillingDateBetween(startDate, endDate)
                 : invoiceRepository.findByBillingDateBetweenAndApplicantId(startDate, endDate, currentUserId);
         return invoices.stream()
@@ -307,7 +307,7 @@ public class InvoiceService {
         Pageable pageable = PageRequest.of(Math.max(0, page - 1), size, Sort.by(Sort.Direction.DESC, "billingDate"));
 
         User currentUser = requireCurrentUser(currentUserId);
-        org.springframework.data.domain.Page<Invoice> invoicePage = isFinanceUser(currentUser)
+        org.springframework.data.domain.Page<Invoice> invoicePage = canViewAllInvoices(currentUser)
                 ? invoiceRepository.findAll(pageable)
                 : invoiceRepository.findByApplicantId(currentUserId, pageable);
 
@@ -375,24 +375,16 @@ public class InvoiceService {
     }
 
     private User findCashier() {
-        return userRepository.findByUsernameAndDeletedFalse(CASHIER_NAME)
-                .or(() -> userRepository.findByDeletedFalse(PageRequest.of(0, 200)).stream()
-                        .filter(user -> CASHIER_NAME.equals(user.getRealName()))
-                        .findFirst())
-                .orElseThrow(() -> new IllegalArgumentException("未找到出纳账号：黄智明"));
+        return userPermissionService.findFirstActiveUserByPermission("INVOICE_PROCESS", "INVOICE_PROCESSOR")
+                .orElseThrow(() -> new IllegalArgumentException("未找到具有开票处理权限的账号，请先配置财务角色"));
     }
 
-    private boolean isCashier(User user) {
-        return user != null && (CASHIER_NAME.equals(user.getUsername()) || CASHIER_NAME.equals(user.getRealName()));
+    private boolean canProcessInvoices(User user) {
+        return userPermissionService.hasPermission(user, "INVOICE_PROCESS");
     }
 
-    private boolean isFinanceUser(User user) {
-        return isAdmin(user) || isCashier(user)
-                || (user != null && ("财务管理".equals(user.getPosition()) || "主任".equals(user.getPosition())));
-    }
-
-    private boolean isAdmin(User user) {
-        return user != null && "admin".equals(user.getUsername());
+    private boolean canViewAllInvoices(User user) {
+        return userPermissionService.hasPermission(user, "FINANCE_VIEW");
     }
 
     private User requireCurrentUser(Long currentUserId) {
@@ -402,7 +394,7 @@ public class InvoiceService {
 
     private void assertInvoiceVisible(Invoice invoice, Long currentUserId) {
         User currentUser = requireCurrentUser(currentUserId);
-        if (isFinanceUser(currentUser) || currentUserId.equals(invoice.getApplicantId())) {
+        if (canViewAllInvoices(currentUser) || currentUserId.equals(invoice.getApplicantId())) {
             return;
         }
         throw new IllegalArgumentException("无权查看其他人员的开票申请");

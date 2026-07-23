@@ -11,9 +11,12 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Optional;
+import java.util.List;
+import org.springframework.data.domain.PageRequest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
@@ -55,6 +58,9 @@ class KnowledgeArticleServiceTest {
         verify(articleMapper).insert(captor.capture());
         assertEquals(12L, captor.getValue().getAuthorId());
         assertEquals("张律师", captor.getValue().getAuthorName());
+        assertEquals("PENDING_REVIEW", captor.getValue().getReviewStatus());
+        assertFalse(captor.getValue().getIsPublic());
+        assertFalse(captor.getValue().getKnowledgeEligible());
         verify(vectorMigrationService).indexNewArticle(captor.getValue());
     }
 
@@ -124,6 +130,24 @@ class KnowledgeArticleServiceTest {
     }
 
     @Test
+    void editingApprovedRegulatedSourceReturnsItToReviewQueue() {
+        KnowledgeArticle article = article(49L, 12L, true, "LAW_REGULATION");
+        article.setReviewStatus("APPROVED");
+        article.setReviewedBy(1L);
+        when(articleMapper.selectById(49L)).thenReturn(article);
+        when(securityUtils.getCurrentUserId()).thenReturn(12L);
+
+        service.updateArticle(49L, dto("PUBLIC_TEMPLATE", true));
+
+        assertEquals("PENDING_REVIEW", article.getReviewStatus());
+        assertFalse(article.getIsPublic());
+        assertFalse(article.getKnowledgeEligible());
+        assertEquals("FORBIDDEN", article.getIndexStatus());
+        assertNull(article.getReviewedBy());
+        verify(vectorMigrationService).indexNewArticle(article);
+    }
+
+    @Test
     void privateArticleIsInvisibleToUnrelatedUser() {
         KnowledgeArticle article = article(43L, 12L, false, "FIRM_POLICY");
         when(articleMapper.selectById(43L)).thenReturn(article);
@@ -142,6 +166,29 @@ class KnowledgeArticleServiceTest {
 
         assertEquals(44L, service.getArticle(44L).getId());
         verify(articleMapper).incrementViewCount(44L);
+    }
+
+    @Test
+    void knowledgeManagerCanReadPendingArticleFromAnotherImporter() {
+        KnowledgeArticle article = article(47L, 12L, false, "FIRM_POLICY");
+        article.setReviewStatus("PENDING_REVIEW");
+        when(articleMapper.selectById(47L)).thenReturn(article);
+        when(securityUtils.getCurrentUserId()).thenReturn(13L);
+        when(securityUtils.hasAuthority("KNOWLEDGE_MANAGE")).thenReturn(true);
+
+        assertEquals(47L, service.getArticle(47L).getId());
+        verify(articleMapper).incrementViewCount(47L);
+    }
+
+    @Test
+    void pendingReviewQueueUsesDedicatedNonPublicQuery() {
+        KnowledgeArticle article = article(48L, 12L, false, "FIRM_POLICY");
+        article.setReviewStatus("PENDING_REVIEW");
+        when(articleMapper.selectPendingReview(0, 10)).thenReturn(List.of(article));
+        when(articleMapper.countPendingReview()).thenReturn(1);
+
+        assertEquals(1, service.getPendingReviewArticles(PageRequest.of(0, 10)).getTotalElements());
+        verify(articleMapper).selectPendingReview(0, 10);
     }
 
     @Test

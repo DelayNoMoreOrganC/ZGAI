@@ -68,7 +68,15 @@ public class KnowledgeArticleInitService {
                 "ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS index_status VARCHAR(30) DEFAULT 'PENDING'",
                 "ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS author_id BIGINT",
                 "ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS author_name VARCHAR(50)",
-                "ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS updater_id BIGINT"
+                "ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS updater_id BIGINT",
+                "ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS source_url VARCHAR(1000)",
+                "ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS source_relative_path VARCHAR(1000)",
+                "ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS content_sha256 VARCHAR(64)",
+                "ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS collected_at TIMESTAMP",
+                "ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS review_status VARCHAR(30) DEFAULT 'APPROVED'",
+                "ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS reviewed_by BIGINT",
+                "ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP",
+                "ALTER TABLE knowledge_article ADD COLUMN IF NOT EXISTS review_reason VARCHAR(1000)"
         };
 
         for (String sql : alterStatements) {

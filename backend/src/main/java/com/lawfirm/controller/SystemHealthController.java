@@ -1,6 +1,9 @@
 package com.lawfirm.controller;
 
 import com.lawfirm.util.Result;
+import com.lawfirm.dto.OcrHealthDTO;
+import com.lawfirm.service.OcrService;
+import com.lawfirm.service.RAGKnowledgeService;
 import com.lawfirm.service.StorageHealthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.env.Environment;
@@ -27,6 +30,8 @@ public class SystemHealthController {
     private final DataSource dataSource;
     private final Environment environment;
     private final StorageHealthService storageHealthService;
+    private final RAGKnowledgeService ragKnowledgeService;
+    private final OcrService ocrService;
 
     @GetMapping("/health")
     public ResponseEntity<Result<Map<String, Object>>> health() {
@@ -69,11 +74,16 @@ public class SystemHealthController {
 
         Map<String, Object> storage = storageHealthService.getStorageStatus();
         result.put("storage", storage);
+        Map<String, Object> rag = ragKnowledgeService.healthStatus();
+        result.put("rag", rag);
+        OcrHealthDTO ocr = ocrService.getHealth();
+        result.put("ocr", ocr);
         boolean storageReady = storage.values().stream()
                 .filter(Map.class::isInstance)
                 .map(Map.class::cast)
                 .allMatch(item -> "ready".equals(item.get("status")));
         result.put("status", "ready".equals(database.get("status")) && storageReady
+                && "READY".equals(rag.get("status")) && "READY".equals(ocr.getStatus())
                 ? "ready" : "degraded");
         return Result.success(result);
     }

@@ -1,5 +1,13 @@
 <template>
   <div class="case-detail" v-loading="loading">
+    <el-result v-if="loadError" icon="error" title="案件详情加载失败" :sub-title="loadError">
+      <template #extra>
+        <el-button @click="$router.push('/case/list')">返回案件列表</el-button>
+        <el-button type="primary" @click="fetchCaseDetail">重新加载</el-button>
+      </template>
+    </el-result>
+
+    <template v-else>
     <!-- 顶部固定区域 -->
     <div class="detail-header">
       <div class="header-left">
@@ -8,20 +16,24 @@
         </el-button>
         <div class="case-info">
           <h2 class="case-name">{{ caseDetail.caseName }}</h2>
-          <span class="case-number">{{ caseDetail.caseNumber }}</span>
+          <div class="case-meta">
+            <span class="case-number">{{ caseDetail.caseNumber || '暂未生成案件编号' }}</span>
+            <el-tag size="small" effect="plain">{{ caseDetail.caseTypeDesc || caseDetail.caseType || '案件' }}</el-tag>
+            <el-tag size="small" :type="statusTagType">{{ caseDetail.statusDesc || caseDetail.status || '待完善' }}</el-tag>
+          </div>
         </div>
       </div>
 
       <div class="header-right">
-        <el-button @click="handleEdit">
+        <el-button v-if="canEdit" @click="handleEdit">
           <el-icon><Edit /></el-icon>
           编辑
         </el-button>
-        <el-button type="primary" @click="showAIAssistant">
+        <el-button v-if="canUseCaseAI" type="primary" @click="openAIWorkbench">
           <el-icon><ChatDotRound /></el-icon>
           AI助手
         </el-button>
-        <el-button @click="handleArchive">
+        <el-button v-if="canArchive" @click="openArchiveWorkflow">
           <el-icon><FolderOpened /></el-icon>
           归档
         </el-button>
@@ -32,20 +44,14 @@
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="copy">复制案件</el-dropdown-item>
+              <el-dropdown-item v-if="canCopy" command="copy">复制案件</el-dropdown-item>
               <el-dropdown-item command="export">导出信息</el-dropdown-item>
-              <el-dropdown-item command="delete" divided>删除案件</el-dropdown-item>
+              <el-dropdown-item v-if="canDelete" command="delete" divided>删除案件</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
       </div>
 
-    <!-- AI助手对话框 -->
-    <AIAssistant
-      v-model:visible="aiAssistantVisible"
-      :case-id="currentCaseId"
-      :case-mode="true"
-    />
     </div>
 
     <!-- 进度条 -->
@@ -58,8 +64,10 @@
           :class="{
             'active': isStageActive(stage.key),
             'completed': isStageCompleted(stage.key),
-            'current': isCurrentStage(stage.key)
+            'current': isCurrentStage(stage.key),
+            'disabled': !canChangeStatus
           }"
+          :aria-disabled="!canChangeStatus"
           @click="handleStageClick(stage)"
         >
           <div class="stage-icon">
@@ -72,7 +80,7 @@
       </div>
       <div class="progress-info">
         <span>当前阶段：{{ caseDetail.currentStage }}</span>
-        <el-button text type="primary" size="small" @click="handleUpdateStage">
+        <el-button v-if="canChangeStatus" text type="primary" size="small" @click="handleUpdateStage">
           更新阶段
         </el-button>
         <el-button text type="success" size="small" @click="handleViewApprovals">
@@ -82,13 +90,19 @@
     </div>
 
     <!-- Tab导航 -->
-    <el-tabs v-model="activeTab" class="detail-tabs">
-      <el-tab-pane label="基本案情" name="basic" />
-      <el-tab-pane label="办案记录" name="record" />
-      <el-tab-pane label="受理单位" name="unit" />
-      <el-tab-pane label="案件文档" name="doc" />
-      <el-tab-pane label="案件动态" name="timeline" />
-    </el-tabs>
+    <nav class="detail-tabs" aria-label="案件详情导航">
+      <button
+        v-for="tab in detailTabs"
+        :key="tab.name"
+        type="button"
+        class="detail-tab"
+        :class="{ active: activeTab === tab.name }"
+        :aria-current="activeTab === tab.name ? 'page' : undefined"
+        @click="navigateTab(tab.name)"
+      >
+        {{ tab.label }}
+      </button>
+    </nav>
 
     <!-- Tab内容 -->
     <div class="tab-content">
@@ -100,29 +114,42 @@
       :case-id="caseDetail.id"
       @handled="handleApprovalHandled"
     />
+    </template>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft, Edit, FolderOpened, ArrowDown, Select, ChatDotRound
 } from '@element-plus/icons-vue'
-import { getCaseDetail, updateCaseStatus, archiveCase, deleteCase, createCase } from '@/api/case'
-import { createTodo } from '@/api/todo'
-import { getStagesByCaseType, getStageAutoTodos, generateStageTodos } from '@/config/case-lifecycle'
-import AIAssistant from '@/views/ai/assistant.vue'
+import { getCaseDetail, updateCaseStatus, rollbackCaseStatus, deleteCase, createCase } from '@/api/case'
+import { getCaseTypeWorkflow } from '@/utils/caseTypeProfiles'
 import ApprovalDetailDrawer from '@/components/ApprovalDetailDrawer.vue'
+import { useUserStore } from '@/stores/user'
+import { formatFeeMethod } from '@/utils/feeMethod'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const loading = ref(false)
+const loadError = ref('')
 const approvalDrawerVisible = ref(false)
-const activeTab = ref('basic')
-const aiAssistantVisible = ref(false)
+const detailTabs = [
+  { label: '基本案情', name: 'basic' },
+  { label: '办案记录', name: 'record' },
+  { label: '受理单位', name: 'unit' },
+  { label: '案件文档', name: 'doc' },
+  { label: '案件动态', name: 'timeline' },
+  { label: '智能归档', name: 'archive' }
+]
+const activeTab = computed(() => {
+  const routeTab = route.path.split('/').filter(Boolean).pop()
+  return detailTabs.some(item => item.name === routeTab) ? routeTab : 'basic'
+})
 const caseDetail = reactive({
   id: null,
   caseName: '',
@@ -131,14 +158,32 @@ const caseDetail = reactive({
   caseType: '',
   ownerId: null
 })
+const canEdit = computed(() => caseDetail.canEdit === true)
+const canDelete = computed(() => caseDetail.canDelete === true)
+const canArchive = computed(() => caseDetail.canArchive === true)
+const canChangeStatus = computed(() => caseDetail.canChangeStatus === true)
+const canCopy = computed(() => userStore.hasPermission('CASE_CREATE'))
+const canUseCaseAI = computed(() => canEdit.value && userStore.hasPermission('CASE_EDIT'))
+const statusTagType = computed(() => ({
+  FILING_REVIEW: 'warning', ACTIVE: 'primary', CLOSED: 'success', ARCHIVED: 'info'
+}[caseDetail.status] || 'info'))
 
 // 案件阶段 - 根据案件类型动态获取
 const caseStages = computed(() => {
-  return getStagesByCaseType(caseDetail.caseType)
+  if (caseDetail.stageProgress?.length) {
+    return caseDetail.stageProgress.map(stage => ({
+      key: stage.stageName,
+      label: stage.stageName,
+      status: stage.status
+    }))
+  }
+  return getCaseTypeWorkflow(caseDetail.caseType).map(stage => ({ key: stage, label: stage, status: 'PENDING' }))
 })
 
 // 判断阶段是否已完成
 const isStageCompleted = (stageKey) => {
+  const stage = caseStages.value.find(item => item.key === stageKey)
+  if (stage?.status === 'COMPLETED') return true
   const stageIndex = caseStages.value.findIndex(s => s.key === stageKey)
   const currentIndex = caseStages.value.findIndex(s => s.label === caseDetail.currentStage)
   return stageIndex < currentIndex
@@ -152,17 +197,19 @@ const isStageActive = (stageKey) => {
 // 判断是否为当前阶段
 const isCurrentStage = (stageKey) => {
   const stage = caseStages.value.find(s => s.key === stageKey)
-  return stage?.label === caseDetail.currentStage
+  return stage?.status === 'IN_PROGRESS' || stage?.label === caseDetail.currentStage
 }
 
 // 获取案件详情
 const fetchCaseDetail = async () => {
   try {
     loading.value = true
+    loadError.value = ''
     const { id } = route.params
     const res = await getCaseDetail(id)
     Object.assign(caseDetail, res.data)
   } catch (error) {
+    loadError.value = error?.message || '请检查网络连接或案件访问权限'
     ElMessage.error('获取案件详情失败')
     console.error(error)
   } finally {
@@ -176,31 +223,11 @@ const handleEdit = () => {
 }
 
 // 显示AI助手
-const showAIAssistant = () => {
-  aiAssistantVisible.value = true
+const openAIWorkbench = () => {
+  router.push({ path: '/ai/case-workbench', query: { caseId: caseDetail.id } })
 }
 
-// 当前案件ID（传递给AI助手）
-const currentCaseId = computed(() => Number(caseDetail.id) || null)
-
-// 归档案件
-const handleArchive = async () => {
-  try {
-    await ElMessageBox.confirm('确定要归档该案件吗?', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-
-    await archiveCase(caseDetail.id)
-    ElMessage.success('归档成功')
-    fetchCaseDetail()
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('归档失败')
-    }
-  }
-}
+const openArchiveWorkflow = () => router.push(`/case/${caseDetail.id}/archive`)
 
 // 查看审批流程
 const handleViewApprovals = () => {
@@ -299,7 +326,7 @@ ${p.attribute} - ${p.name}
 
 律师费信息
 ------------------
-收费方式：${caseDetail.feeMethod || caseDetail.feeTypes?.join('、') || '无'}
+收费方式：${caseDetail.feeMethod ? formatFeeMethod(caseDetail.feeMethod) : caseDetail.feeTypes?.map(formatFeeMethod).join('、') || '无'}
 争议标的：${caseDetail.subjectMatter || '无'}
 律师费金额：${caseDetail.attorneyFee || caseDetail.lawyerFee || '无'}
 收费摘要：${caseDetail.feeDescription || caseDetail.feeSummary || '无'}
@@ -353,6 +380,9 @@ ${caseDetail.remark || '无'}
 
 // 点击阶段
 const handleStageClick = async (stage) => {
+  if (!canChangeStatus.value) {
+    return
+  }
   try {
     const currentStageKey = caseStages.value.find(s => s.label === caseDetail.currentStage)?.key
 
@@ -393,7 +423,7 @@ const handleStageClick = async (stage) => {
         })
 
         // 调用更新状态API（带原因）
-        await updateCaseStatus(caseDetail.id, {
+        await rollbackCaseStatus(caseDetail.id, {
           status: stage.label,
           reason: value
         })
@@ -407,6 +437,10 @@ const handleStageClick = async (stage) => {
         return
       }
     } else {
+      if (targetStageIndex !== currentStageIndex + 1) {
+        ElMessage.warning('案件阶段只能依次推进，请先完成当前阶段')
+        return
+      }
       // 前进阶段，只需确认
       await ElMessageBox.confirm(confirmMessage, '确认变更', {
         confirmButtonText: '确定',
@@ -421,8 +455,6 @@ const handleStageClick = async (stage) => {
 
       ElMessage.success(`已更新到"${stage.label}"阶段`)
 
-      // 自动生成该阶段的待办事项
-      await generateTodosForStage(stage.key)
     }
 
     // 刷新案件详情
@@ -435,47 +467,9 @@ const handleStageClick = async (stage) => {
   }
 }
 
-// 为新阶段自动生成待办事项
-const generateTodosForStage = async (stageKey) => {
-  try {
-    // 获取该阶段的自动待办模板
-    const autoTodos = getStageAutoTodos(caseDetail.caseType, stageKey)
-
-    if (!autoTodos || autoTodos.length === 0) {
-      return // 该阶段没有自动待办，跳过
-    }
-
-    // 生成待办事项
-    const todos = generateStageTodos(
-      caseDetail.caseType,
-      stageKey,
-      caseDetail.id,
-      caseDetail.caseName,
-      caseDetail.ownerId
-    )
-
-    // 批量创建待办
-    let createdCount = 0
-    for (const todo of todos) {
-      try {
-        await createTodo(todo)
-        createdCount++
-      } catch (error) {
-        console.error('创建待办失败:', error)
-      }
-    }
-
-    if (createdCount > 0) {
-      ElMessage.success(`已为该阶段自动创建${createdCount}个待办事项`)
-    }
-  } catch (error) {
-    console.error('自动生成待办失败:', error)
-    // 不阻塞主流程，静默失败
-  }
-}
-
 // 更新阶段（按钮触发，显示阶段选择）
 const handleUpdateStage = async () => {
+  if (!canChangeStatus.value) return
   try {
     const validStages = caseStages.value.map(s => s.label)
     const { value } = await ElMessageBox.prompt(
@@ -504,50 +498,31 @@ const handleUpdateStage = async () => {
   }
 }
 
-// 监听路由变化，同步tab
-watch(() => route.path, (newPath) => {
-  const tabMap = {
-    '/case/:id/basic': 'basic',
-    '/case/:id/record': 'record',
-    '/case/:id/unit': 'unit',
-    '/case/:id/doc': 'doc',
-    '/case/:id/timeline': 'timeline'
-  }
-
-  for (const [path, tab] of Object.entries(tabMap)) {
-    if (newPath.match(path.replace(':id', '\\d+'))) {
-      activeTab.value = tab
-      break
-    }
-  }
-}, { immediate: true })
-
-// 监听tab变化，同步路由
-watch(activeTab, (newTab) => {
+const navigateTab = (newTab) => {
   const id = route.params.id || caseDetail.id
   if (!id) return
   const targetPath = `/case/${id}/${newTab}`
   if (route.path !== targetPath) {
     router.push(targetPath)
   }
-})
+}
 
-onMounted(() => {
-  fetchCaseDetail()
-})
+watch(() => route.params.id, fetchCaseDetail, { immediate: true })
 </script>
 
 <style scoped lang="scss">
 .case-detail {
+  min-height: 320px;
+
   .detail-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 20px;
     background-color: #fff;
-    border-radius: 4px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
     margin-bottom: 20px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 
     .header-left {
       display: flex;
@@ -555,11 +530,21 @@ onMounted(() => {
       gap: 20px;
 
       .case-info {
+        min-width: 0;
+
         .case-name {
           margin: 0 0 5px;
           font-size: 18px;
           font-weight: 500;
           color: #333;
+          overflow-wrap: anywhere;
+        }
+
+        .case-meta {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 8px;
         }
 
         .case-number {
@@ -571,6 +556,8 @@ onMounted(() => {
 
     .header-right {
       display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
       gap: 10px;
     }
   }
@@ -578,15 +565,17 @@ onMounted(() => {
   .progress-section {
     background-color: #fff;
     padding: 25px 30px;
-    border-radius: 4px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
     margin-bottom: 20px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    overflow-x: auto;
 
     .progress-bar {
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 20px;
+      min-width: max-content;
 
       .progress-item {
         flex: 1;
@@ -595,6 +584,7 @@ onMounted(() => {
         align-items: center;
         position: relative;
         cursor: pointer;
+        min-width: 92px;
 
         .stage-icon {
           width: 32px;
@@ -671,6 +661,10 @@ onMounted(() => {
             font-weight: 500;
           }
         }
+
+        &.disabled {
+          cursor: default;
+        }
       }
     }
 
@@ -687,25 +681,88 @@ onMounted(() => {
   }
 
   .detail-tabs {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
     background-color: #fff;
-    padding: 0 20px;
-    border-radius: 4px;
+    padding: 0 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
     margin-bottom: 20px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    overflow-x: auto;
 
-    :deep(.el-tabs__header) {
-      margin: 0;
-    }
+    .detail-tab {
+      flex: 0 0 auto;
+      min-height: 48px;
+      padding: 0 16px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: #606266;
+      font: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color 0.2s, border-color 0.2s;
 
-    :deep(.el-tabs__nav-wrap::after) {
-      display: none;
+      &:hover {
+        color: #1d5f9f;
+      }
+
+      &.active {
+        border-bottom-color: #1d5f9f;
+        color: #1d5f9f;
+        font-weight: 600;
+      }
     }
   }
 
   .tab-content {
     background-color: #fff;
-    border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+  }
+}
+
+@media (max-width: 760px) {
+  .case-detail {
+    .detail-header {
+      align-items: stretch;
+      flex-direction: column;
+      gap: 14px;
+      padding: 16px;
+
+      .header-left {
+        align-items: flex-start;
+        gap: 12px;
+      }
+
+      .header-right {
+        justify-content: flex-start;
+      }
+    }
+
+    .progress-section {
+      padding: 18px 14px;
+
+      .progress-bar {
+        justify-content: flex-start;
+      }
+
+      .progress-info {
+        justify-content: flex-start;
+        min-width: max-content;
+      }
+    }
+
+    .detail-tabs {
+      margin-bottom: 14px;
+      padding: 0 4px;
+
+      .detail-tab {
+        min-height: 44px;
+        padding: 0 12px;
+      }
+    }
   }
 }
 

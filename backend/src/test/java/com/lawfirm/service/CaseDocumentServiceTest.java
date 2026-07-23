@@ -97,6 +97,30 @@ class CaseDocumentServiceTest {
     }
 
     @Test
+    void removesCopiedFileWhenMetadataSaveFails(@TempDir Path tempDir) {
+        Case caseEntity = caseWithStatus("ACTIVE");
+        DocumentFolder folder = standardFolder();
+        when(caseRepository.findById(1L)).thenReturn(Optional.of(caseEntity));
+        when(fileLibraryService.ensureCaseFolder(caseEntity)).thenReturn(tempDir);
+        when(fileLibraryService.sanitizeFolderPath("02_证据材料")).thenReturn("02_证据材料");
+        when(fileLibraryService.findCaseFolder(1L, "02_证据材料")).thenReturn(Optional.of(folder));
+        when(documentRepository.findByCaseIdAndDeletedFalseOrderByCreatedAtDesc(1L))
+                .thenReturn(Collections.emptyList());
+        when(documentRepository.save(any(CaseDocument.class)))
+                .thenThrow(new IllegalStateException("database unavailable"));
+
+        assertThrows(IllegalStateException.class, () -> service.uploadDocument(
+                1L,
+                new MockMultipartFile("file", "证据.docx", "application/octet-stream", new byte[]{1, 2, 3}),
+                "证据材料",
+                "02_证据材料",
+                9L));
+
+        Path targetFolder = tempDir.resolve("02_证据材料");
+        assertTrue(Files.notExists(targetFolder) || isEmptyDirectory(targetFolder));
+    }
+
+    @Test
     void returnsVersionFamilyByOriginalNameInDescendingOrder() {
         CaseDocument current = document(12L, 2, "证据_定稿.docx", "证据.docx");
         CaseDocument first = document(11L, 1, "证据_初稿.docx", "证据.docx");
@@ -143,5 +167,13 @@ class CaseDocumentServiceTest {
         document.setUploadBy(9L);
         document.setDeleted(false);
         return document;
+    }
+
+    private boolean isEmptyDirectory(Path path) {
+        try (java.util.stream.Stream<Path> files = Files.list(path)) {
+            return files.findAny().isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

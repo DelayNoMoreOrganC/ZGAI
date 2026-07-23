@@ -26,17 +26,20 @@ class InvoiceServiceTest {
 
     private InvoiceRepository invoiceRepository;
     private UserRepository userRepository;
+    private UserPermissionService userPermissionService;
     private InvoiceService service;
 
     @BeforeEach
     void setUp() {
         invoiceRepository = mock(InvoiceRepository.class);
         userRepository = mock(UserRepository.class);
+        userPermissionService = mock(UserPermissionService.class);
         service = new InvoiceService(
                 invoiceRepository,
                 mock(CaseRepository.class),
                 userRepository,
-                mock(TodoRepository.class));
+                mock(TodoRepository.class),
+                userPermissionService);
     }
 
     @Test
@@ -58,6 +61,7 @@ class InvoiceServiceTest {
     void financeUserCanViewAllApplications() {
         User finance = user(8L, "财务甲", "财务管理");
         when(userRepository.findById(8L)).thenReturn(Optional.of(finance));
+        when(userPermissionService.hasPermission(finance, "FINANCE_VIEW")).thenReturn(true);
         when(invoiceRepository.findAll(any(Pageable.class)))
                 .thenReturn(new PageImpl<>(Collections.singletonList(invoice(12L, 7L))));
 
@@ -81,6 +85,7 @@ class InvoiceServiceTest {
         User director = user(10L, "主任甲", "主任");
         when(userRepository.findById(10L)).thenReturn(Optional.of(director));
         when(invoiceRepository.findById(14L)).thenReturn(Optional.of(invoice(14L, 7L)));
+        when(userPermissionService.hasPermission(director, "FINANCE_VIEW")).thenReturn(true);
 
         assertEquals(14L, service.getInvoiceById(14L, 10L).getId());
     }

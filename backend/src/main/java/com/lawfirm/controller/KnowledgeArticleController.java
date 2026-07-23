@@ -227,6 +227,15 @@ public class KnowledgeArticleController {
         return Result.success(result);
     }
 
+    @GetMapping("/pending-review")
+    @PreAuthorize("hasAuthority('KNOWLEDGE_MANAGE')")
+    @Operation(summary = "获取待审核知识条目")
+    public Result<Page<KnowledgeArticleVO>> getPendingReviewArticles(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return Result.success(articleService.getPendingReviewArticles(knowledgePage(page, size)));
+    }
+
     private Pageable knowledgePage(int page, int size) {
         return PageRequest.of(Math.max(0, page), size, Sort.by(Sort.Direction.DESC, "createdAt"));
     }

@@ -1,7 +1,9 @@
 package com.lawfirm.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lawfirm.entity.User;
 import com.lawfirm.util.JwtUtil;
+import com.lawfirm.util.Result;
 import javax.servlet.FilterChain;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
@@ -29,6 +31,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
     private final UserAuthorityService userAuthorityService;
+    private final ObjectMapper objectMapper;
 
     private static final String HEADER_NAME = "Authorization";
     private static final String TOKEN_PREFIX = "Bearer ";
@@ -62,6 +65,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authentication);
 
                     log.debug("已设置用户认证信息: userId={}, username={}, authorities={}", userId, username, authorities.size());
+
+                    if (Boolean.TRUE.equals(user.getMustChangePassword()) && !isPasswordPolicyEndpoint(request)) {
+                        response.setStatus(428);
+                        objectMapper.writeValue(response.getWriter(),
+                                Result.error(428, "首次登录或密码重置后必须先修改密码"));
+                        return;
+                    }
                 }
             }
         } catch (Exception e) {
@@ -69,6 +79,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isPasswordPolicyEndpoint(HttpServletRequest request) {
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
+        String path = request.getServletPath();
+        return "/auth/login".equals(path)
+                || "/auth/logout".equals(path)
+                || "/auth/current-user".equals(path)
+                || "/auth/change-password".equals(path)
+                || "/user/change-password".equals(path)
+                || "/health".equals(path)
+                || path.startsWith("/error");
     }
 
     /**

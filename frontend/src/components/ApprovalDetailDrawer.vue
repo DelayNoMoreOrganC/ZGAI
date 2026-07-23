@@ -2,7 +2,7 @@
   <el-drawer
     v-model="visible"
     title="审批资料"
-    size="520px"
+    size="min(560px, 100vw)"
     class="approval-detail-drawer"
   >
     <div v-loading="loading" class="approval-drawer-body">
@@ -47,16 +47,179 @@
           <pre>{{ selectedApproval.content || '-' }}</pre>
         </div>
 
+        <div v-if="selectedApproval.approvalType === 'SEAL'" class="seal-files-section">
+          <h3>待用印文件</h3>
+          <div
+            v-for="attachment in selectedApproval.sealAttachments || []"
+            :key="attachment.id"
+            class="seal-file-row"
+          >
+            <div>
+              <strong>{{ attachment.originalFileName }}</strong>
+              <span>
+                {{ formatFileSize(attachment.fileSize) }} ·
+                {{ attachment.sourceType === 'CASE_DOCUMENT' ? '案件文件' : '申请人上传' }}
+              </span>
+            </div>
+            <div class="seal-file-actions">
+              <el-tag size="small" :type="getApprovalStatusType(attachment.sealStatus)">
+                {{ formatSealStatus(attachment.sealStatus) }}
+              </el-tag>
+              <el-button link type="primary" @click="downloadSealFile(selectedApproval, attachment)">
+                下载审阅
+              </el-button>
+            </div>
+          </div>
+          <el-alert
+            v-if="!selectedApproval.sealAttachments?.length"
+            type="error"
+            :closable="false"
+            title="该用印申请未找到关联文件，请勿审批并联系申请人重新提交。"
+          />
+        </div>
+
         <div v-if="selectedApproval.approvalNotes" class="approval-content">
           <h3>处理意见</h3>
           <pre>{{ selectedApproval.approvalNotes }}</pre>
+        </div>
+
+        <div v-if="isCaseFilingApproval(selectedApproval)" class="conflict-review-section">
+          <div class="section-title-row">
+            <h3>委托方利冲审查</h3>
+            <span>{{ selectedApproval.conflictChecks?.length || 0 }} 个主体</span>
+          </div>
+
+          <el-alert
+            v-if="!selectedApproval.conflictChecks?.length"
+            type="info"
+            :closable="false"
+            title="该申请为存量流程，尚未关联结构化利冲记录，请在审批意见中完整记录审查结论。"
+          />
+
+          <div
+            v-for="record in selectedApproval.conflictChecks || []"
+            :key="record.id"
+            class="conflict-record"
+          >
+            <div class="conflict-record-head">
+              <div>
+                <strong>{{ record.subjectName }}</strong>
+                <span>{{ record.reportNo }}</span>
+              </div>
+              <div class="conflict-tags">
+                <el-tag :type="riskTagType(record.conflictLevel)" size="small">
+                  {{ riskLabel(record.conflictLevel) }}
+                </el-tag>
+                <el-tag :type="reviewDecisionType(record.reviewDecision)" size="small">
+                  {{ record.reviewStatus === 'COMPLETED' ? reviewDecisionLabel(record.reviewDecision) : '待行政审查' }}
+                </el-tag>
+              </div>
+            </div>
+            <p class="conflict-summary">{{ record.conclusion || '系统未生成初筛说明' }}</p>
+            <div v-if="record.reviewStatus === 'COMPLETED'" class="review-result">
+              <span>{{ record.reviewedByName || '-' }} · {{ formatDateTime(record.reviewedAt) }}</span>
+              <p>{{ record.reviewConclusion || '-' }}</p>
+              <p v-if="record.waiverBasis"><b>豁免/处置依据：</b>{{ record.waiverBasis }}</p>
+              <div v-if="record.waiverAttachments?.length" class="waiver-attachments">
+                <b>书面依据原件</b>
+                <button
+                  v-for="attachment in record.waiverAttachments"
+                  :key="attachment.id"
+                  type="button"
+                  class="attachment-link"
+                  @click="downloadWaiver(record, attachment)"
+                >
+                  {{ attachment.originalFileName }} · {{ formatFileSize(attachment.fileSize) }}
+                </button>
+              </div>
+              <el-tag v-if="record.archivedAt" type="success" size="small">已随案件归档</el-tag>
+            </div>
+            <el-button
+              v-else-if="canReviewConflict"
+              link
+              type="primary"
+              @click="startConflictReview(record)"
+            >
+              填写正式审查
+            </el-button>
+
+            <el-form v-if="conflictReviewForm.recordId === record.id" class="inline-review-form" label-position="top">
+              <el-form-item label="正式结论" required>
+                <el-radio-group v-model="conflictReviewForm.decision">
+                  <el-radio-button value="PASSED">无冲突，通过</el-radio-button>
+                  <el-radio-button value="REJECTED">存在冲突，不通过</el-radio-button>
+                  <el-radio-button value="CONDITIONAL">附条件通过</el-radio-button>
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item label="审查意见" required>
+                <el-input
+                  v-model="conflictReviewForm.conclusion"
+                  type="textarea"
+                  :rows="3"
+                  maxlength="1000"
+                  show-word-limit
+                  placeholder="说明核查范围、既有委托关系及结论理由"
+                />
+              </el-form-item>
+              <el-form-item
+                v-if="conflictReviewForm.decision === 'CONDITIONAL'"
+                label="书面依据原件"
+                required
+              >
+                <div class="waiver-upload-block">
+                  <div v-if="record.waiverAttachments?.length" class="waiver-attachments">
+                    <button
+                      v-for="attachment in record.waiverAttachments"
+                      :key="attachment.id"
+                      type="button"
+                      class="attachment-link"
+                      @click="downloadWaiver(record, attachment)"
+                    >
+                      {{ attachment.originalFileName }} · {{ formatFileSize(attachment.fileSize) }}
+                    </button>
+                  </div>
+                  <el-upload
+                    drag
+                    :show-file-list="false"
+                    :http-request="options => uploadWaiver(record, options)"
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                    :disabled="waiverUploading"
+                  >
+                    <el-icon><UploadFilled /></el-icon>
+                    <div class="el-upload__text">拖入或点击上传 PDF、Word、JPG、PNG</div>
+                    <template #tip><span>单个文件不超过 20MB，正式审查提交后不可追加或替换</span></template>
+                  </el-upload>
+                </div>
+              </el-form-item>
+              <el-form-item
+                v-if="conflictReviewForm.decision === 'CONDITIONAL'"
+                label="书面豁免或风险处置依据"
+                required
+              >
+                <el-input
+                  v-model="conflictReviewForm.waiverBasis"
+                  type="textarea"
+                  :rows="3"
+                  maxlength="2000"
+                  show-word-limit
+                  placeholder="填写书面豁免、授权决定或信息隔离措施"
+                />
+              </el-form-item>
+              <div class="inline-review-actions">
+                <el-button @click="cancelConflictReview">取消</el-button>
+                <el-button type="primary" :loading="reviewSubmitting" @click="submitConflictReview">
+                  提交并锁定
+                </el-button>
+              </div>
+            </el-form>
+          </div>
         </div>
 
         <div v-if="isCaseFilingApproval(selectedApproval)" class="approval-path">
           <h3>立案审批路径</h3>
           <div class="path-step done">发起人提交立案申请</div>
           <div class="path-step active">行政管理利冲审查并审批</div>
-          <div class="path-step">如为免费代理，进入主任终审</div>
+          <div class="path-step">行政初审通过后进入主任终审</div>
           <div class="path-step">审批通过后建立案件档案</div>
         </div>
 
@@ -93,7 +256,16 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getApprovalList, getApprovalDetail, getApprovalFlow, approveApproval, rejectApproval } from '@/api/approval'
+import {
+  getApprovalList,
+  getApprovalDetail,
+  getApprovalFlow,
+  approveApproval,
+  rejectApproval,
+  downloadApprovalAttachment
+} from '@/api/approval'
+import { reviewConflictCheckRecord, uploadConflictWaiverAttachment, downloadConflictWaiverAttachment } from '@/api/client'
+import { UploadFilled } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 
 const props = defineProps({
@@ -127,6 +299,9 @@ const loading = ref(false)
 const approvalList = ref([])
 const selectedApproval = ref(null)
 const approvalFlows = ref([])
+const reviewSubmitting = ref(false)
+const waiverUploading = ref(false)
+const conflictReviewForm = ref({ recordId: null, decision: '', conclusion: '', waiverBasis: '' })
 
 const currentUserId = computed(() => Number(userStore.userInfo?.id || userStore.userId || 0))
 const isSuperAdmin = computed(() => userStore.userInfo?.username === 'admin')
@@ -136,12 +311,16 @@ const canHandleSelectedApproval = computed(() => {
   return approval?.status === 'PENDING'
     && (isSuperAdmin.value || isDirector.value || Number(approval.currentApproverId) === currentUserId.value)
 })
+const canReviewConflict = computed(() => canHandleSelectedApproval.value
+  && selectedApproval.value?.approvalType === 'CASE_FILING'
+  && (isSuperAdmin.value || userStore.hasPermission('CASE_FILING_REVIEW')))
 
 const isSuccessResponse = (response) => response?.success || response?.code === 200
 const isCaseFilingApproval = (row) => ['CASE_FILING', 'CASE_FILING_DIRECTOR'].includes(row?.approvalType)
 const getApproveActionText = (row) => {
   if (row?.approvalType === 'CASE_FILING_DIRECTOR') return '终审通过'
   if (row?.approvalType === 'CASE_FILING') return '同意立案'
+  if (row?.approvalType === 'SEAL') return '同意用印'
   return '同意'
 }
 
@@ -149,7 +328,7 @@ const formatApprovalType = (type) => {
   const map = {
     CASE_FILING: '立案审批',
     CASE_FILING_DIRECTOR: '主任终审',
-    SEAL: '用印申请',
+    SEAL: '公章用印审批',
     REIMBURSEMENT: '费用报销',
     INVOICE: '开票申请',
     CONTRACT: '合同审批',
@@ -168,6 +347,19 @@ const getApprovalStatusType = (status) => {
   }
   return map[status] || ''
 }
+const riskLabel = (level) => ({
+  DIRECT: '直接冲突线索', CASE_PARTY: '案件主体命中', EXISTING: '既有客户命中',
+  RELATED: '关联主体命中', SIMILAR: '相似名称', NONE: '未发现线索'
+}[level] || '待人工核对')
+const riskTagType = (level) => ({
+  DIRECT: 'danger', CASE_PARTY: 'warning', EXISTING: 'warning', RELATED: 'warning', SIMILAR: 'warning', NONE: 'success'
+}[level] || 'info')
+const reviewDecisionLabel = (decision) => ({
+  PASSED: '无冲突，通过', REJECTED: '存在冲突，不通过', CONDITIONAL: '附条件通过'
+}[decision] || '待行政审查')
+const reviewDecisionType = (decision) => ({
+  PASSED: 'success', REJECTED: 'danger', CONDITIONAL: 'warning'
+}[decision] || 'info')
 
 const flowActionMap = {
   SUBMIT: '提交审批',
@@ -194,6 +386,65 @@ const formatDateTime = (value) => {
     return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(minute)}:${pad(second)}`
   }
   return String(value).replace('T', ' ')
+}
+const formatFileSize = (value) => {
+  const bytes = Number(value || 0)
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+const formatSealStatus = (status) => ({
+  PENDING: '待审批', APPROVED: '同意用印', REJECTED: '已驳回', WITHDRAWN: '已撤回'
+}[status] || status || '-')
+
+const downloadSealFile = async (approval, attachment) => {
+  try {
+    const response = await downloadApprovalAttachment(approval.id, attachment.id)
+    const blob = response.data instanceof Blob ? response.data : new Blob([response.data])
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = attachment.originalFileName || '用印文件'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    ElMessage.error(error?.message || '下载用印文件失败')
+  }
+}
+
+const uploadWaiver = async (record, options) => {
+  try {
+    waiverUploading.value = true
+    const response = await uploadConflictWaiverAttachment(record.id, options.file)
+    if (!isSuccessResponse(response)) throw new Error(response?.message || '上传失败')
+    record.waiverAttachments = [...(record.waiverAttachments || []), response.data]
+    options.onSuccess?.(response)
+    ElMessage.success('书面依据原件已上传')
+  } catch (error) {
+    options.onError?.(error)
+    ElMessage.error(error?.message || '书面依据上传失败')
+  } finally {
+    waiverUploading.value = false
+  }
+}
+
+const downloadWaiver = async (record, attachment) => {
+  try {
+    const response = await downloadConflictWaiverAttachment(record.id, attachment.id)
+    const blob = response.data instanceof Blob ? response.data : new Blob([response.data])
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = attachment.originalFileName || '利冲豁免依据'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    ElMessage.error(error?.message || '下载书面依据失败')
+  }
 }
 
 const loadApprovalFlow = async (approvalId) => {
@@ -234,23 +485,87 @@ const loadApprovals = async () => {
   }
 }
 
+const startConflictReview = (record) => {
+  conflictReviewForm.value = { recordId: record.id, decision: '', conclusion: '', waiverBasis: '' }
+}
+
+const cancelConflictReview = () => {
+  conflictReviewForm.value = { recordId: null, decision: '', conclusion: '', waiverBasis: '' }
+}
+
+const submitConflictReview = async () => {
+  const form = conflictReviewForm.value
+  if (!form.decision) {
+    ElMessage.warning('请选择正式审查结论')
+    return
+  }
+  if (!form.conclusion.trim()) {
+    ElMessage.warning('请填写审查意见')
+    return
+  }
+  if (form.decision === 'CONDITIONAL' && !form.waiverBasis.trim()) {
+    ElMessage.warning('附条件通过必须填写书面豁免或风险处置依据')
+    return
+  }
+  const record = selectedApproval.value?.conflictChecks?.find(item => item.id === form.recordId)
+  if (form.decision === 'CONDITIONAL' && !record?.waiverAttachments?.length) {
+    ElMessage.warning('附条件通过必须上传书面豁免或风险处置依据原件')
+    return
+  }
+  try {
+    reviewSubmitting.value = true
+    const response = await reviewConflictCheckRecord(form.recordId, {
+      decision: form.decision,
+      conclusion: form.conclusion.trim(),
+      waiverBasis: form.waiverBasis.trim()
+    })
+    if (!isSuccessResponse(response)) throw new Error(response?.message || '提交失败')
+    ElMessage.success('正式利冲审查已完成，结论已锁定')
+    cancelConflictReview()
+    await loadApprovals()
+  } catch (error) {
+    ElMessage.error(error?.message || '正式利冲审查提交失败')
+  } finally {
+    reviewSubmitting.value = false
+  }
+}
+
 const handleApprove = async (approval) => {
+  if (approval.approvalType === 'CASE_FILING' && approval.conflictChecks?.some(item => item.reviewStatus !== 'COMPLETED')) {
+    ElMessage.warning('请先完成全部委托方的正式利冲审查')
+    return
+  }
+  if (approval.approvalType === 'CASE_FILING' && approval.conflictChecks?.some(item => item.reviewDecision === 'REJECTED')) {
+    ElMessage.warning('存在利冲审查不通过结论，请驳回立案申请')
+    return
+  }
+  if (approval.approvalType === 'CASE_FILING' && approval.conflictChecks?.some(item =>
+    item.reviewDecision === 'CONDITIONAL' && !item.waiverAttachments?.length)) {
+    ElMessage.warning('附条件通过的利冲审查缺少书面依据原件')
+    return
+  }
   try {
     const { value } = await ElMessageBox.prompt(
-      isCaseFilingApproval(approval) ? '请填写利冲审查结论或立案审批意见' : '请输入审批意见（可选）',
+      isCaseFilingApproval(approval)
+        ? '请填写利冲审查结论或立案审批意见'
+        : approval.approvalType === 'SEAL' ? '请填写用印审批意见' : '请输入审批意见（可选）',
       getApproveActionText(approval),
       {
         confirmButtonText: getApproveActionText(approval),
         cancelButtonText: '取消',
         inputPlaceholder: '请输入审批意见',
-        inputPattern: isCaseFilingApproval(approval) ? /\S+/ : undefined,
-        inputErrorMessage: isCaseFilingApproval(approval) ? '立案审批意见不能为空' : undefined,
+        inputPattern: (isCaseFilingApproval(approval) || approval.approvalType === 'SEAL') ? /\S+/ : undefined,
+        inputErrorMessage: isCaseFilingApproval(approval)
+          ? '立案审批意见不能为空'
+          : approval.approvalType === 'SEAL' ? '用印审批意见不能为空' : undefined,
         type: 'success'
       }
     )
     const response = await approveApproval(approval.id, { comments: value || '' })
     if (isSuccessResponse(response)) {
-      ElMessage.success(isCaseFilingApproval(approval) ? '立案审批已通过' : '审批已同意')
+      ElMessage.success(isCaseFilingApproval(approval)
+        ? '立案审批已通过'
+        : approval.approvalType === 'SEAL' ? '已同意用印' : '审批已同意')
       emit('handled')
       await loadApprovals()
     } else {
@@ -401,6 +716,192 @@ watch(
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.seal-files-section {
+  margin-top: 18px;
+
+  h3 {
+    margin: 0 0 10px;
+    color: #1f2937;
+    font-size: 15px;
+  }
+}
+
+.seal-file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+
+  strong,
+  span {
+    display: block;
+    overflow-wrap: anywhere;
+  }
+
+  strong { color: #1f2937; }
+  span { margin-top: 4px; color: #6b7280; font-size: 12px; }
+}
+
+.seal-file-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.conflict-review-section {
+  margin-top: 18px;
+
+  .section-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+
+    h3 {
+      margin: 0;
+      color: #1f2937;
+      font-size: 15px;
+    }
+
+    span {
+      color: #6b7280;
+      font-size: 12px;
+    }
+  }
+}
+
+.conflict-record {
+  padding: 14px;
+  margin-top: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.conflict-record-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+
+  > div:first-child {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  strong {
+    color: #1f2937;
+    font-size: 14px;
+    overflow-wrap: anywhere;
+  }
+
+  span {
+    color: #909399;
+    font-size: 12px;
+  }
+}
+
+.conflict-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.conflict-summary,
+.review-result p {
+  margin: 10px 0 0;
+  color: #4b5563;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.review-result {
+  padding-top: 10px;
+  margin-top: 10px;
+  border-top: 1px solid #f0f2f5;
+
+  > span {
+    color: #6b7280;
+    font-size: 12px;
+  }
+}
+
+.waiver-attachments {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.attachment-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.5;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.attachment-link:hover {
+  text-decoration: underline;
+}
+
+.waiver-upload-block {
+  width: 100%;
+
+  :deep(.el-upload),
+  :deep(.el-upload-dragger) {
+    width: 100%;
+  }
+
+  :deep(.el-upload-dragger) {
+    padding: 18px 12px;
+    border-radius: 8px;
+  }
+}
+
+.inline-review-form {
+  padding-top: 14px;
+  margin-top: 12px;
+  border-top: 1px solid #e5e7eb;
+
+  :deep(.el-radio-group) {
+    display: flex;
+    flex-wrap: wrap;
+  }
+}
+
+.inline-review-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  .conflict-record-head {
+    flex-direction: column;
+  }
+
+  .conflict-tags {
+    justify-content: flex-start;
+  }
 }
 
 .path-step {

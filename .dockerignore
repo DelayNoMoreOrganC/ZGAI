@@ -1,0 +1,17 @@
+.git
+.gitignore
+.DS_Store
+**/.DS_Store
+**/node_modules
+**/dist
+**/target
+**/logs
+**/backups
+backend/data
+backend/uploads
+frontend/.env*
+deploy/nas/.env.nas
+deploy/cloud/.env.cloud
+*.log
+*.dump
+*.sql.gz

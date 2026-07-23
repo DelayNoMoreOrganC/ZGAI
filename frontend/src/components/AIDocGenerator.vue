@@ -210,14 +210,14 @@
               </el-button>
               <el-button @click="handleDownloadDoc">
                 <el-icon><Download /></el-icon>
-                下载Word
+                下载草稿
               </el-button>
               <el-button type="primary" @click="handleRegenerate">
                 <el-icon><Refresh /></el-icon>
                 重新生成
               </el-button>
             </div>
-            <div class="doc-content" v-html="generatedDoc"></div>
+            <div class="doc-content">{{ generatedDoc }}</div>
           </div>
         </div>
       </div>
@@ -244,15 +244,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading, DocumentCopy, Download, Refresh } from '@element-plus/icons-vue'
 import { generateDoc } from '@/api/ai'
 import { getCaseList } from '@/api/case'
-import { useUserStore } from '@/stores'
-
-const userStore = useUserStore()
-const userName = computed(() => userStore.userName)
 
 const dialogVisible = ref(false)
 const currentStep = ref(0)
@@ -314,6 +310,33 @@ const getSelectedDocTypeTitle = () => {
   return doc ? doc.title : ''
 }
 
+const backendDocumentTypes = {
+  complaint: 'COMPLAINT',
+  defense: 'DEFENSE_STATEMENT',
+  legalBrief: 'BRIEF',
+  legalOpinion: 'LEGAL_OPINION'
+}
+
+const buildCustomPrompt = () => ({
+  complaint: formData.claims,
+  defense: formData.defenseOpinion,
+  legalBrief: formData.agentOpinion,
+  legalOpinion: formData.matter
+}[selectedDocType.value] || '')
+
+const buildAdditionalContext = () => [
+  ['原告/申请人信息', formData.plaintiffInfo],
+  ['被告/被申请人信息', formData.defendantInfo],
+  ['事实经过', formData.facts],
+  ['证据材料', formData.evidence],
+  ['争议焦点', formData.disputeFocus],
+  ['法律依据', formData.legalBasis],
+  ['基本事实', formData.basicFacts],
+  ['法律分析', formData.legalAnalysis]
+].filter(([, value]) => value?.trim())
+  .map(([label, value]) => `${label}：${value.trim()}`)
+  .join('\n\n')
+
 // 选择文书类型
 const handleSelectDocType = (type) => {
   selectedDocType.value = type
@@ -340,28 +363,17 @@ const handleGenerate = async () => {
     }, 500)
 
     const response = await generateDoc({
-      docType: selectedDocType.value,
+      documentType: backendDocumentTypes[selectedDocType.value],
       caseId: formData.caseId,
-      ...formData
+      customPrompt: buildCustomPrompt(),
+      additionalContext: buildAdditionalContext()
     })
 
     clearInterval(progressInterval)
     generateProgress.value = 100
 
-    if (response) {
-      // 假设返回的是Blob，需要创建下载链接
-      const blob = new Blob([response], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
-      const url = window.URL.createObjectURL(blob)
-
-      // 读取文档内容进行预览（简化处理）
-      generatedDoc.value = `
-        <div style="padding: 20px; font-family: SimSun; line-height: 1.8;">
-          <h2 style="text-align: center;">${getSelectedDocTypeTitle()}</h2>
-          <p style="color: #999; text-align: center;">生成时间：${new Date().toLocaleString()}</p>
-          <hr/>
-          <p style="color: #666;">文书已生成完毕，请点击"下载Word"按钮获取完整文档。</p>
-        </div>
-      `
+    if (response?.data) {
+      generatedDoc.value = response.data
     }
   } catch (error) {
     ElMessage.error('生成失败：' + error.message)
@@ -377,13 +389,20 @@ const handleRegenerate = () => {
 }
 
 // 复制文书
-const handleCopyDoc = () => {
+const handleCopyDoc = async () => {
+  await navigator.clipboard.writeText(generatedDoc.value)
   ElMessage.success('已复制到剪贴板')
 }
 
 // 下载文书
 const handleDownloadDoc = () => {
-  ElMessage.success('下载功能开发中...')
+  const blob = new Blob([generatedDoc.value], { type: 'text/plain;charset=utf-8' })
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${getSelectedDocTypeTitle() || 'AI文书草稿'}.txt`
+  link.click()
+  window.URL.revokeObjectURL(url)
 }
 
 // 关闭对话框
@@ -540,6 +559,8 @@ defineExpose({
         min-height: 400px;
         max-height: 500px;
         overflow-y: auto;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
         background: #fff;
       }
     }

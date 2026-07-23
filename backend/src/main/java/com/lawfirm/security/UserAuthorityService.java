@@ -26,16 +26,18 @@ import java.util.stream.Collectors;
 public class UserAuthorityService {
 
     private static final List<String> ADMIN_AUTHORITIES = Arrays.asList(
-            "CASE_CREATE", "CASE_VIEW", "CASE_EDIT", "CASE_DELETE", "CASE_ARCHIVE",
+            "CASE_CREATE", "CASE_VIEW", "CASE_EDIT", "CASE_DELETE", "CASE_ARCHIVE", "CASE_ARCHIVE_REVIEW",
             "CLIENT_CREATE", "CLIENT_VIEW", "CLIENT_EDIT", "CLIENT_DELETE",
             "STATISTICS_VIEW", "STATISTICS_EXPORT",
             "DOCUMENT_VIEW", "DOCUMENT_EDIT", "DOCUMENT_DELETE",
             "CALENDAR_VIEW", "CALENDAR_EDIT", "CALENDAR_DELETE",
             "TODO_VIEW", "TODO_EDIT", "TODO_DELETE",
-            "APPROVAL_VIEW", "APPROVAL_EDIT", "APPROVAL_DELETE",
+            "APPROVAL_VIEW", "APPROVAL_EDIT", "APPROVAL_DELETE", "SEAL_APPROVE",
             "FINANCE_VIEW", "FINANCE_EDIT",
+            "CLIENT_VIEW_ALL", "CASE_FILING_REVIEW", "CASE_FILING_FINAL_APPROVE",
+            "CASE_FILING_MANAGE", "INVOICE_PROCESS",
             "USER_VIEW", "USER_EDIT", "ROLE_VIEW", "ROLE_EDIT",
-            "AI_CONFIG", "SYSTEM_CONFIG"
+            "AI_CONFIG", "KNOWLEDGE_MANAGE", "SYSTEM_CONFIG"
     );
 
     private final UserRepository userRepository;
@@ -72,11 +74,6 @@ public class UserAuthorityService {
                 authorityCodes.addAll(ADMIN_AUTHORITIES);
             }
         });
-
-        // 田颖思在案件结案/归档前可修订立案信息，数据范围仍由 CaseService 校验。
-        if ("田颖思".equals(user.getRealName())) {
-            authorityCodes.add("CASE_EDIT");
-        }
 
         return authorityCodes.stream()
                 .map(SimpleGrantedAuthority::new)

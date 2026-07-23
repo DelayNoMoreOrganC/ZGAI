@@ -26,6 +26,14 @@ public class KnowledgeArticleVO {
     private String attachmentPath;
     private String attachmentName;
     private String sourceReference;
+    private String sourceUrl;
+    private String sourceRelativePath;
+    private String contentSha256;
+    private String reviewStatus;
+    private Long reviewedBy;
+    private LocalDateTime reviewedAt;
+    private String reviewReason;
+    private LocalDateTime collectedAt;
     private String issuingAuthority;
     private String documentNumber;
     private LocalDate effectiveDate;

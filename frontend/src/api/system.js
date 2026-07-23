@@ -139,6 +139,13 @@ export function getBackups() {
   })
 }
 
+export function verifyBackup(id) {
+  return request({
+    url: `/system/backup/${id}/verify`,
+    method: 'post'
+  })
+}
+
 export function restoreBackup(id) {
   return request({
     url: `/system/restore/${id}`,
@@ -150,5 +157,20 @@ export function deleteBackup(id) {
   return request({
     url: `/system/backup/${id}`,
     method: 'delete'
+  })
+}
+
+export function getAiPrivacyCleanupPreview() {
+  return request({
+    url: '/system/ai-privacy/preview',
+    method: 'get'
+  })
+}
+
+export function cleanupHistoricalAiPrivacy(data) {
+  return request({
+    url: '/system/ai-privacy/cleanup',
+    method: 'post',
+    data
   })
 }

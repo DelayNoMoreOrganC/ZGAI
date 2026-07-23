@@ -13,6 +13,7 @@ const ERROR_CODE_MAP = {
   408: '请求超时',
   409: '资源冲突',
   422: '请求参数验证失败',
+  428: '请先修改初始密码',
   429: '请求过于频繁，请稍后再试',
   500: '服务器内部错误',
   502: '网关错误',
@@ -89,6 +90,17 @@ const handleForbidden = () => {
   ElMessage.error('权限不足，禁止访问')
 }
 
+const handlePasswordChangeRequired = () => {
+  const current = JSON.parse(localStorage.getItem('userInfo') || 'null')
+  if (current) {
+    current.mustChangePassword = true
+    localStorage.setItem('userInfo', JSON.stringify(current))
+  }
+  if (window.location.pathname !== '/profile') {
+    window.location.replace('/profile?passwordChange=required')
+  }
+}
+
 /**
  * 处理404资源不存在错误
  */
@@ -135,6 +147,16 @@ longTimeoutService.interceptors.request.use(
   }
 )
 
+longTimeoutService.interceptors.response.use(
+  response => response,
+  error => {
+    if (error.response?.status === 428) {
+      handlePasswordChangeRequired()
+    }
+    return Promise.reject(error)
+  }
+)
+
 // 请求拦截器
 service.interceptors.request.use(
   config => {
@@ -152,7 +174,7 @@ service.interceptors.request.use(
       }
 
       // 分页参数对齐：前端从1开始，后端从0开始
-      if (config.params.page && typeof config.params.page === 'number') {
+      if (!config.skipPageNormalization && config.params.page && typeof config.params.page === 'number') {
         config.params.page = config.params.page - 1
       }
     }
@@ -220,6 +242,8 @@ service.interceptors.response.use(
         handleUnauthorized()
       } else if (status === 403) {
         handleForbidden()
+      } else if (status === 428) {
+        handlePasswordChangeRequired()
       } else if (status === 404) {
         handleNotFound()
       } else if (status >= 500) {

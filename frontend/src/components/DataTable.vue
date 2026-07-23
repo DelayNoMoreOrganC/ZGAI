@@ -3,7 +3,7 @@
     <el-table
       :data="tableData"
       v-loading="loading"
-      element-loading-text="加载中..."
+      :element-loading-text="loadingText"
       element-loading-background="rgba(255, 255, 255, 0.9)"
       :element-loading-spinner="loadingSpinner"
       border
@@ -23,7 +23,12 @@
         </div>
       </template>
 
-      <el-table-column v-if="showSelection" type="selection" width="55" />
+      <el-table-column
+        v-if="showSelection"
+        type="selection"
+        width="55"
+        :selectable="selectionSelectable"
+      />
       <el-table-column
         v-if="showIndex"
         type="index"
@@ -85,6 +90,10 @@ const props = defineProps({
   showSelection: {
     type: Boolean,
     default: false
+  },
+  selectionSelectable: {
+    type: Function,
+    default: () => true
   },
   showIndex: {
     type: Boolean,
@@ -154,9 +163,9 @@ const handleEmptyAction = () => {
 <style scoped lang="scss">
 .data-table {
   background-color: #fff;
-  padding: 20px;
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: 16px;
+  border: 1px solid var(--zg-border-color, #e5e7eb);
+  border-radius: 8px;
 
   // 增强的loading状态
   :deep(.el-loading-mask) {
@@ -246,6 +255,27 @@ const handleEmptyAction = () => {
       .el-table__cell {
         border-color: #ebeef5;
       }
+    }
+  }
+
+  @media (max-width: 768px) {
+    padding: 12px;
+
+    .pagination {
+      justify-content: center;
+      overflow: hidden;
+      padding: 8px 0 0;
+
+      :deep(.el-pagination__sizes),
+      :deep(.el-pagination__jump) {
+        display: none;
+      }
+    }
+  }
+
+  @media (max-width: 520px) {
+    .pagination :deep(.el-pagination__total) {
+      display: none;
     }
   }
 }

@@ -2,6 +2,7 @@ package com.lawfirm.controller;
 
 import com.lawfirm.dto.OcrExtractRequest;
 import com.lawfirm.dto.DocGenerateRequest;
+import com.lawfirm.exception.BusinessException;
 import com.lawfirm.service.LlmExtractService;
 import com.lawfirm.service.DocGenerateService;
 import com.lawfirm.service.CaseService;
@@ -10,8 +11,11 @@ import com.lawfirm.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
+import javax.validation.Valid;
 import java.util.Map;
 
 /**
@@ -39,7 +43,7 @@ public class AIFeaturesController {
      * 从OCR文本中提取法律要素
      */
     @PostMapping("/extract")
-    public Result<Map<String, Object>> extractLegalElements(@RequestBody OcrExtractRequest request) {
+    public Result<Map<String, Object>> extractLegalElements(@Valid @RequestBody OcrExtractRequest request) {
         try {
             Long userId = securityUtils.getCurrentUserId();
             if (request.getCaseId() != null) {
@@ -50,6 +54,8 @@ public class AIFeaturesController {
             Map<String, Object> extracted = llmExtractService.extractLegalElements(request, userId);
             return Result.success("提取成功", extracted);
 
+        } catch (AccessDeniedException | BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("AI文书提取失败", e);
             return Result.error("提取失败");
@@ -71,6 +77,12 @@ public class AIFeaturesController {
             Long userId = securityUtils.getCurrentUserId();
             caseService.assertCaseVisible(caseId, userId);
             String templateType = request.get("templateType");
+            if (!StringUtils.hasText(templateType)) {
+                throw new IllegalArgumentException("模板类型不能为空");
+            }
+            if (templateType.length() > 40) {
+                throw new IllegalArgumentException("模板类型不能超过40个字符");
+            }
 
             log.info("AI自动填充请求，案件ID: {}, 模板类型: {}", caseId, templateType);
 
@@ -91,6 +103,10 @@ public class AIFeaturesController {
 
             return Result.success("自动填充成功", result);
 
+        } catch (AccessDeniedException | BusinessException e) {
+            throw e;
+        } catch (IllegalArgumentException e) {
+            return Result.validationError(e.getMessage());
         } catch (Exception e) {
             log.error("AI自动填充失败", e);
             return Result.error("自动填充失败");
