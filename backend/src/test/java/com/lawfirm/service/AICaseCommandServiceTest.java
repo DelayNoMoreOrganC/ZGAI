@@ -27,6 +27,7 @@ class AICaseCommandServiceTest {
     private CalendarReminderService calendarReminderService;
     private CaseTimelineService timelineService;
     private CaseActivityService activityService;
+    private CaseStageService stageService;
     private AICaseCommandService service;
 
     @BeforeEach
@@ -39,7 +40,7 @@ class AICaseCommandServiceTest {
         TodoService todoService = mock(TodoService.class);
         timelineService = mock(CaseTimelineService.class);
         activityService = mock(CaseActivityService.class);
-        CaseStageService stageService = mock(CaseStageService.class);
+        stageService = mock(CaseStageService.class);
 
         Case caseEntity = new Case();
         caseEntity.setId(7L);
@@ -112,6 +113,31 @@ class AICaseCommandServiceTest {
         assertEquals("NEEDS_CLARIFICATION", response.getStatus());
         assertEquals("开庭或听证时间已经过去，请补充未来的日期和时间。", response.getClarification());
         verifyNoInteractions(calendarService, calendarReminderService, timelineService, activityService);
+    }
+
+    @Test
+    void stageChangeRejectsSkippingTheNextStageBeforeProposal() {
+        when(stageService.getNextStageName(7L)).thenReturn(Optional.of("签约立案"));
+
+        AICaseCommandResponse response = service.submit(
+                request("本案进入诉前准备阶段", "skip-stage"), 3L);
+
+        assertEquals("NEEDS_CLARIFICATION", response.getStatus());
+        assertEquals("当前只能进入下一阶段「签约立案」，请确认后重新提交。", response.getClarification());
+        verify(stageService, never()).changeStatus(anyLong(), anyString(), anyString(), anyLong());
+    }
+
+    @Test
+    void validNextStageIsOnlyProposedAndNotExecuted() {
+        when(stageService.getNextStageName(7L)).thenReturn(Optional.of("签约立案"));
+
+        AICaseCommandResponse response = service.submit(
+                request("本案进入签约立案阶段", "next-stage"), 3L);
+
+        assertEquals("PROPOSED", response.getStatus());
+        assertEquals("CHANGE_STAGE", response.getActions().get(0).getActionType());
+        assertEquals("签约立案", response.getActions().get(0).getPayload().get("targetStage"));
+        verify(stageService, never()).changeStatus(anyLong(), anyString(), anyString(), anyLong());
     }
 
     @Test

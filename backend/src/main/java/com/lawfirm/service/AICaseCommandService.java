@@ -70,6 +70,12 @@ public class AICaseCommandService {
             return clarify(command, "我暂时不能安全识别该操作。请明确说明要建立日程、待办、记录进展或变更阶段。");
         }
 
+        Optional<String> invalidStage = validateStageActions(actions);
+        if (invalidStage.isPresent()) {
+            command.setActionsJson(write(actions));
+            return clarify(command, invalidStage.get());
+        }
+
         Optional<String> missing = requiredClarification(actions);
         if (missing.isPresent()) {
             command.setActionsJson(write(actions));
@@ -192,6 +198,23 @@ public class AICaseCommandService {
                     && !LocalDateTime.parse(String.valueOf(action.getPayload().get("dueTime")))
                     .isAfter(LocalDateTime.now())) {
                 return Optional.of("待办截止时间已经过去，请补充未来的日期和时间。");
+            }
+        }
+        return Optional.empty();
+    }
+
+    private Optional<String> validateStageActions(List<AIActionDTO> actions) {
+        for (AIActionDTO action : actions) {
+            if (!"CHANGE_STAGE".equals(action.getActionType())) {
+                continue;
+            }
+            Optional<String> nextStage = caseStageService.getNextStageName(action.getCaseId());
+            if (nextStage.isEmpty()) {
+                return Optional.of("当前案件已处于最后办理阶段，不能继续向前变更。");
+            }
+            String targetStage = String.valueOf(action.getPayload().get("targetStage"));
+            if (!nextStage.get().equals(targetStage)) {
+                return Optional.of("当前只能进入下一阶段「" + nextStage.get() + "」，请确认后重新提交。");
             }
         }
         return Optional.empty();

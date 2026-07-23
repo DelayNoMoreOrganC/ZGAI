@@ -232,6 +232,18 @@ public class CaseStageService {
         return history;
     }
 
+    @Transactional(readOnly = true)
+    public Optional<String> getNextStageName(Long caseId) {
+        CaseStage currentStage = caseStageRepository.findCurrentStage(caseId)
+                .orElseThrow(() -> new RuntimeException("未找到当前进行中的阶段"));
+        List<CaseStage> allStages = caseStageRepository.findByCaseIdAndDeletedFalseOrderByStageOrder(caseId);
+        int currentIndex = allStages.indexOf(currentStage);
+        if (currentIndex < 0 || currentIndex + 1 >= allStages.size()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(allStages.get(currentIndex + 1).getStageName());
+    }
+
     /**
      * 回退阶段状态
      */

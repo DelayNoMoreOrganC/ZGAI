@@ -79,6 +79,16 @@
               <p v-if="commandResult.clarification" data-testid="ai-command-clarification" class="clarification">
                 {{ commandResult.clarification }}
               </p>
+              <el-alert
+                v-if="commandResult.status === 'PROPOSED' && proposedStage"
+                data-testid="ai-stage-proposal"
+                :title="`案件阶段尚未变更，确认后将进入「${proposedStage}」`"
+                description="阶段变更会完成当前阶段、创建下一阶段待办并写入审计记录。"
+                type="warning"
+                show-icon
+                :closable="false"
+                class="stage-proposal"
+              />
               <div
                 v-for="(action, index) in commandResult.actions"
                 :key="`${action.actionType}-${index}`"
@@ -100,7 +110,7 @@
                 @click="confirmCommand"
               >
                 <el-icon><Select /></el-icon>
-                确认执行
+                {{ proposedStage ? '确认变更案件阶段' : '确认执行' }}
               </el-button>
               <div v-if="commandExecuted" class="result-links">
                 <el-button v-if="hasWorkspaceAction" data-testid="ai-command-view-calendar" @click="router.push('/calendar')">
@@ -227,7 +237,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { CircleCheck, FolderChecked, Promotion, Search, Select, UploadFilled, Warning } from '@element-plus/icons-vue'
 import { getCaseList } from '@/api/case'
 import { useUserStore } from '@/stores'
@@ -281,6 +291,8 @@ const readOnlyMessage = computed(() => {
 })
 const canSubmit = computed(() => Boolean(selectedCaseId.value && canOperateCase.value && instruction.value.trim()))
 const commandExecuted = computed(() => ['AUTO_EXECUTED', 'CONFIRMED'].includes(commandResult.value?.status))
+const proposedStage = computed(() => commandResult.value?.actions
+  ?.find(action => action.actionType === 'CHANGE_STAGE')?.payload?.targetStage || '')
 const hasWorkspaceAction = computed(() => commandResult.value?.actions?.some(action =>
   ['CREATE_CALENDAR', 'CREATE_TODO'].includes(action.actionType)
 ))
@@ -341,10 +353,26 @@ const submitCommand = async () => {
 }
 
 const confirmCommand = async () => {
+  if (proposedStage.value) {
+    try {
+      await ElMessageBox.confirm(
+        `确认将当前案件推进到「${proposedStage.value}」阶段吗？`,
+        '再次确认案件阶段变更',
+        {
+          confirmButtonText: '确认变更',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      )
+    } catch {
+      return
+    }
+  }
   confirmingCommand.value = true
   try {
     const response = await confirmCaseCommand(commandResult.value.commandId)
     commandResult.value = response.data
+    await loadCases()
     ElMessage.success('已确认执行')
   } finally {
     confirmingCommand.value = false
@@ -443,6 +471,7 @@ onMounted(async () => {
 .page-header h1 { margin: 0 0 6px; font-size: 24px; letter-spacing: 0; color: #1d1d1f; }
 .permission-alert { margin-bottom: 16px; }
 .result-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.stage-proposal { margin-bottom: 12px; }
 .page-header p { margin: 0; color: #6e6e73; font-size: 14px; }
 .case-select { width: min(420px, 44vw); }
 .header-selects { display: flex; gap: 10px; align-items: center; }
