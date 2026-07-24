@@ -106,6 +106,27 @@ export function getRagEvaluationCandidates() {
   return request({ url: '/knowledge/rag/evaluations/candidates', method: 'get' })
 }
 
+export function downloadRagEvaluationTemplate() {
+  return request({
+    url: '/knowledge/rag/evaluations/import-template',
+    method: 'get',
+    responseType: 'blob'
+  })
+}
+
+export function importRagEvaluationWorkbook(file, dryRun = true) {
+  const data = new FormData()
+  data.append('file', file)
+  return request({
+    url: '/knowledge/rag/evaluations/import',
+    method: 'post',
+    params: { dryRun },
+    data,
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000
+  })
+}
+
 export function saveRagEvaluationCase(data, id = null) {
   return request({
     url: id ? `/knowledge/rag/evaluations/${id}` : '/knowledge/rag/evaluations',

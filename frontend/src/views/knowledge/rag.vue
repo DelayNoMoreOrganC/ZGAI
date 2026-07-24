@@ -40,8 +40,66 @@
           <h3>RAG 检索评价</h3>
           <p>评价只执行本地检索，不调用生成模型。预期文档须为已审核且允许共享检索的知识条目。</p>
         </div>
-        <el-button type="primary" :icon="Plus" @click="startCreateEvaluation">新增样本</el-button>
+        <div class="evaluation-heading-actions">
+          <el-button :icon="Download" :loading="templateDownloading" @click="downloadEvaluationTemplate">
+            下载导入模板
+          </el-button>
+          <el-button type="primary" :icon="Plus" @click="startCreateEvaluation">新增样本</el-button>
+        </div>
       </div>
+
+      <section class="evaluation-import">
+        <div class="evaluation-import-controls">
+          <el-upload
+            ref="evaluationUploadRef"
+            action="#"
+            accept=".xlsx"
+            :auto-upload="false"
+            :limit="1"
+            :on-change="selectEvaluationWorkbook"
+            :on-remove="clearEvaluationWorkbook"
+          >
+            <el-button :icon="Upload">选择评价样本</el-button>
+          </el-upload>
+          <el-button
+            type="primary"
+            plain
+            :disabled="!evaluationWorkbook"
+            :loading="evaluationImporting"
+            @click="previewEvaluationWorkbook"
+          >
+            预检文件
+          </el-button>
+          <el-button
+            type="success"
+            :disabled="!evaluationWorkbook || !evaluationImportPreview?.canImport"
+            :loading="evaluationImporting"
+            @click="confirmEvaluationWorkbook"
+          >
+            确认导入
+          </el-button>
+        </div>
+        <p>模板中的文档清单仅含ID和标题，不包含知识正文；单次最多200条，预检不会写入系统。</p>
+        <div v-if="evaluationImportPreview" class="evaluation-import-summary">
+          <el-tag>共 {{ evaluationImportPreview.rowCount }} 行</el-tag>
+          <el-tag type="success">可导入 {{ evaluationImportPreview.validCount }} 行</el-tag>
+          <el-tag type="info">跳过 {{ evaluationImportPreview.skippedCount }} 行</el-tag>
+          <el-tag :type="evaluationImportStatusType">
+            {{ evaluationImportStatusText }}
+          </el-tag>
+        </div>
+        <el-table v-if="evaluationImportPreview" :data="evaluationImportPreview.rows" size="small" max-height="260">
+          <el-table-column prop="rowNumber" label="行" width="58" />
+          <el-table-column prop="name" label="样本" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="question" label="问题" min-width="220" show-overflow-tooltip />
+          <el-table-column label="状态" width="90">
+            <template #default="{ row }">
+              <el-tag :type="importRowTagType(row.status)">{{ importRowStatus(row.status) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="message" label="校验结果" min-width="190" show-overflow-tooltip />
+        </el-table>
+      </section>
 
       <el-form v-if="evaluationEditing" ref="evaluationFormRef" :model="evaluationForm"
         :rules="evaluationRules" label-position="top" class="evaluation-form">
@@ -217,11 +275,12 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, DataAnalysis, Plus, VideoPlay } from '@element-plus/icons-vue'
+import { Search, DataAnalysis, Download, Plus, Upload, VideoPlay } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import {
-  askAI, deleteRagEvaluationCase, getRagEvaluationCandidates, getRagEvaluationCases,
-  getRagEvaluationRuns, runRagEvaluationSuite, saveRagEvaluationCase, searchKnowledge
+  askAI, deleteRagEvaluationCase, downloadRagEvaluationTemplate, getRagEvaluationCandidates,
+  getRagEvaluationCases, getRagEvaluationRuns, importRagEvaluationWorkbook,
+  runRagEvaluationSuite, saveRagEvaluationCase, searchKnowledge
 } from '@/api/knowledge'
 import { getAvailableAiProviders } from '@/api/ai'
 import { useUserStore } from '@/stores'
@@ -245,10 +304,15 @@ const evaluationEditing = ref(false)
 const evaluationSaving = ref(false)
 const evaluationRunning = ref(false)
 const evaluationFormRef = ref(null)
+const evaluationUploadRef = ref(null)
 const evaluationCases = ref([])
 const evaluationRuns = ref([])
 const evaluationSummary = ref(null)
 const articleOptions = ref([])
+const evaluationWorkbook = ref(null)
+const evaluationImportPreview = ref(null)
+const evaluationImporting = ref(false)
+const templateDownloading = ref(false)
 const evaluationForm = ref(emptyEvaluationForm())
 const evaluationRules = {
   name: [{ required: true, message: '请输入样本名称', trigger: 'blur' }],
@@ -257,6 +321,13 @@ const evaluationRules = {
 }
 
 const selectedProvider = computed(() => availableProviders.value.find(item => item.providerType === providerType.value))
+const evaluationImportStatusText = computed(() => {
+  if (evaluationImportPreview.value?.importedCount > 0) return '已完成导入'
+  return evaluationImportPreview.value?.canImport ? '允许确认导入' : '请先修正错误行'
+})
+const evaluationImportStatusType = computed(() =>
+  evaluationImportPreview.value?.importedCount > 0 || evaluationImportPreview.value?.canImport ? 'success' : 'danger'
+)
 
 const loadProviders = async () => {
   providerLoading.value = true
@@ -429,6 +500,61 @@ const runEvaluation = async () => {
   }
 }
 
+const downloadEvaluationTemplate = async () => {
+  templateDownloading.value = true
+  try {
+    const response = await downloadRagEvaluationTemplate()
+    const url = URL.createObjectURL(response.data)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'RAG评价样本模板.xlsx'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } finally {
+    templateDownloading.value = false
+  }
+}
+
+const selectEvaluationWorkbook = (uploadFile) => {
+  evaluationWorkbook.value = uploadFile.raw
+  evaluationImportPreview.value = null
+}
+
+const clearEvaluationWorkbook = () => {
+  evaluationWorkbook.value = null
+  evaluationImportPreview.value = null
+}
+
+const previewEvaluationWorkbook = async () => {
+  if (!evaluationWorkbook.value) return
+  evaluationImporting.value = true
+  try {
+    const response = await importRagEvaluationWorkbook(evaluationWorkbook.value, true)
+    evaluationImportPreview.value = response.data
+    if (!response.data?.canImport) ElMessage.warning('预检未通过，请修正错误行后重新选择文件')
+  } finally {
+    evaluationImporting.value = false
+  }
+}
+
+const confirmEvaluationWorkbook = async () => {
+  if (!evaluationWorkbook.value || !evaluationImportPreview.value?.canImport) return
+  evaluationImporting.value = true
+  try {
+    const response = await importRagEvaluationWorkbook(evaluationWorkbook.value, false)
+    evaluationWorkbook.value = null
+    evaluationUploadRef.value?.clearFiles()
+    evaluationImportPreview.value = { ...response.data, canImport: false }
+    ElMessage.success(`已导入 ${response.data?.importedCount || 0} 条评价样本`)
+    await loadEvaluationData()
+  } finally {
+    evaluationImporting.value = false
+  }
+}
+
+const importRowTagType = (status) => ({ VALID: 'success', SKIPPED: 'info', ERROR: 'danger' }[status] || 'info')
+const importRowStatus = (status) => ({ VALID: '通过', SKIPPED: '跳过', ERROR: '错误' }[status] || status)
+
 const formatArticleIds = (ids = []) => ids.map(id => {
   const article = articleOptions.value.find(item => item.id === id)
   return article ? article.title : `#${id}`
@@ -581,6 +707,25 @@ const formatValidityStatus = (status) => {
 
     h3 { margin: 0 0 6px; font-size: 16px; }
     p { margin: 0; color: #6b7280; font-size: 13px; }
+  }
+
+  .evaluation-heading-actions,
+  .evaluation-import-controls,
+  .evaluation-import-summary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .evaluation-import {
+    margin: 16px 0;
+    padding: 14px;
+    border: 1px solid #e5e7eb;
+    background: #f8fafc;
+
+    p { margin: 8px 0; color: #6b7280; font-size: 12px; }
+    .evaluation-import-summary { margin: 10px 0; }
   }
 
   .evaluation-form {

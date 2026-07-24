@@ -7,5 +7,6 @@ import java.util.List;
 
 public interface RagEvaluationCaseRepository extends JpaRepository<RagEvaluationCase, Long> {
     List<RagEvaluationCase> findTop100ByDeletedFalseOrderByCreatedAtDesc();
+    List<RagEvaluationCase> findByDeletedFalse();
     List<RagEvaluationCase> findByDeletedFalseAndEnabledTrueOrderByCreatedAtAsc();
 }

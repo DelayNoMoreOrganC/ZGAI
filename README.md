@@ -27,6 +27,7 @@ ZGAI 是面向律所内部真实使用的案件、客户、审批、案卷、财
 - 顾问案件文件页提供法律意见书快捷上传，继续沿用案件权限、标准目录和版本管理。
 - 发票申请、申请人修改/删除、财务反馈文件和完成锁定。
 - 法规、律所制度、公共模板和经授权参考资料知识库；法规/制度导入具有独立待审核队列、单次结论锁定、状态回写与审核后索引，受监管来源修改后自动重新送审；未配置向量服务时明确降级为关键词检索。
+- RAG 评价支持知识管理员单条维护、动态 Excel 模板下载、逐行预检、原子批量导入、Top-3/禁止文档指标留痕；模板文档清单不包含知识正文，普通律师不能访问评价管理接口。
 - 元典法规/案例语义检索、法律引证核验和逐条导入知识库；需要单独配置开放平台 API Key。
 - LM Studio 局域网模型接入；可由 Qwen 等 OpenAI 兼容模型完成问答、RAG 回答和文书草稿生成。
 - 案件 AI 助手可把律师的明确指令转换为日程、待办和案件进展，支持常用中文相对日期并拒绝写入过去时间；高风险阶段变化必须确认，所有动作留痕且幂等。
@@ -201,7 +202,7 @@ cd backend
 JAVA_HOME=/opt/homebrew/opt/openjdk@11 /opt/homebrew/opt/maven/bin/mvn test
 ```
 
-当前基线：326 项测试通过（2026-07-24 全量复验）。必须使用 JDK 11；本机默认较新 JDK 可能在 Lombok 测试编译阶段失败。
+当前基线：331 项测试通过（2026-07-24 全量复验）。必须使用 JDK 11；本机默认较新 JDK 可能在 Lombok 测试编译阶段失败。
 
 完整员工档案接口 `GET /api/users`、`GET /api/users/{id}` 需要 `USER_VIEW`。案件主办、案源人、审批人和日程参与人等业务选择器统一调用 `GET /api/users/options`，只返回在职人员的 ID、姓名、部门和身份类别，不返回账号、电话、邮箱、角色或登录信息。
 
@@ -266,13 +267,14 @@ npm run test:e2e:consultant
 npm run test:e2e:case-types -- --project=desktop-chrome
 ```
 
-知识管理员维护并运行 RAG 评价集、普通律师管理接口拒绝及公开知识检索边界使用独立双角色用例。该用例会建立评价样本，只能在隔离库并显式确认后执行：
+知识管理员维护并运行 RAG 评价集、Excel 预检/导入、普通律师管理接口拒绝及公开知识检索边界使用独立双角色用例。该用例会建立并清理评价样本，只能在隔离库并显式确认后执行；设置 `ZGAI_RAG_IMPORT_WORKBOOK` 时同时运行 Excel 流程：
 
 ```bash
 RUN_RAG_EVALUATION_E2E=CONFIRMED \
 ZGAI_E2E_FRONTEND_URL=http://127.0.0.1:3018 \
 ZGAI_DIRECTOR_USERNAME="$DIRECTOR_USER" ZGAI_DIRECTOR_PASSWORD="$DIRECTOR_PASSWORD" \
 ZGAI_LAWYER_USERNAME="$LAWYER_USER" ZGAI_LAWYER_PASSWORD="$LAWYER_PASSWORD" \
+ZGAI_RAG_IMPORT_WORKBOOK=/absolute/path/to/evaluation.xlsx \
 npm run test:e2e:rag -- --project=desktop-chrome
 ```
 

@@ -107,3 +107,64 @@ test('知识管理员运行RAG评价且普通律师不能访问管理能力', as
   expect(checks.searchBody.data.sources.map(source => source.id)).toContain(1)
   expect(checks.searchBody.data.sources.map(source => source.id)).not.toContain(2)
 })
+
+test('知识管理员预检并批量导入Excel且普通律师被拒绝', async ({ page }) => {
+  test.skip(!process.env.ZGAI_RAG_IMPORT_WORKBOOK, '未提供RAG评价Excel实例文件')
+  test.setTimeout(60_000)
+  const importedName = 'Excel导入-劳动仲裁材料'
+
+  await login(page, 'director')
+  await page.goto('/knowledge/rag')
+  await page.getByRole('button', { name: '检索评价' }).click()
+  await page.locator('input[type="file"]').setInputFiles(process.env.ZGAI_RAG_IMPORT_WORKBOOK)
+  await page.getByRole('button', { name: '预检文件' }).click()
+  await expect(page.getByText('允许确认导入', { exact: true })).toBeVisible()
+  await expect(page.getByText('可导入 1 行', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '确认导入' }).click()
+  await expect(page.getByText('已完成导入', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '确认导入' })).toBeDisabled()
+  await assertNoPageOverflow(page)
+
+  let importedId
+  await expect.poll(async () => {
+    importedId = await page.evaluate(async (name) => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/knowledge/rag/evaluations', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const body = await response.json()
+      return body.data.find(item => item.name === name)?.id
+    }, importedName)
+    return importedId
+  }).toBeTruthy()
+  expect(importedId).toBeTruthy()
+
+  await page.evaluate(async (id) => {
+    const token = localStorage.getItem('token')
+    await fetch(`/api/knowledge/rag/evaluations/${id}`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
+    })
+  }, importedId)
+
+  await page.evaluate(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+  await login(page, 'lawyer')
+  const statuses = await page.evaluate(async () => {
+    const token = localStorage.getItem('token')
+    const headers = { Authorization: `Bearer ${token}` }
+    const formData = new FormData()
+    formData.append('file', new File(['not-an-xlsx'], '越权测试.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    }))
+    const [template, importResponse] = await Promise.all([
+      fetch('/api/knowledge/rag/evaluations/import-template', { headers }),
+      fetch('/api/knowledge/rag/evaluations/import?dryRun=true', {
+        method: 'POST', headers, body: formData
+      })
+    ])
+    return [template.status, importResponse.status]
+  })
+  expect(statuses).toEqual([403, 403])
+})
