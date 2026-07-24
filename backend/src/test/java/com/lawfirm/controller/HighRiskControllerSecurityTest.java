@@ -163,6 +163,11 @@ class HighRiskControllerSecurityTest {
     }
 
     @Test
+    void ragEvaluationRequiresKnowledgeManagementAuthority() {
+        assertClassPolicy(RagEvaluationController.class, "hasAuthority('KNOWLEDGE_MANAGE')");
+    }
+
+    @Test
     void pendingKnowledgeReviewRequiresDedicatedAuthority() throws Exception {
         assertPolicy(KnowledgeArticleController.class, "getPendingReviewArticles",
                 "hasAuthority('KNOWLEDGE_MANAGE')", int.class, int.class);
@@ -252,6 +257,7 @@ class HighRiskControllerSecurityTest {
         assertEveryMutationAudited(FinanceController.class);
         assertEveryMutationAudited(KnowledgeArticleController.class);
         assertEveryMutationAudited(KnowledgeImportController.class);
+        assertEveryMutationAudited(RagEvaluationController.class);
         assertEveryMutationAudited(BackupController.class);
         assertEveryMutationAudited(OcrController.class);
     }

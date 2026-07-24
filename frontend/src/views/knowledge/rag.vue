@@ -2,15 +2,20 @@
   <div class="rag-search-page">
     <PageHeader title="AI知识库">
       <template #extra>
-        <el-select v-model="providerType" class="provider-select" :loading="providerLoading">
-          <el-option
-            v-for="provider in availableProviders"
-            :key="provider.providerType"
-            :label="`${provider.displayName} · ${provider.modelName || '未命名模型'}`"
-            :value="provider.providerType"
-            :disabled="!provider.available"
-          />
-        </el-select>
+        <div class="header-actions">
+          <el-button v-if="canManageKnowledge" :icon="DataAnalysis" @click="toggleEvaluationPanel">
+            检索评价
+          </el-button>
+          <el-select v-model="providerType" class="provider-select" :loading="providerLoading">
+            <el-option
+              v-for="provider in availableProviders"
+              :key="provider.providerType"
+              :label="`${provider.displayName} · ${provider.modelName || '未命名模型'}`"
+              :value="provider.providerType"
+              :disabled="!provider.available"
+            />
+          </el-select>
+        </div>
       </template>
     </PageHeader>
 
@@ -28,6 +33,99 @@
         <span>{{ item.description }}</span>
       </section>
     </div>
+
+    <section v-if="canManageKnowledge && evaluationPanelVisible" class="evaluation-panel">
+      <div class="evaluation-heading">
+        <div>
+          <h3>RAG 检索评价</h3>
+          <p>评价只执行本地检索，不调用生成模型。预期文档须为已审核且允许共享检索的知识条目。</p>
+        </div>
+        <el-button type="primary" :icon="Plus" @click="startCreateEvaluation">新增样本</el-button>
+      </div>
+
+      <el-form v-if="evaluationEditing" ref="evaluationFormRef" :model="evaluationForm"
+        :rules="evaluationRules" label-position="top" class="evaluation-form">
+        <div class="evaluation-form-grid">
+          <el-form-item label="样本名称" prop="name">
+            <el-input v-model="evaluationForm.name" maxlength="120" />
+          </el-form-item>
+          <el-form-item label="是否启用">
+            <el-switch v-model="evaluationForm.enabled" active-text="纳入一键评价" />
+          </el-form-item>
+        </div>
+        <el-form-item label="评价问题" prop="question">
+          <el-input v-model="evaluationForm.question" type="textarea" :rows="2" maxlength="1000" show-word-limit />
+        </el-form-item>
+        <div class="evaluation-form-grid two-columns">
+          <el-form-item label="预期命中文档" prop="expectedArticleIds">
+            <el-select v-model="evaluationForm.expectedArticleIds" multiple filterable class="full-width"
+              placeholder="至少选择一篇文档">
+              <el-option v-for="article in articleOptions" :key="article.id"
+                :label="formatArticleOption(article)" :value="article.id" :disabled="!article.ragIndexable" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="禁止命中文档">
+            <el-select v-model="evaluationForm.forbiddenArticleIds" multiple filterable class="full-width"
+              placeholder="用于验证隐私或失效内容不被检索">
+              <el-option v-for="article in articleOptions" :key="article.id"
+                :label="formatArticleOption(article)" :value="article.id" />
+            </el-select>
+          </el-form-item>
+        </div>
+        <div class="form-actions">
+          <el-button @click="cancelEvaluationEdit">取消</el-button>
+          <el-button type="primary" :loading="evaluationSaving" @click="submitEvaluation">保存样本</el-button>
+        </div>
+      </el-form>
+
+      <div v-if="evaluationSummary" class="evaluation-summary">
+        <div><strong>{{ evaluationSummary.total }}</strong><span>启用样本</span></div>
+        <div><strong>{{ evaluationSummary.top3HitRate }}%</strong><span>Top-3 命中率</span></div>
+        <div><strong>{{ evaluationSummary.forbiddenHitCount }}</strong><span>越界命中</span></div>
+        <div><strong>{{ evaluationSummary.passed }}</strong><span>本轮通过</span></div>
+      </div>
+
+      <div class="evaluation-toolbar">
+        <span>评价样本 {{ evaluationCases.length }} 项</span>
+        <el-button type="success" :icon="VideoPlay" :loading="evaluationRunning" @click="runEvaluation">
+          运行启用样本
+        </el-button>
+      </div>
+      <el-table :data="evaluationCases" size="small" empty-text="尚未建立评价样本">
+        <el-table-column prop="name" label="样本" min-width="150" />
+        <el-table-column prop="question" label="问题" min-width="260" show-overflow-tooltip />
+        <el-table-column label="预期文档" min-width="150">
+          <template #default="{ row }">{{ formatArticleIds(row.expectedArticleIds) }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '启用' : '停用' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="130" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="editEvaluation(row)">修改</el-button>
+            <el-button link type="danger" @click="removeEvaluation(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <h4 v-if="evaluationRuns.length" class="run-heading">最近运行记录</h4>
+      <el-table v-if="evaluationRuns.length" :data="evaluationRuns.slice(0, 20)" size="small">
+        <el-table-column prop="caseName" label="样本" min-width="150" />
+        <el-table-column label="Top-3" width="90">
+          <template #default="{ row }"><el-tag :type="row.top3Hit ? 'success' : 'danger'">{{ row.top3Hit ? '命中' : '未命中' }}</el-tag></template>
+        </el-table-column>
+        <el-table-column label="越界" width="90">
+          <template #default="{ row }"><el-tag :type="row.forbiddenHit ? 'danger' : 'success'">{{ row.forbiddenHit ? '命中' : '无' }}</el-tag></template>
+        </el-table-column>
+        <el-table-column prop="searchMethod" label="检索方式" width="100" />
+        <el-table-column prop="durationMs" label="耗时(ms)" width="100" />
+        <el-table-column label="结果" width="80">
+          <template #default="{ row }"><el-tag :type="row.passed ? 'success' : 'danger'">{{ row.passed ? '通过' : '失败' }}</el-tag></template>
+        </el-table-column>
+      </el-table>
+    </section>
 
     <el-card class="search-card">
       <el-input
@@ -119,10 +217,14 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search } from '@element-plus/icons-vue'
+import { Search, DataAnalysis, Plus, VideoPlay } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
-import { searchKnowledge, askAI } from '@/api/knowledge'
+import {
+  askAI, deleteRagEvaluationCase, getRagEvaluationCandidates, getRagEvaluationCases,
+  getRagEvaluationRuns, runRagEvaluationSuite, saveRagEvaluationCase, searchKnowledge
+} from '@/api/knowledge'
 import { getAvailableAiProviders } from '@/api/ai'
+import { useUserStore } from '@/stores'
 
 const question = ref('')
 const answer = ref('')
@@ -136,6 +238,23 @@ const answerMode = ref('')
 const providerType = ref('LM_STUDIO')
 const availableProviders = ref([])
 const providerLoading = ref(false)
+const userStore = useUserStore()
+const canManageKnowledge = computed(() => userStore.hasPermission('KNOWLEDGE_MANAGE'))
+const evaluationPanelVisible = ref(false)
+const evaluationEditing = ref(false)
+const evaluationSaving = ref(false)
+const evaluationRunning = ref(false)
+const evaluationFormRef = ref(null)
+const evaluationCases = ref([])
+const evaluationRuns = ref([])
+const evaluationSummary = ref(null)
+const articleOptions = ref([])
+const evaluationForm = ref(emptyEvaluationForm())
+const evaluationRules = {
+  name: [{ required: true, message: '请输入样本名称', trigger: 'blur' }],
+  question: [{ required: true, message: '请输入评价问题', trigger: 'blur' }],
+  expectedArticleIds: [{ type: 'array', required: true, min: 1, message: '至少选择一篇预期文档', trigger: 'change' }]
+}
 
 const selectedProvider = computed(() => availableProviders.value.find(item => item.providerType === providerType.value))
 
@@ -229,6 +348,93 @@ const handleSearch = async () => {
 }
 
 onMounted(loadProviders)
+
+function emptyEvaluationForm() {
+  return { id: null, name: '', question: '', expectedArticleIds: [], forbiddenArticleIds: [], enabled: true }
+}
+
+const toggleEvaluationPanel = async () => {
+  evaluationPanelVisible.value = !evaluationPanelVisible.value
+  if (evaluationPanelVisible.value) {
+    await Promise.all([loadEvaluationData(), loadArticleOptions()])
+  }
+}
+
+const loadArticleOptions = async () => {
+  const response = await getRagEvaluationCandidates()
+  articleOptions.value = response.data || []
+}
+
+const loadEvaluationData = async () => {
+  const [casesResponse, runsResponse] = await Promise.all([
+    getRagEvaluationCases(), getRagEvaluationRuns()
+  ])
+  evaluationCases.value = casesResponse.data || []
+  evaluationRuns.value = runsResponse.data || []
+}
+
+const startCreateEvaluation = () => {
+  evaluationForm.value = emptyEvaluationForm()
+  evaluationEditing.value = true
+}
+
+const editEvaluation = (row) => {
+  evaluationForm.value = {
+    id: row.id,
+    name: row.name,
+    question: row.question,
+    expectedArticleIds: [...(row.expectedArticleIds || [])],
+    forbiddenArticleIds: [...(row.forbiddenArticleIds || [])],
+    enabled: row.enabled !== false
+  }
+  evaluationEditing.value = true
+}
+
+const cancelEvaluationEdit = () => {
+  evaluationEditing.value = false
+  evaluationForm.value = emptyEvaluationForm()
+}
+
+const submitEvaluation = async () => {
+  await evaluationFormRef.value?.validate()
+  evaluationSaving.value = true
+  try {
+    const payload = { ...evaluationForm.value }
+    delete payload.id
+    await saveRagEvaluationCase(payload, evaluationForm.value.id)
+    ElMessage.success('评价样本已保存')
+    cancelEvaluationEdit()
+    await loadEvaluationData()
+  } finally {
+    evaluationSaving.value = false
+  }
+}
+
+const removeEvaluation = async (row) => {
+  await ElMessageBox.confirm(`确定删除评价样本“${row.name}”吗？历史运行记录仍会保留。`, '删除样本', { type: 'warning' })
+  await deleteRagEvaluationCase(row.id)
+  ElMessage.success('评价样本已删除')
+  await loadEvaluationData()
+}
+
+const runEvaluation = async () => {
+  evaluationRunning.value = true
+  try {
+    const response = await runRagEvaluationSuite()
+    evaluationSummary.value = response.data
+    ElMessage.success(`评价完成：${response.data?.passed || 0}/${response.data?.total || 0} 项通过`)
+    await loadEvaluationData()
+  } finally {
+    evaluationRunning.value = false
+  }
+}
+
+const formatArticleIds = (ids = []) => ids.map(id => {
+  const article = articleOptions.value.find(item => item.id === id)
+  return article ? article.title : `#${id}`
+}).join('、') || '-'
+
+const formatArticleOption = (article) => `${article.title}（#${article.id}）${article.ragIndexable ? '' : ' · 禁止进入RAG'}`
 
 const fallbackKeywordSearch = async () => {
   const searchResponse = await searchKnowledge(question.value, { size: 5 })
@@ -339,12 +545,74 @@ const formatValidityStatus = (status) => {
 
 <style scoped lang="scss">
 .rag-search-page {
-  max-width: 900px;
+  max-width: 1120px;
   margin: 0 auto;
 
   .scope-alert {
     margin-bottom: 14px;
   }
+
+  .header-actions,
+  .evaluation-toolbar,
+  .form-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  .provider-select {
+    width: 290px;
+  }
+
+  .evaluation-panel {
+    margin-bottom: 18px;
+    padding: 16px;
+    border: 1px solid #dfe5ec;
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  .evaluation-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+
+    h3 { margin: 0 0 6px; font-size: 16px; }
+    p { margin: 0; color: #6b7280; font-size: 13px; }
+  }
+
+  .evaluation-form {
+    margin: 16px 0;
+    padding: 14px;
+    border: 1px solid #e5e7eb;
+    background: #f8fafc;
+  }
+
+  .evaluation-form-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 180px;
+    gap: 14px;
+
+    &.two-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  .full-width { width: 100%; }
+
+  .evaluation-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin: 16px 0;
+
+    div { padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; }
+    strong { display: block; font-size: 20px; color: #111827; }
+    span { font-size: 12px; color: #6b7280; }
+  }
+
+  .evaluation-toolbar { justify-content: space-between; margin: 14px 0 8px; }
+  .run-heading { margin: 18px 0 8px; }
 
   .scope-grid {
     display: grid;
@@ -443,9 +711,15 @@ const formatValidityStatus = (status) => {
   }
 
   @media (max-width: 560px) {
+    .header-actions { align-items: stretch; flex-direction: column; }
+    .provider-select { width: min(290px, 100%); }
     .scope-grid {
       grid-template-columns: 1fr;
     }
+    .evaluation-heading { flex-direction: column; }
+    .evaluation-form-grid,
+    .evaluation-form-grid.two-columns,
+    .evaluation-summary { grid-template-columns: 1fr; }
   }
 }
 </style>

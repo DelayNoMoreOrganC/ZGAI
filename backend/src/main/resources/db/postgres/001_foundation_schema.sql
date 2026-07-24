@@ -293,6 +293,35 @@ CREATE TABLE IF NOT EXISTS knowledge_import_item (
 CREATE INDEX IF NOT EXISTS idx_knowledge_import_batch ON knowledge_import_item(batch_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_import_sha ON knowledge_import_item(content_sha256);
 
+CREATE TABLE IF NOT EXISTS rag_evaluation_case (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    name VARCHAR(120) NOT NULL,
+    question VARCHAR(1000) NOT NULL,
+    expected_article_ids VARCHAR(2000) NOT NULL,
+    forbidden_article_ids VARCHAR(2000),
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rag_evaluation_run (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    evaluation_case_id BIGINT NOT NULL,
+    retrieved_article_ids VARCHAR(2000),
+    search_method VARCHAR(30) NOT NULL,
+    top3_hit BOOLEAN NOT NULL,
+    forbidden_hit BOOLEAN NOT NULL,
+    passed BOOLEAN NOT NULL,
+    duration_ms BIGINT NOT NULL,
+    run_by BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rag_evaluation_run_case ON rag_evaluation_run(evaluation_case_id);
+CREATE INDEX IF NOT EXISTS idx_rag_evaluation_run_created ON rag_evaluation_run(created_at);
+
 ALTER TABLE ai_log ADD COLUMN IF NOT EXISTS provider_type VARCHAR(50);
 ALTER TABLE ai_log ADD COLUMN IF NOT EXISTS input_summary VARCHAR(500);
 ALTER TABLE ai_log ADD COLUMN IF NOT EXISTS input_hash VARCHAR(64);

@@ -10,7 +10,8 @@
     "test:e2e:roles": "playwright test e2e/role-workbenches.spec.js",
     "test:e2e:filing": "playwright test --project=desktop-chrome e2e/case-filing-flow.spec.js",
     "test:e2e:consultant": "playwright test --project=desktop-chrome e2e/case-filing-flow.spec.js --grep '法律顾问案件'",
-    "test:e2e:case-types": "playwright test --project=desktop-chrome e2e/case-type-stage-flow.spec.js"
+    "test:e2e:case-types": "playwright test --project=desktop-chrome e2e/case-type-stage-flow.spec.js",
+    "test:e2e:rag": "playwright test e2e/rag-evaluation-flow.spec.js"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",

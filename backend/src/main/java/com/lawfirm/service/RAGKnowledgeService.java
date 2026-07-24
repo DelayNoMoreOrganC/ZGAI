@@ -70,7 +70,8 @@ public class RAGKnowledgeService {
     }
 
     public Map<String, Object> ragSearch(String question, Long userId, String providerType) {
-        log.info("RAG search question: {}", question);
+        log.info("RAG search: questionChars={}, questionHash={}",
+                question == null ? 0 : question.codePointCount(0, question.length()), questionFingerprint(question));
 
         try {
             // Step 1: 向量检索相关文档
@@ -143,6 +144,21 @@ public class RAGKnowledgeService {
     }
 
     /**
+     * Runs retrieval only for the managed evaluation suite. No generation provider is called.
+     */
+    public RetrievalSnapshot evaluateRetrieval(String question) {
+        long startedAt = System.currentTimeMillis();
+        SearchExecution execution = searchRelevantDocumentsWithScore(question);
+        List<Long> articleIds = execution.documents.stream()
+                .limit(5)
+                .map(item -> item.document.getId())
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        return new RetrievalSnapshot(articleIds, execution.method,
+                Math.max(0L, System.currentTimeMillis() - startedAt));
+    }
+
+    /**
      * 智能检索相关文档（向量数据库检索版）
      *
      * 性能优化：
@@ -167,7 +183,7 @@ public class RAGKnowledgeService {
                     qdrantVectorService.search(questionVector, 5, 0.6);
 
             if (searchResults.isEmpty()) {
-                log.info("向量检索未找到相关文档: question={}", question);
+                log.info("向量检索未找到相关文档: questionHash={}", questionFingerprint(question));
                 return new SearchExecution(fallbackToKeywordSearch(question), "KEYWORD");
             }
 
@@ -190,8 +206,8 @@ public class RAGKnowledgeService {
             }
 
             long duration = System.currentTimeMillis() - startTime;
-            log.info("向量检索完成: 问题={}, 检索结果数={}, 最终文档数={}, 耗时={}ms",
-                    question, searchResults.size(), scoredDocs.size(), duration);
+            log.info("向量检索完成: questionHash={}, 检索结果数={}, 最终文档数={}, 耗时={}ms",
+                    questionFingerprint(question), searchResults.size(), scoredDocs.size(), duration);
 
             return new SearchExecution(scoredDocs, "VECTOR");
 
@@ -471,6 +487,11 @@ public class RAGKnowledgeService {
         return text.substring(0, Math.max(1, maxLength - 3)) + "...";
     }
 
+    private String questionFingerprint(String question) {
+        String hash = AIContentPrivacy.sha256(question == null ? "" : question);
+        return hash == null ? "none" : hash.substring(0, 12);
+    }
+
     public Map<String, Object> healthStatus() {
         boolean embeddingConfigured = embeddingService.isConfigured();
         boolean llmConfigured = aiConfigService.getUsableDefaultConfigOrNull() != null;
@@ -711,6 +732,30 @@ public class RAGKnowledgeService {
         SearchExecution(List<ScoredDocument> documents, String method) {
             this.documents = documents;
             this.method = method;
+        }
+    }
+
+    public static final class RetrievalSnapshot {
+        private final List<Long> articleIds;
+        private final String searchMethod;
+        private final long durationMs;
+
+        public RetrievalSnapshot(List<Long> articleIds, String searchMethod, long durationMs) {
+            this.articleIds = Collections.unmodifiableList(new ArrayList<>(articleIds));
+            this.searchMethod = searchMethod;
+            this.durationMs = durationMs;
+        }
+
+        public List<Long> getArticleIds() {
+            return articleIds;
+        }
+
+        public String getSearchMethod() {
+            return searchMethod;
+        }
+
+        public long getDurationMs() {
+            return durationMs;
         }
     }
 

@@ -12,6 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -136,6 +138,31 @@ class RAGKnowledgeServiceTest {
 
         assertEquals(false, result.get("hasAnswer"));
         assertFalse(String.valueOf(result.get("answer")).contains("某案件材料"));
+    }
+
+    @Test
+    void evaluationSnapshotUsesRetrievalOnlyAndKeepsPrivateMaterialOut() {
+        AIConfigService aiConfigService = mock(AIConfigService.class);
+        KnowledgeArticleRepository repository = mock(KnowledgeArticleRepository.class);
+        EmbeddingService embeddingService = mock(EmbeddingService.class);
+        QdrantVectorService qdrantVectorService = mock(QdrantVectorService.class);
+        AIGenerationGateway generationGateway = mock(AIGenerationGateway.class);
+        RAGKnowledgeService service = new RAGKnowledgeService(
+                aiConfigService, repository, embeddingService, qdrantVectorService,
+                mock(OpenAICompatibleClient.class), generationGateway);
+        KnowledgeArticle publicRule = publicArticle(1L, "劳动争议调解仲裁法", "劳动争议申请仲裁的时效期间为一年");
+        KnowledgeArticle privateCase = publicArticle(9L, "客户案件记录", "劳动争议申请仲裁的时效期间为一年");
+        privateCase.setKnowledgeSource("CASE_DEPOSIT");
+        privateCase.setKnowledgeEligible(false);
+        privateCase.setIsPublic(false);
+        when(embeddingService.isConfigured()).thenReturn(false);
+        when(repository.findAll()).thenReturn(List.of(publicRule, privateCase));
+
+        RAGKnowledgeService.RetrievalSnapshot snapshot = service.evaluateRetrieval("劳动仲裁时效");
+
+        assertEquals(List.of(1L), snapshot.getArticleIds());
+        assertEquals("KEYWORD", snapshot.getSearchMethod());
+        verify(generationGateway, never()).generate(any(), any(), anyInt());
     }
 
     @Test

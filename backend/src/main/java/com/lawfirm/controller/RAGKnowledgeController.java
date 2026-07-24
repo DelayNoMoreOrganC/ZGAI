@@ -10,6 +10,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import javax.validation.Valid;
 
 /**
  * RAG知识库控制器
@@ -29,7 +30,7 @@ public class RAGKnowledgeController {
      */
     @PostMapping("/search")
     @PreAuthorize("isAuthenticated()")
-    public Result<Map<String, Object>> ragSearch(@RequestBody RAGSearchRequest request) {
+    public Result<Map<String, Object>> ragSearch(@Valid @RequestBody RAGSearchRequest request) {
         try {
             Long userId = securityUtil.getCurrentUserId();
             Map<String, Object> result = ragKnowledgeService.ragSearch(

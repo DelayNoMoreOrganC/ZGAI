@@ -98,6 +98,34 @@ export function askAI(question, options = {}) {
   })
 }
 
+export function getRagEvaluationCases() {
+  return request({ url: '/knowledge/rag/evaluations', method: 'get' })
+}
+
+export function getRagEvaluationCandidates() {
+  return request({ url: '/knowledge/rag/evaluations/candidates', method: 'get' })
+}
+
+export function saveRagEvaluationCase(data, id = null) {
+  return request({
+    url: id ? `/knowledge/rag/evaluations/${id}` : '/knowledge/rag/evaluations',
+    method: id ? 'put' : 'post',
+    data
+  })
+}
+
+export function deleteRagEvaluationCase(id) {
+  return request({ url: `/knowledge/rag/evaluations/${id}`, method: 'delete' })
+}
+
+export function runRagEvaluationSuite() {
+  return request({ url: '/knowledge/rag/evaluations/run', method: 'post', timeout: 300000 })
+}
+
+export function getRagEvaluationRuns() {
+  return request({ url: '/knowledge/rag/evaluations/runs', method: 'get' })
+}
+
 export function previewFlkImport(urls) {
   return request({ url: '/knowledge/import-batches/flk/preview', method: 'post', data: { urls } })
 }
