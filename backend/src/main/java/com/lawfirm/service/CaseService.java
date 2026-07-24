@@ -22,6 +22,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.persistence.criteria.CriteriaBuilder;
+import javax.persistence.criteria.Expression;
+import javax.persistence.criteria.Predicate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -40,6 +43,9 @@ public class CaseService {
 
     private static final Set<String> SUPPORTED_CASE_TYPES = Set.of(
             "CIVIL", "ARBITRATION", "CRIMINAL", "ADMINISTRATIVE", "NON_LITIGATION", "CONSULTANT");
+    private static final List<String> SEARCH_TEXT_SEPARATORS = List.of(
+            " ", "　", "\t", "\n", "\r", "[", "]", "【", "】", "(", ")", "（", "）",
+            "-", "—", "_", "·", ".", "，", ",", "：", ":", "/", "\\");
 
     private final CaseRepository caseRepository;
     private final PartyService partyService;
@@ -188,7 +194,8 @@ public class CaseService {
                 caseEntity.getId(),
                 "CASE_FILING_SUBMITTED",
                 "立案申请已提交，案号：" + caseEntity.getCaseNumber()
-                        + (conflictCheckCount > 0 ? "；已生成 " + conflictCheckCount + " 份待行政复核的利冲初筛记录" : "；未识别到委托方，需行政补充利冲审查")
+                        + (conflictCheckCount > 0 ? "；已生成 " + conflictCheckCount + " 份待行政复核的利冲初筛记录" : "；未识别到委托方，需行政补充利冲审查"),
+                currentUserId
         );
 
         submitCaseFilingApproval(caseEntity, currentUserId);
@@ -399,6 +406,11 @@ public class CaseService {
      */
     @Transactional(rollbackFor = Exception.class)
     public CaseDetailVO updateCase(Long caseId, CaseUpdateRequest request) {
+        return updateCase(caseId, request, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public CaseDetailVO updateCase(Long caseId, CaseUpdateRequest request, Long operatorId) {
         Case caseEntity = caseRepository.findById(caseId)
                 .orElseThrow(() -> new ResourceNotFoundException("案件", caseId));
         rejectWorkflowControlledUpdates(request);
@@ -531,7 +543,8 @@ public class CaseService {
         caseTimelineService.createSystemTimeline(
                 caseId,
                 "CASE_UPDATED",
-                "案件信息已更新"
+                "修改了案件基本信息",
+                operatorId
         );
 
         return getCaseDetail(caseId);
@@ -666,10 +679,24 @@ public class CaseService {
                 predicates.add(cb.lessThanOrEqualTo(root.get("filingDate"), endDate));
             }
             if (hasText(request.getKeyword())) {
-                String keyword = "%" + request.getKeyword() + "%";
-                javax.persistence.criteria.Predicate nameCondition = cb.like(root.get("caseName"), keyword);
-                javax.persistence.criteria.Predicate numberCondition = cb.like(root.get("caseNumber"), keyword);
-                predicates.add(cb.or(nameCondition, numberCondition));
+                Expression<String> normalizedName = normalizedSearchExpression(cb, cb.lower(root.get("caseName")));
+                Expression<String> normalizedNumber = normalizedCaseNumberExpression(cb, cb.lower(root.get("caseNumber")));
+                for (String token : tokenizeCaseSearch(request.getKeyword())) {
+                    String rawPattern = "%" + escapeLikePattern(token.toLowerCase(Locale.ROOT)) + "%";
+                    List<Predicate> tokenMatches = new ArrayList<>();
+                    tokenMatches.add(cb.like(cb.lower(root.get("caseName")), rawPattern, '\\'));
+                    tokenMatches.add(cb.like(cb.lower(root.get("caseNumber")), rawPattern, '\\'));
+
+                    String normalizedTextToken = normalizeSearchText(token);
+                    if (hasText(normalizedTextToken)) {
+                        tokenMatches.add(cb.like(normalizedName, "%" + escapeLikePattern(normalizedTextToken) + "%", '\\'));
+                    }
+                    String normalizedNumberToken = normalizeCaseNumberSearchText(token);
+                    if (hasText(normalizedNumberToken)) {
+                        tokenMatches.add(cb.like(normalizedNumber, "%" + escapeLikePattern(normalizedNumberToken) + "%", '\\'));
+                    }
+                    predicates.add(cb.or(tokenMatches.toArray(new Predicate[0])));
+                }
             }
             if (hasText(request.getTag())) {
                 predicates.add(cb.like(root.get("tags"), "%" + request.getTag() + "%"));
@@ -713,6 +740,52 @@ public class CaseService {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    static List<String> tokenizeCaseSearch(String keyword) {
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+        return Arrays.stream(keyword.trim().split("\\s+"))
+                .map(String::trim)
+                .filter(token -> !token.isEmpty())
+                .collect(Collectors.toList());
+    }
+
+    static String normalizeSearchText(String value) {
+        String normalized = value == null ? "" : value.toLowerCase(Locale.ROOT);
+        for (String separator : SEARCH_TEXT_SEPARATORS) {
+            normalized = normalized.replace(separator, "");
+        }
+        return normalized;
+    }
+
+    static String normalizeCaseNumberSearchText(String value) {
+        return normalizeSearchText(value)
+                .replace("粤至高", "")
+                .replace("字", "")
+                .replace("第", "")
+                .replace("号", "");
+    }
+
+    private static String escapeLikePattern(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    private Expression<String> normalizedSearchExpression(CriteriaBuilder cb, Expression<String> expression) {
+        Expression<String> normalized = expression;
+        for (String separator : SEARCH_TEXT_SEPARATORS) {
+            normalized = cb.function("replace", String.class, normalized, cb.literal(separator), cb.literal(""));
+        }
+        return normalized;
+    }
+
+    private Expression<String> normalizedCaseNumberExpression(CriteriaBuilder cb, Expression<String> expression) {
+        Expression<String> normalized = normalizedSearchExpression(cb, expression);
+        for (String marker : List.of("粤至高", "字", "第", "号")) {
+            normalized = cb.function("replace", String.class, normalized, cb.literal(marker), cb.literal(""));
+        }
+        return normalized;
     }
 
     private LocalDate parseQueryDate(String value, String parameter) {
@@ -1062,6 +1135,11 @@ public class CaseService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void deleteCase(Long caseId) {
+        deleteCase(caseId, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteCase(Long caseId, Long operatorId) {
         Case caseEntity = caseRepository.findById(caseId)
                 .orElseThrow(() -> new ResourceNotFoundException("案件", caseId));
 
@@ -1072,7 +1150,8 @@ public class CaseService {
         caseTimelineService.createSystemTimeline(
                 caseId,
                 "CASE_DELETED",
-                "案件已删除"
+                "删除了案件",
+                operatorId
         );
     }
 
@@ -1081,6 +1160,11 @@ public class CaseService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void restoreCase(Long caseId) {
+        restoreCase(caseId, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void restoreCase(Long caseId, Long operatorId) {
         Case caseEntity = caseRepository.findById(caseId)
                 .orElseThrow(() -> new ResourceNotFoundException("案件", caseId));
 
@@ -1095,7 +1179,8 @@ public class CaseService {
         caseTimelineService.createSystemTimeline(
                 caseId,
                 "CASE_RESTORED",
-                "案件已从回收站恢复"
+                "将案件从回收站恢复",
+                operatorId
         );
     }
 
@@ -1493,7 +1578,8 @@ public class CaseService {
             caseTimelineService.createSystemTimeline(
                     caseEntity.getId(),
                     "CASE_DELETED",
-                    "案件已通过批量操作删除"
+                    "通过批量操作删除了案件",
+                    operatorId
             );
         }
 
@@ -1526,7 +1612,8 @@ public class CaseService {
                     caseEntity.getId(),
                     "OWNER_CHANGED",
                     String.format("承办人由「%s」变更为「%s」",
-                            getUserName(previousOwnerId), newOwner.getRealName())
+                            getUserName(previousOwnerId), newOwner.getRealName()),
+                    operatorId
             );
         }
 

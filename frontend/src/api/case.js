@@ -123,65 +123,7 @@ export function deleteParty(caseId, partyId) {
   })
 }
 
-// 办案记录
-export function getCaseRecords(caseId, params) {
-  return request({
-    url: `/cases/${caseId}/records`,
-    method: 'get',
-    params
-  })
-}
-
-export function createCaseRecord(caseId, data) {
-  return request({
-    url: `/cases/${caseId}/records`,
-    method: 'post',
-    data
-  })
-}
-
-export function updateCaseRecord(caseId, recordId, data) {
-  return request({
-    url: `/cases/${caseId}/records/${recordId}`,
-    method: 'put',
-    data
-  })
-}
-
-export function deleteCaseRecord(caseId, recordId) {
-  return request({
-    url: `/cases/${caseId}/records/${recordId}`,
-    method: 'delete'
-  })
-}
-
-// 导出办案记录
-export function exportCaseRecords(caseId, data) {
-  return request({
-    url: `/cases/${caseId}/records/export`,
-    method: 'post',
-    data,
-    responseType: 'blob',
-    headers: {
-      'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    }
-  })
-}
-
-// 导出办案记录(Word)
-export function exportCaseRecordsWord(caseId, data) {
-  return request({
-    url: `/cases/${caseId}/records/export/word`,
-    method: 'post',
-    data,
-    responseType: 'blob',
-    headers: {
-      'Accept': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    }
-  })
-}
-
-// 案件动态
+// 案件日志
 export function getCaseTimeline(caseId) {
   return request({
     url: `/cases/${caseId}/timeline`,

@@ -10,6 +10,8 @@ import com.lawfirm.repository.ApprovalRepository;
 import com.lawfirm.repository.CaseDocumentRepository;
 import com.lawfirm.repository.CaseRepository;
 import com.lawfirm.repository.ConflictCheckRecordRepository;
+import com.lawfirm.repository.LawFirmLetterRepository;
+import com.lawfirm.repository.LawFirmLetterSequenceRepository;
 import com.lawfirm.repository.UserRepository;
 import com.lawfirm.util.CryptoUtil;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,7 +67,9 @@ class ApprovalFilterJpaTest {
                 mock(UserPermissionService.class),
                 mock(ConflictWaiverAttachmentService.class),
                 mock(SealAttachmentService.class),
-                mock(CaseClosureService.class));
+                mock(CaseClosureService.class),
+                mock(LawFirmLetterRepository.class),
+                mock(LawFirmLetterSequenceRepository.class));
     }
 
     @Test

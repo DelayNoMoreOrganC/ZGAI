@@ -6,12 +6,16 @@ import com.lawfirm.entity.Approval;
 import com.lawfirm.entity.ApprovalFlow;
 import com.lawfirm.entity.Case;
 import com.lawfirm.entity.ConflictCheckRecord;
+import com.lawfirm.entity.LawFirmLetter;
 import com.lawfirm.entity.User;
+import com.lawfirm.event.SealApprovalDecisionEvent;
 import com.lawfirm.repository.ApprovalFlowRepository;
 import com.lawfirm.repository.ApprovalRepository;
 import com.lawfirm.repository.CaseDocumentRepository;
 import com.lawfirm.repository.CaseRepository;
 import com.lawfirm.repository.ConflictCheckRecordRepository;
+import com.lawfirm.repository.LawFirmLetterRepository;
+import com.lawfirm.repository.LawFirmLetterSequenceRepository;
 import com.lawfirm.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +24,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.LocalDateTime;
 import java.nio.file.Files;
@@ -50,6 +55,9 @@ class ApprovalServiceTest {
     private CaseFileLibraryService caseFileLibraryService;
     private ConflictWaiverAttachmentService conflictWaiverAttachmentService;
     private SealAttachmentService sealAttachmentService;
+    private LawFirmLetterRepository lawFirmLetterRepository;
+    private LawFirmLetterSequenceRepository lawFirmLetterSequenceRepository;
+    private ApplicationEventPublisher eventPublisher;
     private ApprovalService service;
 
     @TempDir
@@ -68,6 +76,9 @@ class ApprovalServiceTest {
         caseFileLibraryService = mock(CaseFileLibraryService.class);
         conflictWaiverAttachmentService = mock(ConflictWaiverAttachmentService.class);
         sealAttachmentService = mock(SealAttachmentService.class);
+        lawFirmLetterRepository = mock(LawFirmLetterRepository.class);
+        lawFirmLetterSequenceRepository = mock(LawFirmLetterSequenceRepository.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
         service = new ApprovalService(
                 approvalRepository,
                 approvalFlowRepository,
@@ -81,7 +92,10 @@ class ApprovalServiceTest {
                 userPermissionService,
                 conflictWaiverAttachmentService,
                 sealAttachmentService,
-                mock(CaseClosureService.class));
+                mock(CaseClosureService.class),
+                lawFirmLetterRepository,
+                lawFirmLetterSequenceRepository);
+        service.setApplicationEventPublisher(eventPublisher);
     }
 
     @Test
@@ -164,6 +178,29 @@ class ApprovalServiceTest {
                 org.mockito.ArgumentMatchers.eq("APPROVED"),
                 org.mockito.ArgumentMatchers.eq(8L),
                 org.mockito.ArgumentMatchers.any(LocalDateTime.class));
+    }
+
+    @Test
+    void firstLawFirmLetterApprovalRequiresAdministrativeInitialSerial() {
+        Approval approval = pendingApproval(112L, ApprovalService.TYPE_SEAL, 7L, 8L);
+        LawFirmLetter letter = new LawFirmLetter();
+        letter.setId(21L);
+        letter.setLetterTypeCode("民");
+        when(approvalRepository.findById(112L)).thenReturn(Optional.of(approval));
+        when(userRepository.findById(8L)).thenReturn(Optional.of(user(8L, "行政甲", "行政管理")));
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user(7L, "律师甲", "律师")));
+        when(sealAttachmentService.list(112L)).thenReturn(Collections.singletonList(new ApprovalAttachmentDTO()));
+        when(lawFirmLetterRepository.findByApprovalIdAndDeletedFalse(112L)).thenReturn(Optional.of(letter));
+        when(lawFirmLetterSequenceRepository.findByLetterYearAndLetterTypeCode(any(), any()))
+                .thenReturn(Optional.empty());
+
+        RuntimeException error = assertThrows(RuntimeException.class,
+                () -> service.approveApproval(112L, "文件内容无误，同意用印", null, 8L));
+        assertTrue(error.getMessage().contains("该年度和函种尚未编号，请先填写首次流水号"));
+
+        approval.setStatus("PENDING");
+        service.approveApproval(112L, "文件内容无误，同意用印", 25, 8L);
+        verify(eventPublisher).publishEvent(any(SealApprovalDecisionEvent.class));
     }
 
     @Test

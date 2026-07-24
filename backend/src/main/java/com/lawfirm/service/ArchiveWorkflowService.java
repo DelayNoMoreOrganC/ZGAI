@@ -589,7 +589,7 @@ public class ArchiveWorkflowService {
             job.setErrorMessage(null);
             archiveJobRepository.save(job);
             caseTimelineService.createSystemTimeline(caseEntity.getId(), "CASE_ARCHIVED",
-                    "行政复核通过，已生成电子卷宗 " + fileName);
+                    "完成行政归档复核并生成电子卷宗 " + fileName, userId);
             audit(job.getId(), userId, "COMPLETE", "电子卷宗生成完成，SHA-256=" + sha);
         } catch (Exception e) {
             deleteArtifact(staging);

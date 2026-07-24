@@ -29,4 +29,8 @@ public class ApprovalDTO {
     private List<ApprovalAttachmentDTO> sealAttachments;
     private List<ConflictCheckRecordDTO> conflictChecks;
     private CaseClosureRequestDTO closureRequest;
+    private Boolean lawFirmLetter;
+    private Long lawFirmLetterId;
+    private String lawFirmLetterNumber;
+    private Boolean letterSequenceRequiresInitialNumber;
 }

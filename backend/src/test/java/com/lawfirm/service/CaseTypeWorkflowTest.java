@@ -105,6 +105,52 @@ class CaseTypeWorkflowTest {
     }
 
     @Test
+    void lawyerCanSkipStagesWithReasonAndAuditTrail() {
+        Case caseEntity = new Case();
+        caseEntity.setId(15L);
+        caseEntity.setOwnerId(21L);
+        caseEntity.setCaseType("CIVIL");
+        caseEntity.setStatus("ACTIVE");
+        CaseStage current = stage(201L, 15L, "接洽利冲", 1, "IN_PROGRESS");
+        CaseStage skipped = stage(202L, 15L, "签约立案", 2, "PENDING");
+        CaseStage target = stage(203L, 15L, "诉前准备", 3, "PENDING");
+        when(caseRepository.findById(15L)).thenReturn(Optional.of(caseEntity));
+        when(caseStageRepository.findCurrentStage(15L)).thenReturn(Optional.of(current));
+        when(caseStageRepository.findByCaseIdAndDeletedFalseOrderByStageOrder(15L))
+                .thenReturn(List.of(current, skipped, target));
+        when(stageTodoTemplateRepository.findByStageNameAndCaseTypeAndIsEnabledAndIsDeletedFalseOrderBySortOrderAsc(
+                "诉前准备", "CIVIL", true)).thenReturn(List.of());
+
+        service.changeStatus(15L, "诉前准备", "案件已完成前期签约", 21L);
+
+        assertEquals("COMPLETED", current.getStatus());
+        assertEquals("SKIPPED", skipped.getStatus());
+        assertEquals("IN_PROGRESS", target.getStatus());
+        assertEquals("诉前准备", caseEntity.getCurrentStage());
+        verify(caseTimelineService).createSystemTimeline(eq(15L), eq("STAGE_CHANGED"),
+                contains("跳过阶段：签约立案"), eq(21L));
+    }
+
+    @Test
+    void skippedStageRequiresReason() {
+        Case caseEntity = new Case();
+        caseEntity.setId(16L);
+        caseEntity.setStatus("ACTIVE");
+        CaseStage current = stage(301L, 16L, "接洽利冲", 1, "IN_PROGRESS");
+        CaseStage middle = stage(302L, 16L, "签约立案", 2, "PENDING");
+        CaseStage target = stage(303L, 16L, "诉前准备", 3, "PENDING");
+        when(caseRepository.findById(16L)).thenReturn(Optional.of(caseEntity));
+        when(caseStageRepository.findCurrentStage(16L)).thenReturn(Optional.of(current));
+        when(caseStageRepository.findByCaseIdAndDeletedFalseOrderByStageOrder(16L))
+                .thenReturn(List.of(current, middle, target));
+
+        InvalidParameterException error = assertThrows(InvalidParameterException.class,
+                () -> service.changeStatus(16L, "诉前准备", " ", 21L));
+
+        assertTrue(error.getMessage().contains("跳过案件阶段时必须填写原因"));
+    }
+
+    @Test
     void nextStageLookupUsesStableStageIdentityInsteadOfObjectEquality() {
         CaseStage currentFromQuery = stage(101L, 11L, "接洽利冲", 1, "IN_PROGRESS");
         CaseStage currentFromList = stage(101L, 11L, "接洽利冲", 1, "IN_PROGRESS");

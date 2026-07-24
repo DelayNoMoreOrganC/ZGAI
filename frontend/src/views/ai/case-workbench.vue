@@ -135,7 +135,7 @@
                   查看日程与待办
                 </el-button>
                 <el-button v-if="hasTimelineAction" data-testid="ai-command-view-timeline" @click="openCaseTimeline">
-                  查看案件动态
+                  查看案件日志
                 </el-button>
               </div>
             </template>

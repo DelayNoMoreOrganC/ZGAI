@@ -69,6 +69,7 @@
           :class="{
             'active': isStageActive(stage.key),
             'completed': isStageCompleted(stage.key),
+            'skipped': isStageSkipped(stage.key),
             'current': isCurrentStage(stage.key),
             'disabled': !canChangeStatus
           }"
@@ -77,6 +78,7 @@
         >
           <div class="stage-icon">
             <el-icon v-if="isStageCompleted(stage.key)"><Select /></el-icon>
+            <el-icon v-else-if="isStageSkipped(stage.key)"><Minus /></el-icon>
             <span v-else>{{ index + 1 }}</span>
           </div>
           <div class="stage-label">{{ stage.label }}</div>
@@ -129,7 +131,7 @@ import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ArrowLeft, Edit, FolderOpened, ArrowDown, Select, ChatDotRound
+  ArrowLeft, Edit, FolderOpened, ArrowDown, Select, Minus, ChatDotRound
 } from '@element-plus/icons-vue'
 import { getCaseDetail, updateCaseStatus, rollbackCaseStatus, deleteCase, createCase } from '@/api/case'
 import { getCaseTypeWorkflow } from '@/utils/caseTypeProfiles'
@@ -147,10 +149,10 @@ const loadError = ref('')
 const approvalDrawerVisible = ref(false)
 const detailTabs = [
   { label: '基本案情', name: 'basic' },
-  { label: '办案记录', name: 'record' },
   { label: '受理单位', name: 'unit' },
+  { label: '律所所函', name: 'letter' },
   { label: '案件文档', name: 'doc' },
-  { label: '案件动态', name: 'timeline' },
+  { label: '案件日志', name: 'timeline' },
   { label: '智能归档', name: 'archive' }
 ]
 const activeTab = computed(() => {
@@ -195,10 +197,11 @@ const caseStages = computed(() => {
 // 判断阶段是否已完成
 const isStageCompleted = (stageKey) => {
   const stage = caseStages.value.find(item => item.key === stageKey)
-  if (stage?.status === 'COMPLETED') return true
-  const stageIndex = caseStages.value.findIndex(s => s.key === stageKey)
-  const currentIndex = caseStages.value.findIndex(s => s.label === caseDetail.currentStage)
-  return stageIndex < currentIndex
+  return stage?.status === 'COMPLETED'
+}
+
+const isStageSkipped = (stageKey) => {
+  return caseStages.value.find(item => item.key === stageKey)?.status === 'SKIPPED'
 }
 
 // 判断阶段是否已激活（已完成或当前）
@@ -454,20 +457,38 @@ const handleStageClick = async (stage) => {
         return
       }
     } else {
-      if (targetStageIndex !== currentStageIndex + 1) {
-        ElMessage.warning('案件阶段只能依次推进，请先完成当前阶段')
-        return
+      const isSkipping = targetStageIndex > currentStageIndex + 1
+      let reason = '正常流转'
+      if (isSkipping) {
+        const skippedNames = caseStages.value
+          .slice(currentStageIndex + 1, targetStageIndex)
+          .map(item => item.label)
+          .join('、')
+        const promptResult = await ElMessageBox.prompt(
+          `本次将跳过：${skippedNames}。系统会保留“已跳过”记录，请填写原因。`,
+          '跳过案件阶段',
+          {
+            confirmButtonText: '确认跳过',
+            cancelButtonText: '取消',
+            inputPlaceholder: '请输入跳过原因',
+            inputPattern: /^.{2,100}$/,
+            inputErrorMessage: '跳过原因长度为2-100个字符',
+            type: 'warning'
+          }
+        )
+        reason = promptResult.value
+      } else {
+        await ElMessageBox.confirm(confirmMessage, '确认变更', {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'info'
+        })
       }
-      // 前进阶段，只需确认
-      await ElMessageBox.confirm(confirmMessage, '确认变更', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'info'
-      })
 
       // 调用更新状态API
       await updateCaseStatus(caseDetail.id, {
-        status: stage.label
+        status: stage.label,
+        reason
       })
 
       ElMessage.success(`已更新到"${stage.label}"阶段`)
@@ -663,6 +684,21 @@ watch(() => route.params.id, fetchCaseDetail, { immediate: true })
 
           .stage-line {
             background-color: #67c23a;
+          }
+        }
+
+        &.skipped {
+          .stage-icon {
+            background-color: #909399;
+            color: #fff;
+          }
+
+          .stage-label {
+            color: #909399;
+          }
+
+          .stage-line {
+            background-color: #c0c4cc;
           }
         }
 

@@ -95,7 +95,7 @@ public class CaseController {
         Long currentUserId = securityUtils.getCurrentUserId();
         caseService.assertCaseVisible(id, currentUserId);
         caseService.assertCaseEditable(id, currentUserId);
-        CaseDetailVO caseDetail = caseService.updateCase(id, request);
+        CaseDetailVO caseDetail = caseService.updateCase(id, request, currentUserId);
         return Result.success("案件更新成功", caseDetail);
     }
 
@@ -108,7 +108,7 @@ public class CaseController {
     public Result<Void> deleteCase(@PathVariable Long id) {
         Long currentUserId = securityUtils.getCurrentUserId();
         caseService.assertCaseManageable(id, currentUserId);
-        caseService.deleteCase(id);
+        caseService.deleteCase(id, currentUserId);
         return Result.success();
     }
 
@@ -121,7 +121,7 @@ public class CaseController {
     public Result<String> restoreCase(@PathVariable Long id) {
         Long currentUserId = securityUtils.getCurrentUserId();
         caseService.assertCaseManageable(id, currentUserId);
-        caseService.restoreCase(id);
+        caseService.restoreCase(id, currentUserId);
         return Result.success("案件恢复成功");
     }
 

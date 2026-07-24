@@ -83,8 +83,7 @@ const routes = [
               {
                 path: 'record',
                 name: 'CaseRecord',
-                component: () => import('@/views/case/tabs/record.vue'),
-                meta: { title: '办案记录' }
+                redirect: to => ({ name: 'CaseBasic', params: { id: to.params.id } })
               },
               {
                 path: 'unit',
@@ -99,10 +98,16 @@ const routes = [
                 meta: { title: '案件文档' }
               },
               {
+                path: 'letter',
+                name: 'CaseLawFirmLetter',
+                component: () => import('@/views/case/tabs/letter.vue'),
+                meta: { title: '律所所函', requiredPermission: 'CASE_VIEW' }
+              },
+              {
                 path: 'timeline',
                 name: 'CaseTimeline',
                 component: () => import('@/views/case/tabs/timeline.vue'),
-                meta: { title: '案件动态' }
+                meta: { title: '案件日志' }
               },
               {
                 path: 'archive',

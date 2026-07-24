@@ -114,7 +114,7 @@ public class ApprovalController {
         try {
             Long userId = securityUtils.getCurrentUserId();
             String comments = request.getComments() == null ? "" : request.getComments();
-            approvalService.approveApproval(id, comments, userId);
+            approvalService.approveApproval(id, comments, request.getInitialLetterSerial(), userId);
             return Result.success();
         } catch (AccessDeniedException | BusinessException e) {
             throw e;

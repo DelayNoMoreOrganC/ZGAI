@@ -698,6 +698,22 @@ const handleApprove = async (row) => {
     return
   }
   try {
+    let initialLetterSerial
+    if (row.lawFirmLetter && row.letterSequenceRequiresInitialNumber) {
+      const serialResult = await ElMessageBox.prompt(
+        '这是该年度、该函种的首次编号。请输入本次所函使用的流水号，后续审批将自动递增。',
+        '设置首次所函编号',
+        {
+          confirmButtonText: '确认流水号',
+          cancelButtonText: '取消',
+          inputPlaceholder: '例如：1',
+          inputPattern: /^(?:[1-9]\d{0,5})$/,
+          inputErrorMessage: '请输入1至999999之间的整数',
+          inputType: 'number'
+        }
+      )
+      initialLetterSerial = Number(serialResult.value)
+    }
     const { value } = await ElMessageBox.prompt(
       isCaseFilingApproval(row)
         ? '请填写利冲审查结论或立案审批意见'
@@ -715,7 +731,7 @@ const handleApprove = async (row) => {
       }
     )
 
-    const response = await approveApproval(row.id, { comments: value || '' })
+    const response = await approveApproval(row.id, { comments: value || '', initialLetterSerial })
     if (isSuccessResponse(response)) {
       ElMessage.success(isCaseFilingApproval(row)
         ? '立案审批已通过'

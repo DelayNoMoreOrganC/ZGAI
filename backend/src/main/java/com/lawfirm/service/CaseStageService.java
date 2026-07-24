@@ -20,6 +20,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * 案件阶段服务
@@ -117,7 +118,14 @@ public class CaseStageService {
 
         // 3. 验证阶段流转是否合法
         if (!isValidTransition(currentStage, targetStageEntity, allStages)) {
-            throw new RuntimeException("不允许从当前阶段直接跳转到目标阶段");
+            throw new RuntimeException("只能变更到当前阶段之后的办理阶段");
+        }
+
+        int currentIndex = findStageIndex(allStages, currentStage);
+        int targetIndex = findStageIndex(allStages, targetStageEntity);
+        boolean isSkipping = targetIndex > currentIndex + 1;
+        if (isSkipping && !org.springframework.util.StringUtils.hasText(reason)) {
+            throw new InvalidParameterException("reason", "跳过案件阶段时必须填写原因");
         }
 
         // 4. 更新当前阶段状态
@@ -125,25 +133,43 @@ public class CaseStageService {
         currentStage.setEndDate(LocalDate.now());
         caseStageRepository.save(currentStage);
 
-        // 5. 更新目标阶段状态
+        // 5. 将被跨越的阶段保留为“已跳过”，便于后续审计和回退。
+        List<CaseStage> skippedStages = new ArrayList<>();
+        for (int i = currentIndex + 1; i < targetIndex; i++) {
+            CaseStage skippedStage = allStages.get(i);
+            skippedStage.setStatus("SKIPPED");
+            skippedStage.setStartDate(null);
+            skippedStage.setEndDate(null);
+            skippedStages.add(skippedStage);
+        }
+        if (!skippedStages.isEmpty()) {
+            caseStageRepository.saveAll(skippedStages);
+        }
+
+        // 6. 更新目标阶段状态
         targetStageEntity.setStatus("IN_PROGRESS");
         targetStageEntity.setStartDate(LocalDate.now());
+        targetStageEntity.setEndDate(null);
         caseStageRepository.save(targetStageEntity);
 
-        // 6. 更新案件当前阶段
+        // 7. 更新案件当前阶段
         Case caseEntity = caseRepository.findById(caseId).orElseThrow();
         caseEntity.setCurrentStage(targetStage);
         caseRepository.save(caseEntity);
 
-        // 7. 记录动态
+        // 8. 记录日志
+        String skippedText = skippedStages.isEmpty() ? "" : String.format("，跳过阶段：%s",
+                skippedStages.stream().map(CaseStage::getStageName).collect(Collectors.joining("、")));
         caseTimelineService.createSystemTimeline(
                 caseId,
                 "STAGE_CHANGED",
-                String.format("案件阶段从「%s」变更为「%s」。原因：%s",
-                        currentStage.getStageName(), targetStage, reason != null ? reason : "正常流转")
+                String.format("将案件阶段从「%s」变更为「%s」%s。原因：%s",
+                        currentStage.getStageName(), targetStage, skippedText,
+                        org.springframework.util.StringUtils.hasText(reason) ? reason.trim() : "正常流转"),
+                operatorId
         );
 
-        // 8. 自动创建该阶段的待办事项
+        // 9. 自动创建该阶段的待办事项
         autoCreateTodos(caseId, targetStage);
     }
 
@@ -266,24 +292,28 @@ public class CaseStageService {
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException("目标阶段不存在"));
 
-        // 3. 验证是否可以回退（只能回退到已完成或进行中的阶段）
+        // 3. 验证是否可以回退（已完成或曾被跳过的阶段均可重新激活）
         if (!targetStageEntity.getStatus().equals("COMPLETED") &&
+            !targetStageEntity.getStatus().equals("SKIPPED") &&
             !targetStageEntity.getStatus().equals("IN_PROGRESS")) {
-            throw new RuntimeException("只能回退到已完成或进行中的阶段");
+            throw new RuntimeException("只能回退到已完成或已跳过的阶段");
         }
 
-        // 4. 更新当前阶段状态
-        currentStage.setStatus("PENDING");
-        currentStage.setStartDate(null);
-        currentStage.setEndDate(null);
-        caseStageRepository.save(currentStage);
-
-        // 5. 如果目标阶段是已完成状态，则重新激活
-        if (targetStageEntity.getStatus().equals("COMPLETED")) {
-            targetStageEntity.setStatus("IN_PROGRESS");
-            targetStageEntity.setEndDate(null);
-            caseStageRepository.save(targetStageEntity);
+        int targetIndex = findStageIndex(allStages, targetStageEntity);
+        // 4. 目标之后的状态全部重置，避免残留已完成或已跳过状态。
+        for (int i = targetIndex + 1; i < allStages.size(); i++) {
+            CaseStage laterStage = allStages.get(i);
+            laterStage.setStatus("PENDING");
+            laterStage.setStartDate(null);
+            laterStage.setEndDate(null);
         }
+        caseStageRepository.saveAll(allStages.subList(targetIndex + 1, allStages.size()));
+
+        // 5. 重新激活目标阶段
+        targetStageEntity.setStatus("IN_PROGRESS");
+        targetStageEntity.setStartDate(LocalDate.now());
+        targetStageEntity.setEndDate(null);
+        caseStageRepository.save(targetStageEntity);
 
         // 6. 更新案件当前阶段
         Case caseEntity = caseRepository.findById(caseId).orElseThrow();
@@ -295,7 +325,8 @@ public class CaseStageService {
                 caseId,
                 "STAGE_ROLLBACK",
                 String.format("案件阶段从「%s」回退到「%s」。原因：%s",
-                        currentStage.getStageName(), targetStage, reason)
+                        currentStage.getStageName(), targetStage, reason),
+                operatorId
         );
     }
 
@@ -348,11 +379,11 @@ public class CaseStageService {
      * 验证阶段流转是否合法
      */
     private boolean isValidTransition(CaseStage currentStage, CaseStage targetStage, List<CaseStage> allStages) {
-        // 允许进入下一个阶段
+        // 律师可以选择任意后续阶段；跨越的阶段会标记为 SKIPPED。
         int currentIndex = findStageIndex(allStages, currentStage);
         int targetIndex = findStageIndex(allStages, targetStage);
 
-        return targetIndex == currentIndex + 1;
+        return currentIndex >= 0 && targetIndex > currentIndex;
     }
 
     private int findStageIndex(List<CaseStage> stages, CaseStage target) {
@@ -388,6 +419,7 @@ public class CaseStageService {
             case "PENDING": return "待开始";
             case "IN_PROGRESS": return "进行中";
             case "COMPLETED": return "已完成";
+            case "SKIPPED": return "已跳过";
             default: return status;
         }
     }

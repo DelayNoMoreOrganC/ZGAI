@@ -3,6 +3,7 @@ package com.lawfirm.service;
 import com.lawfirm.dto.*;
 import com.lawfirm.entity.*;
 import com.lawfirm.enums.ApprovalStatus;
+import com.lawfirm.event.SealApprovalDecisionEvent;
 import com.lawfirm.exception.InvalidParameterException;
 import com.lawfirm.exception.ResourceNotFoundException;
 import com.lawfirm.repository.*;
@@ -16,6 +17,9 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.ApplicationEventPublisherAware;
+import org.springframework.lang.NonNull;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -33,7 +37,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ApprovalService {
+public class ApprovalService implements ApplicationEventPublisherAware {
 
     private final ApprovalRepository approvalRepository;
     private final ApprovalFlowRepository approvalFlowRepository;
@@ -48,6 +52,14 @@ public class ApprovalService {
     private final ConflictWaiverAttachmentService conflictWaiverAttachmentService;
     private final SealAttachmentService sealAttachmentService;
     private final CaseClosureService caseClosureService;
+    private final LawFirmLetterRepository lawFirmLetterRepository;
+    private final LawFirmLetterSequenceRepository lawFirmLetterSequenceRepository;
+    private ApplicationEventPublisher eventPublisher;
+
+    @Override
+    public void setApplicationEventPublisher(@NonNull ApplicationEventPublisher applicationEventPublisher) {
+        this.eventPublisher = applicationEventPublisher;
+    }
 
     /**
      * 审批类型常量
@@ -117,6 +129,11 @@ public class ApprovalService {
      */
     @Transactional
     public void approveApproval(Long approvalId, String comments, Long approverId) {
+        approveApproval(approvalId, comments, null, approverId);
+    }
+
+    @Transactional
+    public void approveApproval(Long approvalId, String comments, Integer initialLetterSerial, Long approverId) {
         Approval approval = approvalRepository.findById(approvalId)
                 .orElseThrow(() -> new ResourceNotFoundException("审批单", approvalId));
 
@@ -165,10 +182,22 @@ public class ApprovalService {
             }
         }
         if (TYPE_SEAL.equals(approval.getApprovalType())) {
+            LawFirmLetter letter = lawFirmLetterRepository.findByApprovalIdAndDeletedFalse(approvalId).orElse(null);
+            if (letter != null) {
+                int year = approval.getApprovedTime().getYear();
+                boolean requiresInitial = lawFirmLetterSequenceRepository
+                        .findByLetterYearAndLetterTypeCode(year, letter.getLetterTypeCode()).isEmpty();
+                if (requiresInitial && initialLetterSerial == null) {
+                    throw new InvalidParameterException("initialLetterSerial", "该年度和函种尚未编号，请先填写首次流水号");
+                }
+                eventPublisher.publishEvent(new SealApprovalDecisionEvent(
+                        approvalId, ApprovalStatus.APPROVED.getCode(), initialLetterSerial,
+                        approverId, approval.getApprovedTime(), comments));
+            }
             sealAttachmentService.markDecision(approvalId, ApprovalStatus.APPROVED.getCode(), approverId, approval.getApprovedTime());
             if (approval.getCaseId() != null) {
                 caseTimelineService.createSystemTimeline(approval.getCaseId(), "SEAL_APPROVAL_APPROVED",
-                        "公章用印审批已通过：" + approval.getTitle());
+                        "通过了公章用印审批：" + approval.getTitle(), approverId);
             }
         }
         if (TYPE_CASE_CLOSURE.equals(approval.getApprovalType())) {
@@ -218,10 +247,15 @@ public class ApprovalService {
         // 记录流程
         recordFlow(approvalId, approverId, "REJECT", comments);
         if (TYPE_SEAL.equals(approval.getApprovalType())) {
+            if (lawFirmLetterRepository.findByApprovalIdAndDeletedFalse(approvalId).isPresent()) {
+                eventPublisher.publishEvent(new SealApprovalDecisionEvent(
+                        approvalId, ApprovalStatus.REJECTED.getCode(), null,
+                        approverId, approval.getApprovedTime(), comments));
+            }
             sealAttachmentService.markDecision(approvalId, ApprovalStatus.REJECTED.getCode(), approverId, approval.getApprovedTime());
             if (approval.getCaseId() != null) {
                 caseTimelineService.createSystemTimeline(approval.getCaseId(), "SEAL_APPROVAL_REJECTED",
-                        "公章用印审批已驳回：" + comments);
+                        "驳回了公章用印审批：" + comments, approverId);
             }
         }
         if (TYPE_CASE_CLOSURE.equals(approval.getApprovalType())) {
@@ -306,6 +340,11 @@ public class ApprovalService {
         approvalRepository.save(approval);
 
         if (TYPE_SEAL.equals(approval.getApprovalType())) {
+            if (lawFirmLetterRepository.findByApprovalIdAndDeletedFalse(approvalId).isPresent()) {
+                eventPublisher.publishEvent(new SealApprovalDecisionEvent(
+                        approvalId, ApprovalStatus.WITHDRAWN.getCode(), null,
+                        applicantId, LocalDateTime.now(), "申请人撤回"));
+            }
             sealAttachmentService.markDecision(
                     approvalId,
                     ApprovalStatus.WITHDRAWN.getCode(),
@@ -315,7 +354,7 @@ public class ApprovalService {
                 caseTimelineService.createSystemTimeline(
                         approval.getCaseId(),
                         "SEAL_APPROVAL_WITHDRAWN",
-                        "公章用印申请已由申请人撤回：" + approval.getTitle());
+                        "撤回了公章用印申请：" + approval.getTitle(), applicantId);
             }
         }
         if (TYPE_CASE_CLOSURE.equals(approval.getApprovalType())) {
@@ -518,7 +557,8 @@ public class ApprovalService {
         caseTimelineService.createSystemTimeline(
                 caseEntity.getId(),
                 "CASE_FILING_ADMIN_APPROVED",
-                "行政管理已完成立案初审：" + (comments == null ? "" : comments)
+                "完成了立案行政初审：" + (comments == null ? "" : comments),
+                approverId
         );
 
         Long directorId = userPermissionService.findFirstActiveUserByPermission(
@@ -576,7 +616,8 @@ public class ApprovalService {
         caseTimelineService.createSystemTimeline(
                 caseEntity.getId(),
                 "CASE_FILING_APPROVED",
-                "立案审批已通过，案卷文件夹已建立：" + folderPath
+                "通过了立案终审，案卷文件夹已建立：" + folderPath,
+                approverId
         );
         notifyApplicant(
                 approval,
@@ -694,7 +735,8 @@ public class ApprovalService {
         caseTimelineService.createSystemTimeline(
                 caseEntity.getId(),
                 "CASE_FILING_REJECTED",
-                getUserName(approverId) + "驳回立案申请：" + comments.trim()
+                "驳回了立案申请：" + comments.trim(),
+                approverId
         );
     }
 
@@ -830,6 +872,16 @@ public class ApprovalService {
         dto.setStatusDesc(getStatusDesc(approval.getStatus()));
         if (TYPE_SEAL.equals(approval.getApprovalType())) {
             dto.setSealAttachments(sealAttachmentService.list(approval.getId()));
+            lawFirmLetterRepository.findByApprovalIdAndDeletedFalse(approval.getId()).ifPresent(letter -> {
+                dto.setLawFirmLetter(true);
+                dto.setLawFirmLetterId(letter.getId());
+                dto.setLawFirmLetterNumber(letter.getLetterNumber());
+                int year = approval.getApprovedTime() == null
+                        ? LocalDateTime.now().getYear() : approval.getApprovedTime().getYear();
+                dto.setLetterSequenceRequiresInitialNumber(
+                        lawFirmLetterSequenceRepository.findByLetterYearAndLetterTypeCode(
+                                year, letter.getLetterTypeCode()).isEmpty());
+            });
         }
         if (TYPE_CASE_CLOSURE.equals(approval.getApprovalType())) {
             dto.setClosureRequest(caseClosureService.getByApprovalId(approval.getId()));

@@ -2,7 +2,9 @@ package com.lawfirm.service;
 
 import com.lawfirm.dto.CaseTimelineDTO;
 import com.lawfirm.entity.CaseTimeline;
+import com.lawfirm.entity.User;
 import com.lawfirm.repository.CaseTimelineRepository;
+import com.lawfirm.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -10,6 +12,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -21,6 +26,7 @@ import java.util.stream.Collectors;
 public class CaseTimelineService {
 
     private final CaseTimelineRepository caseTimelineRepository;
+    private final UserRepository userRepository;
 
     /**
      * 创建案件动态
@@ -45,11 +51,18 @@ public class CaseTimelineService {
      * 创建系统自动动态
      */
     public CaseTimeline createSystemTimeline(Long caseId, String actionType, String content) {
+        return createSystemTimeline(caseId, actionType, content, 0L);
+    }
+
+    /**
+     * 创建带实际操作账号的案件日志。
+     */
+    public CaseTimeline createSystemTimeline(Long caseId, String actionType, String content, Long operatorId) {
         CaseTimeline timeline = new CaseTimeline();
         timeline.setCaseId(caseId);
         timeline.setActionType(actionType);
         timeline.setActionContent(content);
-        timeline.setOperatorId(0L); // 系统操作
+        timeline.setOperatorId(operatorId == null ? 0L : operatorId);
         timeline.setIsComment(false);
         return caseTimelineRepository.save(timeline);
     }
@@ -89,28 +102,28 @@ public class CaseTimelineService {
      * 根据案件ID查询所有动态
      */
     public List<CaseTimeline> getByCaseId(Long caseId) {
-        return caseTimelineRepository.findByCaseIdAndDeletedFalseOrderByCreatedAtDesc(caseId);
+        return enrichOperators(caseTimelineRepository.findByCaseIdAndDeletedFalseOrderByCreatedAtDesc(caseId));
     }
 
     /**
      * 根据案件ID查询评论
      */
     public List<CaseTimeline> getCommentsByCaseId(Long caseId) {
-        return caseTimelineRepository.findByCaseIdAndIsCommentTrueAndDeletedFalseOrderByCreatedAtDesc(caseId);
+        return enrichOperators(caseTimelineRepository.findByCaseIdAndIsCommentTrueAndDeletedFalseOrderByCreatedAtDesc(caseId));
     }
 
     /**
      * 根据案件ID查询非评论动态
      */
     public List<CaseTimeline> getSystemTimelineByCaseId(Long caseId) {
-        return caseTimelineRepository.findByCaseIdAndIsCommentFalseAndDeletedFalseOrderByCreatedAtDesc(caseId);
+        return enrichOperators(caseTimelineRepository.findByCaseIdAndIsCommentFalseAndDeletedFalseOrderByCreatedAtDesc(caseId));
     }
 
     /**
      * 查询评论的回复
      */
     public List<CaseTimeline> getReplies(Long parentId) {
-        return caseTimelineRepository.findByParentIdAndDeletedFalseOrderByCreatedAtAsc(parentId);
+        return enrichOperators(caseTimelineRepository.findByParentIdAndDeletedFalseOrderByCreatedAtAsc(parentId));
     }
 
     /**
@@ -125,5 +138,27 @@ public class CaseTimelineService {
      */
     public long countTimelines(Long caseId) {
         return caseTimelineRepository.countByCaseId(caseId);
+    }
+
+    private List<CaseTimeline> enrichOperators(List<CaseTimeline> timelines) {
+        List<Long> userIds = timelines.stream()
+                .map(CaseTimeline::getOperatorId)
+                .filter(Objects::nonNull)
+                .filter(id -> id > 0)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<Long, User> users = userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+        timelines.forEach(item -> {
+            if (item.getOperatorId() == null || item.getOperatorId() == 0L) {
+                item.setOperatorName("系统");
+                return;
+            }
+            User user = users.get(item.getOperatorId());
+            item.setOperatorName(user == null
+                    ? "已停用账号（ID " + item.getOperatorId() + "）"
+                    : user.getRealName() + "（" + user.getUsername() + "）");
+        });
+        return timelines;
     }
 }

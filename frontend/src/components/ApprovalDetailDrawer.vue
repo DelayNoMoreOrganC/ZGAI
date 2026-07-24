@@ -85,6 +85,18 @@
 
         <div v-if="selectedApproval.approvalType === 'SEAL'" class="seal-files-section">
           <h3>待用印文件</h3>
+          <el-descriptions v-if="selectedApproval.lawFirmLetter" :column="1" border class="letter-approval-meta">
+            <el-descriptions-item label="文件类型">律所所函</el-descriptions-item>
+            <el-descriptions-item label="所函编号">
+              {{ selectedApproval.lawFirmLetterNumber || '审批通过后自动编号' }}
+            </el-descriptions-item>
+          </el-descriptions>
+          <el-alert
+            v-if="selectedApproval.lawFirmLetter && selectedApproval.letterSequenceRequiresInitialNumber"
+            type="warning"
+            :closable="false"
+            title="该年度和函种尚未启用编号，同意用印时请设置首次流水号。"
+          />
           <div
             v-for="attachment in selectedApproval.sealAttachments || []"
             :key="attachment.id"
@@ -95,7 +107,7 @@
               <strong>{{ attachment.originalFileName }}</strong>
               <span>
                 {{ formatFileSize(attachment.fileSize) }} ·
-                {{ attachment.sourceType === 'CASE_DOCUMENT' ? '案件文件' : '申请人上传' }}
+                {{ attachment.sourceType === 'CASE_DOCUMENT' ? '案件文件' : attachment.sourceType === 'GENERATED_LETTER' ? '系统生成所函' : '申请人上传' }}
               </span>
             </div>
             <div class="seal-file-actions">
@@ -604,6 +616,22 @@ const handleApprove = async (approval) => {
     return
   }
   try {
+    let initialLetterSerial
+    if (approval.lawFirmLetter && approval.letterSequenceRequiresInitialNumber) {
+      const serialResult = await ElMessageBox.prompt(
+        '这是该年度、该函种的首次编号。请输入本次所函使用的流水号，后续审批将自动递增。',
+        '设置首次所函编号',
+        {
+          confirmButtonText: '确认流水号',
+          cancelButtonText: '取消',
+          inputPlaceholder: '例如：1',
+          inputPattern: /^(?:[1-9]\d{0,5})$/,
+          inputErrorMessage: '请输入1至999999之间的整数',
+          inputType: 'number'
+        }
+      )
+      initialLetterSerial = Number(serialResult.value)
+    }
     const { value } = await ElMessageBox.prompt(
       isCaseFilingApproval(approval)
         ? '请填写利冲审查结论或立案审批意见'
@@ -626,7 +654,7 @@ const handleApprove = async (approval) => {
         type: 'success'
       }
     )
-    const response = await approveApproval(approval.id, { comments: value || '' })
+    const response = await approveApproval(approval.id, { comments: value || '', initialLetterSerial })
     if (isSuccessResponse(response)) {
       ElMessage.success(isCaseFilingApproval(approval)
         ? '立案审批已通过'

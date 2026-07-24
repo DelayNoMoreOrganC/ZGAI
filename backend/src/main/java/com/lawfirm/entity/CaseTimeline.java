@@ -43,4 +43,7 @@ public class CaseTimeline extends LogicalDeleteEntity {
 
     @Column
     private String mentions;
+
+    @Transient
+    private String operatorName;
 }

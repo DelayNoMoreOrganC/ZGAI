@@ -44,6 +44,8 @@ Thumbs.db
 *.h2.db
 data/
 backend/backups/
+# 真实业务导入前后快照、密钥和差异清单仅保留在本机
+backups/
 
 # === 环境配置 ===
 .env

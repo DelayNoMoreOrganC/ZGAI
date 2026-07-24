@@ -134,7 +134,7 @@ public class CaseClosureService {
                 approval.getId(),
                 "APPROVAL_PENDING");
         caseTimelineService.createSystemTimeline(caseId, "CASE_CLOSURE_REQUESTED",
-                "已提交行政结案复核，当前审批人：" + userName(reviewerId));
+                "提交了行政结案复核，当前审批人：" + userName(reviewerId), applicantId);
         return toDTO(closure);
     }
 
@@ -178,7 +178,7 @@ public class CaseClosureService {
         caseEntity.setCloseDate(reviewedAt.toLocalDate());
         caseRepository.save(caseEntity);
         caseTimelineService.createSystemTimeline(caseEntity.getId(), "CASE_CLOSED",
-                "行政结案复核通过，案件已结案。结案方式：" + label(CLOSURE_TYPES, closure.getClosureType()));
+                "通过行政结案复核，案件已结案。结案方式：" + label(CLOSURE_TYPES, closure.getClosureType()), reviewerId);
     }
 
     @Transactional
@@ -194,7 +194,7 @@ public class CaseClosureService {
         closureRequestRepository.save(closure);
         completeReviewTodo(closure, reviewedAt);
         caseTimelineService.createSystemTimeline(closure.getCaseId(), "CASE_CLOSURE_REJECTED",
-                "行政驳回结案申请：" + comments.trim());
+                "驳回了结案申请：" + comments.trim(), reviewerId);
     }
 
     @Transactional
@@ -206,7 +206,7 @@ public class CaseClosureService {
         closure.setStatus("WITHDRAWN");
         closureRequestRepository.save(closure);
         completeReviewTodo(closure, LocalDateTime.now());
-        caseTimelineService.createSystemTimeline(closure.getCaseId(), "CASE_CLOSURE_WITHDRAWN", "申请人撤回结案申请");
+        caseTimelineService.createSystemTimeline(closure.getCaseId(), "CASE_CLOSURE_WITHDRAWN", "撤回了结案申请", applicantId);
     }
 
     private void requireActiveAtFinalStage(Case caseEntity) {

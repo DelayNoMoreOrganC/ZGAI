@@ -1,10 +1,20 @@
 <template>
   <div class="case-timeline">
+    <div class="log-toolbar">
+      <div>
+        <h3>案件日志</h3>
+        <p>记录账号对案件阶段、文档、审批和所函等事项的操作。</p>
+      </div>
+      <el-button :disabled="!timelineData.length" @click="exportLogs">
+        <el-icon><Download /></el-icon>
+        导出日志
+      </el-button>
+    </div>
     <!-- 分类Tab -->
-    <el-tabs v-model="activeTab" @tab-change="handleTabChange">
-      <el-tab-pane label="全部" name="all" />
-      <el-tab-pane label="动态" name="activity" />
-      <el-tab-pane label="评论" name="comment" />
+    <el-tabs v-model="activeTab">
+      <el-tab-pane label="全部日志" name="all" />
+      <el-tab-pane label="操作记录" name="activity" />
+      <el-tab-pane label="评论记录" name="comment" />
     </el-tabs>
 
     <!-- 评论输入区 -->
@@ -57,7 +67,7 @@
           :size="item.type === 'comment' ? 'large' : 'normal'"
         >
           <div class="timeline-card" :class="`type-${item.type}`">
-            <!-- 动态类型 -->
+            <!-- 操作日志 -->
             <div v-if="item.type === 'activity'" class="activity-item">
               <div class="activity-header">
                 <div class="activity-user">
@@ -65,18 +75,10 @@
                     {{ item.userName?.charAt(0) }}
                   </el-avatar>
                   <div class="user-info">
-                    <div class="user-name">{{ item.userName }}</div>
-                    <div class="action-text">{{ item.action }}</div>
+                    <div class="action-text"><strong>{{ item.userName }}</strong> {{ item.action }}</div>
                   </div>
                 </div>
                 <div class="activity-time">{{ item.timestamp }}</div>
-              </div>
-
-              <div v-if="item.details" class="activity-details">
-                <div v-for="(detail, index) in item.details" :key="index" class="detail-item">
-                  <span class="detail-label">{{ detail.label }}：</span>
-                  <span class="detail-value">{{ detail.value }}</span>
-                </div>
               </div>
             </div>
 
@@ -166,7 +168,7 @@
       </el-timeline>
 
       <div v-if="filteredTimeline.length === 0" class="empty-state">
-        <el-empty description="暂无动态" />
+        <el-empty description="暂无案件日志" />
       </div>
     </div>
 
@@ -189,7 +191,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Promotion } from '@element-plus/icons-vue'
+import { Download, Promotion } from '@element-plus/icons-vue'
 import { getCaseTimeline, createTimelineComment, deleteTimelineComment } from '@/api/case'
 import { useUserStore } from '@/stores/user'
 
@@ -249,11 +251,6 @@ const canEdit = (item) => {
 // 判断是否可以删除
 const canDelete = (item) => {
   return item.userId === currentUserId.value
-}
-
-// Tab切换
-const handleTabChange = (tab) => {
-  // removed debug log
 }
 
 // 切换@提及面板
@@ -371,7 +368,7 @@ const fetchTimeline = async () => {
     const res = await getCaseTimeline(caseId.value)
     timelineData.value = (res.data || []).map(normalizeTimelineItem)
   } catch (error) {
-    console.error('获取案件动态失败:', error)
+    console.error('获取案件日志失败:', error)
   } finally {
     loading.value = false
   }
@@ -397,12 +394,30 @@ const normalizeTimelineItem = (item) => {
     userAvatar: item.userAvatar || '',
     action: item.actionContent || item.action || item.actionType || '更新了案件',
     content: item.actionContent || item.content || '',
-    details: isComment
-      ? []
-      : [{ label: '类型', value: item.actionType || '案件动态' }],
     mentions: item.mentions || [],
     replies: item.replies || []
   }
+}
+
+const csvCell = value => `"${String(value ?? '').replace(/"/g, '""')}"`
+const exportLogs = () => {
+  const rows = [
+    ['时间', '账号', '操作'],
+    ...timelineData.value.map(item => [
+      item.timestamp,
+      item.userName,
+      item.type === 'comment' ? `发表案件评论：${item.content}` : item.action
+    ])
+  ]
+  const content = `\uFEFF${rows.map(row => row.map(csvCell).join(',')).join('\r\n')}`
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  const caseLabel = props.caseData.caseNumber || props.caseData.id || '案件'
+  link.download = `案件日志_${caseLabel}_${new Date().toISOString().slice(0, 10).replaceAll('-', '')}.csv`
+  link.click()
+  URL.revokeObjectURL(link.href)
+  ElMessage.success('案件日志已导出')
 }
 
 watch(caseId, () => {
@@ -413,6 +428,17 @@ watch(caseId, () => {
 <style scoped lang="scss">
 .case-timeline {
   padding: 30px;
+
+  .log-toolbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 8px;
+
+    h3 { margin: 0; color: #1d1d1f; }
+    p { margin: 5px 0 0; color: #6e6e73; font-size: 13px; }
+  }
 
   .comment-input-section {
     background-color: #f5f7fa;

@@ -528,3 +528,48 @@ CREATE INDEX IF NOT EXISTS idx_case_closure_document_request ON case_closure_doc
 
 -- Structured filing, seal and closure reviews can exceed the legacy VARCHAR(255) limit.
 ALTER TABLE approval ALTER COLUMN content TYPE TEXT;
+
+CREATE TABLE IF NOT EXISTS law_firm_letter (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    case_id BIGINT NOT NULL,
+    recipient VARCHAR(300) NOT NULL,
+    client_name VARCHAR(500) NOT NULL,
+    lawyer_names VARCHAR(1000) NOT NULL,
+    opposing_party VARCHAR(1000) NOT NULL,
+    case_reason VARCHAR(500) NOT NULL,
+    letter_type_code VARCHAR(10) NOT NULL,
+    lawyer_contacts VARCHAR(1000) NOT NULL,
+    closing_text VARCHAR(100) NOT NULL DEFAULT '特此函告！',
+    issue_date DATE NOT NULL,
+    serial_no INTEGER,
+    letter_number VARCHAR(100),
+    status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
+    approval_id BIGINT,
+    final_document_id BIGINT,
+    draft_sha256 VARCHAR(64),
+    final_sha256 VARCHAR(64),
+    created_by BIGINT NOT NULL,
+    updated_by BIGINT NOT NULL,
+    submitted_at TIMESTAMP,
+    approved_at TIMESTAMP,
+    rejected_reason VARCHAR(2000),
+    lock_version BIGINT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_law_firm_letter_case ON law_firm_letter(case_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_law_firm_letter_approval ON law_firm_letter(approval_id) WHERE approval_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_law_firm_letter_status ON law_firm_letter(status);
+
+CREATE TABLE IF NOT EXISTS law_firm_letter_sequence (
+    id BIGSERIAL PRIMARY KEY,
+    letter_year INTEGER NOT NULL,
+    letter_type_code VARCHAR(10) NOT NULL,
+    last_serial INTEGER NOT NULL,
+    initialized_by BIGINT NOT NULL,
+    initialized_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    lock_version BIGINT NOT NULL DEFAULT 0,
+    CONSTRAINT uk_law_firm_letter_sequence UNIQUE(letter_year, letter_type_code)
+);

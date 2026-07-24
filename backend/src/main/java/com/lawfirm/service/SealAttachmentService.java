@@ -12,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -19,6 +21,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -67,6 +70,69 @@ public class SealAttachmentService {
         } catch (Exception e) {
             try { Files.deleteIfExists(target); } catch (Exception ignored) { }
             throw new IllegalStateException("用印文件保存失败", e);
+        }
+    }
+
+    @Transactional
+    public ApprovalAttachmentDTO attachGenerated(Long approvalId, byte[] content, String originalName, Long userId) {
+        if (content == null || content.length == 0) {
+            throw new InvalidParameterException("file", "生成的用印文件不能为空");
+        }
+        if (content.length > MAX_FILE_SIZE) {
+            throw new InvalidParameterException("file", "生成的用印文件不能超过50MB");
+        }
+        Path root = Paths.get(approvalFileRoot).toAbsolutePath().normalize();
+        Path target = root.resolve(String.valueOf(approvalId))
+                .resolve(UUID.randomUUID() + "_" + safeFileName(originalName)).normalize();
+        ensureInside(root, target);
+        try {
+            Files.createDirectories(target.getParent());
+            Files.write(target, content);
+            registerRollbackDelete(target);
+            ApprovalAttachment attachment = new ApprovalAttachment();
+            attachment.setApprovalId(approvalId);
+            attachment.setOriginalFileName(originalName);
+            attachment.setFilePath(target.toString());
+            attachment.setFileSize((long) content.length);
+            attachment.setMimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+            attachment.setContentSha256(sha256(target));
+            attachment.setSourceType("GENERATED_LETTER");
+            attachment.setUploadedBy(userId);
+            return toDTO(attachmentRepository.save(attachment));
+        } catch (RuntimeException e) {
+            try { Files.deleteIfExists(target); } catch (Exception ignored) { }
+            throw e;
+        } catch (Exception e) {
+            try { Files.deleteIfExists(target); } catch (Exception ignored) { }
+            throw new IllegalStateException("生成的用印文件保存失败", e);
+        }
+    }
+
+    @Transactional
+    public ApprovalAttachmentDTO replaceGenerated(Long approvalId, byte[] content, String originalName) {
+        ApprovalAttachment attachment = attachmentRepository.findByApprovalIdAndDeletedFalseOrderByIdAsc(approvalId).stream()
+                .filter(item -> "GENERATED_LETTER".equals(item.getSourceType()))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("律所所函用印附件", approvalId));
+        Path root = Paths.get(approvalFileRoot).toAbsolutePath().normalize();
+        Path target = Paths.get(attachment.getFilePath()).toAbsolutePath().normalize();
+        ensureInside(root, target);
+        Path backup = target.resolveSibling(target.getFileName() + ".rollback-" + UUID.randomUUID());
+        ensureInside(root, backup);
+        try {
+            Files.copy(target, backup, StandardCopyOption.REPLACE_EXISTING);
+            Files.write(target, content);
+            registerRollbackRestore(target, backup);
+            attachment.setOriginalFileName(originalName);
+            attachment.setFileSize((long) content.length);
+            attachment.setContentSha256(sha256(target));
+            attachment.setMimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+            return toDTO(attachmentRepository.save(attachment));
+        } catch (Exception e) {
+            try {
+                if (Files.exists(backup)) Files.move(backup, target, StandardCopyOption.REPLACE_EXISTING);
+            } catch (Exception ignored) { }
+            throw new IllegalStateException("更新正式律所所函失败", e);
         }
     }
 
@@ -153,6 +219,37 @@ public class SealAttachmentService {
     private String safeFileName(String value) { return value.replaceAll("[\\\\/:*?\"<>|\\s]+", "_"); }
     private void ensureInside(Path root, Path path) {
         if (!path.startsWith(root)) throw new IllegalStateException("用印附件路径越界");
+    }
+
+    private void registerRollbackDelete(Path path) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) return;
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
+                    try { Files.deleteIfExists(path); } catch (Exception ignored) { }
+                }
+            }
+        });
+    }
+
+    private void registerRollbackRestore(Path target, Path backup) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            try { Files.deleteIfExists(backup); } catch (Exception ignored) { }
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                try {
+                    if (status == TransactionSynchronization.STATUS_ROLLED_BACK && Files.exists(backup)) {
+                        Files.move(backup, target, StandardCopyOption.REPLACE_EXISTING);
+                    } else {
+                        Files.deleteIfExists(backup);
+                    }
+                } catch (Exception ignored) { }
+            }
+        });
     }
     private String sha256(Path path) {
         try (InputStream input = Files.newInputStream(path)) {
