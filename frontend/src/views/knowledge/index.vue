@@ -159,6 +159,7 @@
                     {{ formatIndexStatus(article.indexStatus) }}
                   </el-tag>
                   <el-tag v-if="article.reviewStatus === 'PENDING_REVIEW'" size="small" type="warning">待审核</el-tag>
+                  <el-tag v-if="article.reviewStatus === 'REJECTED'" size="small" type="danger">已驳回</el-tag>
                   <el-tag
                     v-if="article.knowledgeSource === 'LAW_REGULATION'"
                     size="small"
@@ -222,6 +223,14 @@
       @closed="resetImportForm"
     >
       <el-form label-position="top">
+        <el-alert
+          v-if="!canManageKnowledge"
+          class="authorization-alert"
+          title="导入后将提交知识管理员审核，审核通过后才会向全所发布并进入 AI 检索。"
+          type="info"
+          :closable="false"
+          show-icon
+        />
         <el-form-item label="知识来源" required>
           <el-select v-model="importForm.knowledgeSource" style="width: 100%;">
             <el-option label="法律法规" value="LAW_REGULATION" />
@@ -304,16 +313,16 @@
             v-if="importForm.knowledgeSource === 'REFERENCE_MATERIAL'"
             v-model="importForm.authorizationConfirmed"
           >已确认具备内部使用授权</el-checkbox>
-          <el-checkbox v-model="importForm.isPublic">全所可见</el-checkbox>
+          <el-checkbox v-model="importForm.isPublic" :disabled="!canManageKnowledge">全所可见</el-checkbox>
           <el-checkbox
             v-model="importForm.knowledgeEligible"
-            :disabled="!importForm.isPublic || (importForm.knowledgeSource === 'REFERENCE_MATERIAL' && !importForm.authorizationConfirmed)"
+            :disabled="!canManageKnowledge || !importForm.isPublic || (importForm.knowledgeSource === 'REFERENCE_MATERIAL' && !importForm.authorizationConfirmed)"
           >进入 AI 知识检索</el-checkbox>
         </div>
       </el-form>
       <template #footer>
         <el-button @click="importDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="importing" @click="submitImport">导入</el-button>
+        <el-button type="primary" :loading="importing" @click="submitImport">{{ canManageKnowledge ? '导入' : '提交审核' }}</el-button>
       </template>
     </el-dialog>
 
@@ -388,7 +397,7 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Document, Tickets, Reading, DocumentChecked, Collection,
@@ -404,6 +413,7 @@ import {
 import { useUserStore } from '@/stores'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 const canManageKnowledge = computed(() => userStore.hasPermission('KNOWLEDGE_MANAGE'))
 
@@ -629,11 +639,12 @@ const submitImport = async () => {
       if (value) data.append(key, value)
     })
     await importKnowledgeDocument(data)
-    const requiresReview = ['LAW_REGULATION', 'FIRM_POLICY', 'REFERENCE_MATERIAL'].includes(importForm.value.knowledgeSource)
+    const requiresReview = !canManageKnowledge.value || ['LAW_REGULATION', 'FIRM_POLICY', 'REFERENCE_MATERIAL'].includes(importForm.value.knowledgeSource)
     ElMessage.success(requiresReview ? '文档已提交审核，可在“我的文章”查看' : '知识文档导入成功')
     importDialogVisible.value = false
     currentPage.value = 1
-    await Promise.all([loadArticles(), loadTopArticles()])
+    if (requiresReview) await loadMyArticles()
+    else await Promise.all([loadArticles(), loadTopArticles()])
   } catch (error) {
     console.error('导入知识文档失败:', error)
   } finally {
@@ -842,7 +853,8 @@ const formatDate = (date) => {
 
 onMounted(() => {
   loadTopArticles()
-  loadArticles()
+  if (route.query.view === 'mine') loadMyArticles()
+  else loadArticles()
 })
 </script>
 

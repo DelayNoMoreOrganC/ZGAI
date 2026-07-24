@@ -26,7 +26,7 @@ ZGAI 是面向律所内部真实使用的案件、客户、审批、案卷、财
 - 审批通过后建立一案一档，案件文件存入本机或 NAS，数据库保存元数据和版本。
 - 顾问案件文件页提供法律意见书快捷上传，继续沿用案件权限、标准目录和版本管理。
 - 发票申请、申请人修改/删除、财务反馈文件和完成锁定。
-- 法规、律所制度、公共模板和经授权参考资料知识库；法规/制度导入具有独立待审核队列、单次结论锁定、状态回写与审核后索引，受监管来源修改后自动重新送审；未配置向量服务时明确降级为关键词检索。
+- 法规、律所制度、公共模板和经授权参考资料知识库；普通员工新建、修改或导入后强制进入待审，知识管理员批准或填写驳回理由，结果在事务提交后通知投稿人；案件沉淀不得进入共享 RAG，未配置向量服务时明确降级为关键词检索。
 - RAG 评价支持知识管理员单条维护、动态 Excel 模板下载、逐行预检、原子批量导入、Top-3/禁止文档指标留痕；模板文档清单不包含知识正文，普通律师不能访问评价管理接口。
 - 元典法规/案例语义检索、法律引证核验和逐条导入知识库；需要单独配置开放平台 API Key。
 - LM Studio 局域网模型接入；可由 Qwen 等 OpenAI 兼容模型完成问答、RAG 回答和文书草稿生成。
@@ -202,7 +202,7 @@ cd backend
 JAVA_HOME=/opt/homebrew/opt/openjdk@11 /opt/homebrew/opt/maven/bin/mvn test
 ```
 
-当前基线：331 项测试通过（2026-07-24 全量复验）。必须使用 JDK 11；本机默认较新 JDK 可能在 Lombok 测试编译阶段失败。
+当前基线：335 项测试通过（2026-07-24 全量复验）。必须使用 JDK 11；本机默认较新 JDK 可能在 Lombok 测试编译阶段失败。
 
 完整员工档案接口 `GET /api/users`、`GET /api/users/{id}` 需要 `USER_VIEW`。案件主办、案源人、审批人和日程参与人等业务选择器统一调用 `GET /api/users/options`，只返回在职人员的 ID、姓名、部门和身份类别，不返回账号、电话、邮箱、角色或登录信息。
 
@@ -276,6 +276,17 @@ ZGAI_DIRECTOR_USERNAME="$DIRECTOR_USER" ZGAI_DIRECTOR_PASSWORD="$DIRECTOR_PASSWO
 ZGAI_LAWYER_USERNAME="$LAWYER_USER" ZGAI_LAWYER_PASSWORD="$LAWYER_PASSWORD" \
 ZGAI_RAG_IMPORT_WORKBOOK=/absolute/path/to/evaluation.xlsx \
 npm run test:e2e:rag -- --project=desktop-chrome
+```
+
+知识投稿审核用例使用普通律师、财务和主任三类隔离账号，验证待审隐藏、越权 403、批准、驳回理由和站内通知：
+
+```bash
+RUN_KNOWLEDGE_REVIEW_E2E=CONFIRMED \
+ZGAI_E2E_FRONTEND_URL=http://127.0.0.1:3018 \
+ZGAI_DIRECTOR_USERNAME="$DIRECTOR_USER" ZGAI_DIRECTOR_PASSWORD="$DIRECTOR_PASSWORD" \
+ZGAI_LAWYER_USERNAME="$LAWYER_USER" ZGAI_LAWYER_PASSWORD="$LAWYER_PASSWORD" \
+ZGAI_FINANCE_USERNAME="$FINANCE_USER" ZGAI_FINANCE_PASSWORD="$FINANCE_PASSWORD" \
+npm run test:e2e:knowledge-review
 ```
 
 `scripts/setup-e2e-personas.sh` 可在全新隔离库中幂等创建/校准四类虚构账号，要求 `ZGAI_E2E_ENVIRONMENT=ISOLATED` 和显式确认值 `PROVISION_PERSONAS`。当前基线为四角色桌面/手机共 8 项、民事“客户 → 立案 → AI 阶段确认/开庭日程/待办/动态 → 中文图片 OCR → 确认归案 → 快速用印 → 发票闭环 → 最终阶段 → 结构化结案申请 → 行政结案复核 → 律师归档核对 → 行政归档复核 → 电子卷宗下载”写入闭环 1 项，以及“顾问单位 → 顾问立案 → 两级审批 → 法律意见书 → 快速用印”写入闭环 1 项通过；同时验证缺失字段只澄清不落库、阶段跳级拒绝、合法阶段二次确认、财务 AI/案件文件/归档写入拒绝、模型离线本地降级、暂存件所有权、文件 SHA-256、页守恒和成功后案件锁定。安装 Playwright 后 `npm audit` 仍报告 4 个中等和 5 个高危依赖问题，需单独评估升级，不应在业务回归提交中盲目执行破坏性 `npm audit fix --force`。

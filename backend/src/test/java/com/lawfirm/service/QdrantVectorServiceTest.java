@@ -14,10 +14,12 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -75,6 +77,12 @@ class QdrantVectorServiceTest {
         }));
 
         service.initializeCollection();
+        service.insertPoint(1L, List.of(0.1, 0.2, 0.3), new JsonObject());
+        service.insertPointsBatch(List.of(new QdrantVectorService.VectorPoint(
+                1L, List.of(0.1, 0.2, 0.3), new JsonObject())));
+        assertTrue(service.search(List.of(0.1, 0.2, 0.3), 3, 0.5).isEmpty());
+        service.deletePoint(1L);
+        assertNull(service.getCollectionInfo());
         Map<String, Object> status = service.healthStatus();
 
         assertEquals("disabled", status.get("status"));

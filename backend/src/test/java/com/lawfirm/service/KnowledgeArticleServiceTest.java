@@ -82,6 +82,47 @@ class KnowledgeArticleServiceTest {
     }
 
     @Test
+    void ordinaryContributorFirmKnowledgeAlwaysEntersReviewQueue() {
+        when(securityUtils.getCurrentUserId()).thenReturn(12L);
+        when(securityUtils.hasAuthority("KNOWLEDGE_MANAGE")).thenReturn(false);
+        when(userRepository.findById(12L)).thenReturn(Optional.of(user(12L, "律师账号", "张律师")));
+        doAnswer(invocation -> {
+            ((KnowledgeArticle) invocation.getArgument(0)).setId(34L);
+            return 1;
+        }).when(articleMapper).insert(any(KnowledgeArticle.class));
+
+        service.createArticle(dto("FIRM_KNOWLEDGE", true));
+
+        ArgumentCaptor<KnowledgeArticle> captor = ArgumentCaptor.forClass(KnowledgeArticle.class);
+        verify(articleMapper).insert(captor.capture());
+        KnowledgeArticle submitted = captor.getValue();
+        assertEquals("PENDING_REVIEW", submitted.getReviewStatus());
+        assertFalse(submitted.getIsPublic());
+        assertFalse(submitted.getKnowledgeEligible());
+        assertEquals("FORBIDDEN", submitted.getIndexStatus());
+    }
+
+    @Test
+    void knowledgeManagerCanPublishUnregulatedFirmKnowledgeDirectly() {
+        when(securityUtils.getCurrentUserId()).thenReturn(15L);
+        when(securityUtils.hasAuthority("KNOWLEDGE_MANAGE")).thenReturn(true);
+        when(userRepository.findById(15L)).thenReturn(Optional.of(user(15L, "知识管理员", "审核主任")));
+        doAnswer(invocation -> {
+            ((KnowledgeArticle) invocation.getArgument(0)).setId(35L);
+            return 1;
+        }).when(articleMapper).insert(any(KnowledgeArticle.class));
+
+        service.createArticle(dto("FIRM_KNOWLEDGE", true));
+
+        ArgumentCaptor<KnowledgeArticle> captor = ArgumentCaptor.forClass(KnowledgeArticle.class);
+        verify(articleMapper).insert(captor.capture());
+        KnowledgeArticle published = captor.getValue();
+        assertEquals("APPROVED", published.getReviewStatus());
+        assertEquals(true, published.getIsPublic());
+        assertEquals(true, published.getKnowledgeEligible());
+    }
+
+    @Test
     void unknownKnowledgeSourceIsRejected() {
         assertThrows(RuntimeException.class, () -> service.createArticle(dto("PRIVATE_CASE_FILE", true)));
         verify(articleMapper, never()).insert(any(KnowledgeArticle.class));

@@ -29,6 +29,7 @@ class KnowledgeImportServiceTest {
     private KnowledgeImportItemRepository items;
     private KnowledgeArticleRepository articles;
     private VectorMigrationService vectorMigrationService;
+    private NotificationService notificationService;
     private LocalDocumentTextService documentTextService;
     private KnowledgeImportService service;
 
@@ -38,10 +39,11 @@ class KnowledgeImportServiceTest {
         items = mock(KnowledgeImportItemRepository.class);
         articles = mock(KnowledgeArticleRepository.class);
         vectorMigrationService = mock(VectorMigrationService.class);
+        notificationService = mock(NotificationService.class);
         documentTextService = mock(LocalDocumentTextService.class);
         service = new KnowledgeImportService(batches, items, articles,
                 mock(UserRepository.class), vectorMigrationService,
-                documentTextService, new ObjectMapper());
+                notificationService, documentTextService, new ObjectMapper());
         ReflectionTestUtils.setField(service, "policySourceRoot", tempDir.toString());
         ReflectionTestUtils.setField(service, "stagingRoot", tempDir.resolve("stage").toString());
         ReflectionTestUtils.setField(service, "libraryRoot", tempDir.resolve("library").toString());
@@ -199,6 +201,60 @@ class KnowledgeImportServiceTest {
         assertEquals("APPROVED", batch.getStatus());
         verify(vectorMigrationService).indexNewArticle(article);
         assertThrows(IllegalArgumentException.class, () -> service.review(31L, request, 5L));
+    }
+
+    @Test
+    void approvingCaseDepositNeverPublishesOrIndexesItAndNotifiesAuthor() {
+        KnowledgeArticle article = new KnowledgeArticle();
+        article.setId(32L);
+        article.setTitle("脱敏不足的案件沉淀");
+        article.setAuthorId(12L);
+        article.setKnowledgeSource("CASE_DEPOSIT");
+        article.setReviewStatus("PENDING_REVIEW");
+        article.setValidityStatus("EFFECTIVE");
+        article.setIsPublic(false);
+        article.setKnowledgeEligible(false);
+        when(articles.findById(32L)).thenReturn(Optional.of(article));
+        when(articles.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(items.findFirstByArticleIdAndDeletedFalse(32L)).thenReturn(Optional.empty());
+        KnowledgeReviewRequest request = new KnowledgeReviewRequest();
+        request.setDecision("APPROVED");
+
+        service.review(32L, request, 5L);
+
+        assertEquals("APPROVED", article.getReviewStatus());
+        assertFalse(article.getIsPublic());
+        assertFalse(article.getKnowledgeEligible());
+        assertEquals("FORBIDDEN", article.getIndexStatus());
+        verify(notificationService).sendNotificationAfterCommit(
+                eq(12L), eq("知识投稿已批准"), contains("保持非公开"),
+                eq(NotificationService.CATEGORY_SYSTEM), eq(32L), eq("KNOWLEDGE_ARTICLE"));
+        verify(vectorMigrationService).deleteArticleIndex(32L);
+        verify(vectorMigrationService, never()).indexNewArticle(any());
+    }
+
+    @Test
+    void rejectionReasonIsSentToContributor() {
+        KnowledgeArticle article = new KnowledgeArticle();
+        article.setId(33L);
+        article.setTitle("待修订模板");
+        article.setAuthorId(13L);
+        article.setKnowledgeSource("PUBLIC_TEMPLATE");
+        article.setReviewStatus("PENDING_REVIEW");
+        article.setValidityStatus("EFFECTIVE");
+        when(articles.findById(33L)).thenReturn(Optional.of(article));
+        when(articles.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(items.findFirstByArticleIdAndDeletedFalse(33L)).thenReturn(Optional.empty());
+        KnowledgeReviewRequest request = new KnowledgeReviewRequest();
+        request.setDecision("REJECTED");
+        request.setReason("请删除客户名称后重新提交");
+
+        service.review(33L, request, 6L);
+
+        verify(notificationService).sendNotificationAfterCommit(
+                eq(13L), eq("知识投稿已驳回"), contains("请删除客户名称后重新提交"),
+                eq(NotificationService.CATEGORY_SYSTEM), eq(33L), eq("KNOWLEDGE_ARTICLE"));
+        verify(vectorMigrationService).deleteArticleIndex(33L);
     }
 
     private KnowledgeImportBatch batch(Long id, String source, String status) {

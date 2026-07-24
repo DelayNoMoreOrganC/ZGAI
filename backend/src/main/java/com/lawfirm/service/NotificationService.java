@@ -10,6 +10,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -115,6 +116,15 @@ public class NotificationService {
 
         notificationRepository.save(notification);
         log.info("通知已发送：userId={}, category={}, title={}", userId, category, title);
+    }
+
+    /**
+     * 供业务事务的 afterCommit 回调使用，避免通知加入已完成的事务而未落库。
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void sendNotificationAfterCommit(Long userId, String title, String content,
+                                            String category, Long relatedId, String relatedType) {
+        sendNotification(userId, title, content, category, relatedId, relatedType);
     }
 
     /**

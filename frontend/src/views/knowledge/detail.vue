@@ -19,6 +19,8 @@
           <el-tag v-if="article.knowledgeEligible === false" type="info">
             不进入AI知识库
           </el-tag>
+          <el-tag v-if="article.reviewStatus === 'PENDING_REVIEW'" type="warning">待审核</el-tag>
+          <el-tag v-if="article.reviewStatus === 'REJECTED'" type="danger">已驳回</el-tag>
           <el-tag
             v-if="article.knowledgeSource === 'LAW_REGULATION'"
             :type="getValidityStatusType(article.validityStatus)"
@@ -53,6 +55,15 @@
           </span>
         </div>
       </div>
+
+      <el-alert
+        v-if="article.reviewStatus === 'REJECTED'"
+        class="review-result"
+        :title="`审核驳回：${article.reviewReason || '请修订后重新提交'}`"
+        type="error"
+        :closable="false"
+        show-icon
+      />
 
       <div class="source-metadata" v-if="hasSourceMetadata">
         <div v-if="article.issuingAuthority"><span>发布机关</span><strong>{{ article.issuingAuthority }}</strong></div>
@@ -134,7 +145,7 @@ const reindexing = ref(false)
 const canEdit = computed(() => {
   if (!article.value) return false
   const user = userStore.userInfo || {}
-  if (user.username === 'admin' || user.position === '主任') return true
+  if (userStore.hasPermission('KNOWLEDGE_MANAGE')) return true
   return Number(article.value.authorId) === Number(user.id)
 })
 

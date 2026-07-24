@@ -3,6 +3,14 @@
     <PageHeader :title="isEdit ? '编辑文章' : '新建文章'" />
 
     <div class="edit-container">
+      <el-alert
+        v-if="requiresReview"
+        class="review-alert"
+        title="本次内容将提交知识管理员审核，审核通过后才会向全所发布并进入 AI 检索。"
+        type="info"
+        :closable="false"
+        show-icon
+      />
       <el-form
         ref="formRef"
         :model="form"
@@ -111,11 +119,11 @@
         </el-form-item>
 
         <el-form-item label="选项">
-          <el-checkbox v-model="form.isTop">置顶显示</el-checkbox>
-          <el-checkbox v-model="form.isPublic">全所可见</el-checkbox>
+          <el-checkbox v-model="form.isTop" :disabled="requiresReview">置顶显示</el-checkbox>
+          <el-checkbox v-model="form.isPublic" :disabled="requiresReview">全所可见</el-checkbox>
           <el-checkbox
             v-model="form.knowledgeEligible"
-            :disabled="!form.isPublic || (form.knowledgeSource === 'REFERENCE_MATERIAL' && !form.authorizationConfirmed)"
+            :disabled="requiresReview || !form.isPublic || (form.knowledgeSource === 'REFERENCE_MATERIAL' && !form.authorizationConfirmed)"
           >
             允许进入 AI 知识库
           </el-checkbox>
@@ -124,7 +132,7 @@
 
         <el-form-item>
           <el-button type="primary" @click="handleSubmit" :loading="submitting">
-            {{ isEdit ? '保存修改' : '发布文章' }}
+            {{ submitLabel }}
           </el-button>
           <el-button @click="handleCancel">取消</el-button>
         </el-form-item>
@@ -139,14 +147,23 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
 import request from '@/utils/request'
+import { useUserStore } from '@/stores'
 
 const router = useRouter()
 const route = useRoute()
+const userStore = useUserStore()
 
 const formRef = ref(null)
 const submitting = ref(false)
 
 const isEdit = computed(() => !!route.params.id)
+const canManageKnowledge = computed(() => userStore.hasPermission('KNOWLEDGE_MANAGE'))
+const regulatedSources = ['LAW_REGULATION', 'FIRM_POLICY', 'REFERENCE_MATERIAL']
+const requiresReview = computed(() => !canManageKnowledge.value || regulatedSources.includes(form.value.knowledgeSource))
+const submitLabel = computed(() => {
+  if (requiresReview.value) return isEdit.value ? '保存并重新提交' : '提交审核'
+  return isEdit.value ? '保存修改' : '发布文章'
+})
 
 const form = ref({
   title: '',
@@ -238,8 +255,8 @@ const handleSubmit = async () => {
       }
     })
 
-    ElMessage.success(isEdit ? '保存成功' : '发布成功')
-    router.push('/knowledge/list')
+    ElMessage.success(requiresReview.value ? '已提交审核，可在“我的文章”查看进度' : (isEdit ? '保存成功' : '发布成功'))
+    router.push(requiresReview.value ? { path: '/knowledge/list', query: { view: 'mine' } } : '/knowledge/list')
   } catch (error) {
     console.error('保存失败:', error)
     ElMessage.error('保存失败，请重试')
@@ -312,6 +329,8 @@ watch(
     background: #fff;
     padding: 30px;
     border-radius: 4px;
+
+    .review-alert { margin-bottom: 20px; }
 
     .article-form {
       .form-tip {

@@ -138,6 +138,7 @@ public class QdrantVectorService {
      * @param payload 元数据（如articleId, title等）
      */
     public void insertPoint(long pointId, List<Double> vector, JsonObject payload) {
+        if (!config.isEnabled()) return;
         validateVector(vector);
         try {
             JsonObject point = new JsonObject();
@@ -177,7 +178,7 @@ public class QdrantVectorService {
      * @param points 点列表
      */
     public void insertPointsBatch(List<VectorPoint> points) {
-        if (points == null || points.isEmpty()) {
+        if (!config.isEnabled() || points == null || points.isEmpty()) {
             return;
         }
 
@@ -227,6 +228,7 @@ public class QdrantVectorService {
      * @return 检索结果
      */
     public List<SearchResult> search(List<Double> queryVector, int topK, double scoreThreshold) {
+        if (!config.isEnabled()) return List.of();
         validateVector(queryVector);
         try {
             JsonObject searchRequest = new JsonObject();
@@ -263,6 +265,7 @@ public class QdrantVectorService {
      * 删除向量点
      */
     public void deletePoint(long pointId) {
+        if (!config.isEnabled()) return;
         try {
             JsonObject requestBody = new JsonObject();
             requestBody.add("points", gson.toJsonTree(List.of(pointId)));
@@ -290,6 +293,7 @@ public class QdrantVectorService {
      * 获取集合信息
      */
     public JsonObject getCollectionInfo() {
+        if (!config.isEnabled()) return null;
         try {
             Request request = new Request.Builder()
                     .url(String.format("%s/collections/%s", config.getHttpUrl(), config.getCollectionName()))

@@ -873,6 +873,8 @@ const handleNotificationClick = async (item) => {
     openApprovalDrawer(item.relatedId)
   } else if (item.relatedType === 'CASE' && item.relatedId) {
     router.push(`/case/${item.relatedId}`)
+  } else if (item.relatedType === 'KNOWLEDGE_ARTICLE' && item.relatedId) {
+    router.push(`/knowledge/${item.relatedId}`)
   }
 }
 

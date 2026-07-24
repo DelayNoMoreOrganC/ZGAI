@@ -8,6 +8,7 @@ import com.lawfirm.repository.UserRepository;
 import com.lawfirm.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -410,7 +411,8 @@ public class KnowledgeArticleService {
 
     private void applyReviewGate(KnowledgeArticle article, String previousSource) {
         boolean requiresReview = KnowledgeArticlePolicy.requiresReview(article.getKnowledgeSource())
-                || KnowledgeArticlePolicy.requiresReview(previousSource);
+                || KnowledgeArticlePolicy.requiresReview(previousSource)
+                || !securityUtils.hasAuthority("KNOWLEDGE_MANAGE");
         if (!requiresReview) return;
         article.setReviewStatus("PENDING_REVIEW");
         article.setReviewedBy(null);
@@ -443,7 +445,7 @@ public class KnowledgeArticleService {
         if (currentUserId.equals(article.getAuthorId()) || securityUtils.isAdmin()) {
             return;
         }
-        throw new RuntimeException("无权修改他人的知识库文章");
+        throw new AccessDeniedException("无权修改他人的知识库文章");
     }
 
     private void assertCanView(KnowledgeArticle article) {
@@ -454,7 +456,7 @@ public class KnowledgeArticleService {
                 || securityUtils.hasAuthority("KNOWLEDGE_MANAGE")) {
             return;
         }
-        throw new RuntimeException("无权查看该知识库文章");
+        throw new AccessDeniedException("无权查看该知识库文章");
     }
 
     private KnowledgeArticle getAuthorizedArticle(Long id) {

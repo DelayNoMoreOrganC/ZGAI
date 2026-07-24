@@ -201,6 +201,8 @@ const handleNotificationClick = (notification) => {
   } else if (notification.relatedType === 'TODO' && notification.relatedId) {
     // 跳转到待办详情页（如果有的话）
     window.location.href = `/#/todos`
+  } else if (notification.relatedType === 'KNOWLEDGE_ARTICLE' && notification.relatedId) {
+    window.location.href = `/#/knowledge/${notification.relatedId}`
   }
 }
 

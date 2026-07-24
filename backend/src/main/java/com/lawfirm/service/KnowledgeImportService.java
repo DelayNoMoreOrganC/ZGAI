@@ -66,6 +66,7 @@ public class KnowledgeImportService {
     private final KnowledgeArticleRepository articleRepository;
     private final UserRepository userRepository;
     private final VectorMigrationService vectorMigrationService;
+    private final NotificationService notificationService;
     private final LocalDocumentTextService documentTextService;
     private final ObjectMapper objectMapper;
 
@@ -288,8 +289,9 @@ public class KnowledgeImportService {
         article.setReviewedAt(LocalDateTime.now());
         article.setReviewReason(request.getReason());
         boolean approved = "APPROVED".equals(decision);
-        article.setIsPublic(approved);
-        boolean eligible = approved && !KnowledgeArticlePolicy.VALIDITY_REPEALED.equals(article.getValidityStatus());
+        article.setIsPublic(approved && KnowledgeArticlePolicy.isSharedRagSource(article.getKnowledgeSource()));
+        article.setKnowledgeEligible(approved);
+        boolean eligible = approved && KnowledgeArticlePolicy.isRagIndexable(article);
         article.setKnowledgeEligible(eligible);
         article.setIndexStatus(eligible ? "PENDING" : "FORBIDDEN");
         KnowledgeArticle saved = articleRepository.save(article);
@@ -303,10 +305,27 @@ public class KnowledgeImportService {
             });
         });
         afterCommit(() -> {
-            if (approved) vectorMigrationService.indexNewArticle(saved);
+            notifyAuthor(saved, approved, request.getReason());
+            if (eligible) vectorMigrationService.indexNewArticle(saved);
             else vectorMigrationService.deleteArticleIndex(saved.getId());
         });
         return saved;
+    }
+
+    private void notifyAuthor(KnowledgeArticle article, boolean approved, String reason) {
+        if (article.getAuthorId() == null) return;
+        String title = approved ? "知识投稿已批准" : "知识投稿已驳回";
+        String content;
+        if (!approved) {
+            content = "您提交的知识“" + article.getTitle() + "”未通过审核。驳回原因：" + safeMessage(reason);
+        } else if (Boolean.TRUE.equals(article.getIsPublic())) {
+            content = "您提交的知识“" + article.getTitle() + "”已审核通过并发布。";
+        } else {
+            content = "您提交的知识“" + article.getTitle() + "”已审核通过，但按知识准入规则保持非公开且不进入共享 AI 检索。";
+        }
+        notificationService.sendNotificationAfterCommit(
+                article.getAuthorId(), title, content, NotificationService.CATEGORY_SYSTEM,
+                article.getId(), "KNOWLEDGE_ARTICLE");
     }
 
     public List<KnowledgeImportBatch> listBatches() { return batchRepository.findTop30ByDeletedFalseOrderByCreatedAtDesc(); }
