@@ -40,13 +40,63 @@ test.beforeAll(assertEnvironment)
 
 test('知识管理员运行RAG评价且普通律师不能访问管理能力', async ({ page }) => {
   test.setTimeout(90_000)
-  const sampleName = `劳动仲裁时效评价-${Date.now()}`
+  const suffix = `${Date.now()}-${test.info().project.name}`
+  const sampleName = `劳动仲裁时效评价-${suffix}`
+  const expectedTitle = `劳动争议仲裁时效测试规则-${suffix}`
+  const forbiddenTitle = `禁止进入共享RAG的案件材料-${suffix}`
 
   await login(page, 'director')
+  const fixtureArticles = await page.evaluate(async ({ expectedTitle, forbiddenTitle }) => {
+    const token = localStorage.getItem('token')
+    const create = async (body) => {
+      const response = await fetch('/api/knowledge', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      const result = await response.json()
+      if (!response.ok || result.code !== 200) throw new Error(result.message || '创建RAG评价知识失败')
+      return result.data
+    }
+    const expected = await create({
+      title: expectedTitle,
+      articleType: 'LEGAL_GUIDE',
+      knowledgeSource: 'FIRM_KNOWLEDGE',
+      content: '劳动争议申请仲裁的时效期间为一年。',
+      isPublic: true,
+      knowledgeEligible: true,
+      validityStatus: 'EFFECTIVE'
+    })
+    const forbidden = await create({
+      title: forbiddenTitle,
+      articleType: 'CASE_MATERIAL',
+      knowledgeSource: 'CASE_DEPOSIT',
+      content: '劳动争议申请仲裁的时效期间为一年，但本材料禁止进入共享知识检索。',
+      isPublic: false,
+      knowledgeEligible: false,
+      validityStatus: 'EFFECTIVE'
+    })
+    return { expected, forbidden }
+  }, { expectedTitle, forbiddenTitle })
+
   await page.goto('/knowledge/rag')
   await page.getByRole('button', { name: '检索评价' }).click()
   await expect(page.getByText('RAG 检索评价', { exact: true })).toBeVisible()
   await assertNoPageOverflow(page)
+
+  const candidateArticles = await page.evaluate(async () => {
+    const token = localStorage.getItem('token')
+    const response = await fetch('/api/knowledge/rag/evaluations/candidates', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    const body = await response.json()
+    return body.data
+  })
+  const expectedArticle = candidateArticles.find(article => article.id === fixtureArticles.expected.id)
+  const forbiddenArticle = candidateArticles.find(article => article.id === fixtureArticles.forbidden.id)
+  expect(expectedArticle).toBeTruthy()
+  expect(forbiddenArticle).toBeTruthy()
+
   await page.getByRole('button', { name: '新增样本' }).click()
 
   await page.getByLabel('样本名称').fill(sampleName)
@@ -55,19 +105,28 @@ test('知识管理员运行RAG评价且普通律师不能访问管理能力', as
   const expectedField = page.locator('.el-form-item').filter({ hasText: '预期命中文档' })
   await expectedField.locator('.el-select').click()
   await page.locator('.el-select-dropdown:visible')
-    .getByText('劳动争议仲裁时效测试规则（#1）', { exact: true }).click({ force: true })
+    .getByText(`${expectedTitle}（#${expectedArticle.id}）`, { exact: true }).click({ force: true })
 
   const forbiddenField = page.locator('.el-form-item').filter({ hasText: '禁止命中文档' })
   await forbiddenField.locator('.el-select').click()
   await page.locator('.el-select-dropdown:visible')
-    .getByText('禁止进入共享RAG的案件材料（#2）', { exact: false }).click({ force: true })
+    .getByText(`${forbiddenTitle}（#${forbiddenArticle.id}）`, { exact: false }).click({ force: true })
 
   await page.getByRole('button', { name: '保存样本' }).click()
   await expect(page.getByText(sampleName, { exact: true })).toBeVisible()
+  const evaluationCaseId = await page.evaluate(async (name) => {
+    const token = localStorage.getItem('token')
+    const response = await fetch('/api/knowledge/rag/evaluations', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    const body = await response.json()
+    return body.data.find(item => item.name === name)?.id
+  }, sampleName)
+  expect(evaluationCaseId).toBeTruthy()
   await page.getByRole('button', { name: '运行启用样本' }).click()
-  await expect(page.getByText('100%', { exact: true })).toBeVisible()
-  await expect(page.getByText('越界命中').locator('..').getByText('0', { exact: true })).toBeVisible()
-  await expect(page.getByText(sampleName, { exact: true }).last()).toBeVisible()
+  const currentRun = page.locator('.el-table').last().locator('tr').filter({ hasText: sampleName })
+  await expect(currentRun.getByText('命中', { exact: true })).toBeVisible()
+  await expect(currentRun.getByText('无', { exact: true })).toBeVisible()
   await assertNoPageOverflow(page)
 
   await page.evaluate(() => {
@@ -104,8 +163,25 @@ test('知识管理员运行RAG评价且普通律师不能访问管理能力', as
 
   expect(checks.evaluationStatus).toBe(403)
   expect(checks.searchStatus).toBe(200)
-  expect(checks.searchBody.data.sources.map(source => source.id)).toContain(1)
-  expect(checks.searchBody.data.sources.map(source => source.id)).not.toContain(2)
+  expect(checks.searchBody.data.sources.map(source => source.id)).toContain(expectedArticle.id)
+  expect(checks.searchBody.data.sources.map(source => source.id)).not.toContain(forbiddenArticle.id)
+
+  await page.evaluate(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+  await login(page, 'director')
+  await page.evaluate(async ({ evaluationCaseId, articleIds }) => {
+    const token = localStorage.getItem('token')
+    await fetch(`/api/knowledge/rag/evaluations/${evaluationCaseId}`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
+    })
+    for (const id of articleIds) {
+      await fetch(`/api/knowledge/${id}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
+      })
+    }
+  }, { evaluationCaseId, articleIds: [expectedArticle.id, forbiddenArticle.id] })
 })
 
 test('知识管理员预检并批量导入Excel且普通律师被拒绝', async ({ page }) => {
