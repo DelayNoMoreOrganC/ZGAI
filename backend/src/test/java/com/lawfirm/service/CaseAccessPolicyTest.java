@@ -3,6 +3,7 @@ package com.lawfirm.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lawfirm.dto.CaseCreateRequest;
 import com.lawfirm.dto.CaseQueryRequest;
+import com.lawfirm.dto.CaseUpdateRequest;
 import com.lawfirm.entity.Case;
 import com.lawfirm.entity.Client;
 import com.lawfirm.entity.Role;
@@ -69,6 +70,26 @@ class CaseAccessPolicyTest {
     @Mock private UserPermissionService userPermissionService;
 
     @InjectMocks private CaseService caseService;
+
+    @Test
+    void ordinaryCaseEditCannotBypassStageClosureOrArchiveWorkflows() {
+        Case caseEntity = activeCase(90L, 20L);
+        when(caseRepository.findById(90L)).thenReturn(Optional.of(caseEntity));
+
+        CaseUpdateRequest stageRequest = new CaseUpdateRequest();
+        stageRequest.setCurrentStage("裁判");
+        assertThrows(InvalidParameterException.class, () -> caseService.updateCase(90L, stageRequest));
+
+        CaseUpdateRequest closeRequest = new CaseUpdateRequest();
+        closeRequest.setCloseDate(LocalDate.now());
+        assertThrows(InvalidParameterException.class, () -> caseService.updateCase(90L, closeRequest));
+
+        CaseUpdateRequest archiveRequest = new CaseUpdateRequest();
+        archiveRequest.setArchiveDate(LocalDate.now());
+        assertThrows(InvalidParameterException.class, () -> caseService.updateCase(90L, archiveRequest));
+
+        verify(caseRepository, never()).save(any(Case.class));
+    }
 
     @Test
     void consultantNameUsesConsultantUnitAndServiceYear() {

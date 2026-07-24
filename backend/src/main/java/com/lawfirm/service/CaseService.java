@@ -53,8 +53,6 @@ public class CaseService {
     private final RoleRepository roleRepository;
     private final CaseMemberRepository caseMemberRepository;
     private final FinanceRecordService financeRecordService;
-    private final CaseFlowTemplateRepository caseFlowTemplateRepository;
-    private final CaseStageTodoTemplateRepository caseStageTodoTemplateRepository;
     private final TodoService todoService;
     private final ClientService clientService;
     private final ClientRepository clientRepository;
@@ -403,10 +401,7 @@ public class CaseService {
     public CaseDetailVO updateCase(Long caseId, CaseUpdateRequest request) {
         Case caseEntity = caseRepository.findById(caseId)
                 .orElseThrow(() -> new ResourceNotFoundException("案件", caseId));
-
-        // 保存原始状态，用于检测变更
-        String originalStatus = caseEntity.getStatus();
-        String originalStage = caseEntity.getCurrentStage();
+        rejectWorkflowControlledUpdates(request);
 
         if (request.getCaseType() != null && !request.getCaseType().equals(caseEntity.getCaseType())) {
             throw new InvalidParameterException("caseType", "案件类型建立后不可直接变更，以免既有流程和文件目录失配");
@@ -487,21 +482,6 @@ public class CaseService {
         if (request.getActualReceived() != null) {
             caseEntity.setActualReceived(request.getActualReceived());
         }
-        if (request.getCloseStatus() != null) {
-            caseEntity.setCloseStatus(request.getCloseStatus());
-        }
-        if (request.getCloseDate() != null) {
-            caseEntity.setCloseDate(request.getCloseDate());
-            caseEntity.setStatus(CaseStatus.CLOSED.getCode());
-        }
-        if (request.getArchiveDate() != null) {
-            caseEntity.setArchiveDate(request.getArchiveDate());
-            caseEntity.setStatus(CaseStatus.ARCHIVED.getCode());
-        }
-        if (request.getArchiveLocation() != null) {
-            caseEntity.setArchiveLocation(request.getArchiveLocation());
-        }
-
         // 更新主办律师
         if (request.getOwnerId() != null && !request.getOwnerId().equals(caseEntity.getOwnerId())) {
             caseMemberService.updateMemberType(caseId, caseEntity.getOwnerId(), "CO_OWNER");
@@ -533,14 +513,6 @@ public class CaseService {
 
         caseRepository.save(caseEntity);
 
-        // 检测状态变更，自动生成待办事项
-        if (request.getStatus() != null && !request.getStatus().equals(originalStatus)) {
-            generateTodosForStatusChange(caseEntity, request.getStatus(), originalStatus);
-        }
-        if (request.getCurrentStage() != null && !request.getCurrentStage().equals(originalStage)) {
-            generateTodosForStageChange(caseEntity, request.getCurrentStage());
-        }
-
         // 更新当事人（全量更新：删除旧的，添加新的）
         if (request.getParties() != null && !request.getParties().isEmpty()) {
             // 获取现有当事人并逻辑删除
@@ -563,6 +535,21 @@ public class CaseService {
         );
 
         return getCaseDetail(caseId);
+    }
+
+    private void rejectWorkflowControlledUpdates(CaseUpdateRequest request) {
+        if (hasText(request.getStatus()) || hasText(request.getCurrentStage())) {
+            throw new InvalidParameterException("案件状态和办理阶段必须通过专用流程变更");
+        }
+        if (request.getFilingDate() != null) {
+            throw new InvalidParameterException("立案时间由立案终审通过时间自动确定");
+        }
+        if (request.getCloseStatus() != null || request.getCloseDate() != null) {
+            throw new InvalidParameterException("结案信息必须通过结案流程登记");
+        }
+        if (request.getArchiveDate() != null || request.getArchiveLocation() != null) {
+            throw new InvalidParameterException("归档信息必须通过智能归档流程登记");
+        }
     }
 
     private void validateUpdatedCase(Case caseEntity, CaseUpdateRequest request) {
@@ -1383,255 +1370,6 @@ public class CaseService {
             case "NON_LITIGATION": return "N";
             case "CONSULTANT": return "G";
             default: return "X";
-        }
-    }
-
-    /**
-     * 根据流程模板自动生成待办事项
-     */
-    private void generateTodosFromTemplate(Case caseEntity, CaseCreateRequest request) {
-        try {
-            // 1. 查找对应案件类型的流程模板
-            List<CaseFlowTemplate> templates = caseFlowTemplateRepository
-                    .findByCaseTypeAndEnabledTrueAndDeletedFalseOrderBySortOrderAsc(
-                            caseEntity.getCaseType()
-                    );
-
-            if (templates.isEmpty()) {
-                log.info("案件类型 {} 没有配置流程模板，跳过自动生成待办", caseEntity.getCaseType());
-                return;
-            }
-
-            // 2. 使用第一个匹配的模板（如果有多个模板，后续可以增加选择逻辑）
-            CaseFlowTemplate template = templates.get(0);
-
-            // 3. 查找该模板下的所有待办模板
-            List<CaseStageTodoTemplate> todoTemplates = caseStageTodoTemplateRepository
-                    .findByFlowTemplateIdAndDeletedFalseOrderByStageOrderAscSortOrderAsc(
-                            template.getId()
-                    );
-
-            if (todoTemplates.isEmpty()) {
-                log.info("流程模板 {} 没有配置待办事项模板", template.getTemplateName());
-                return;
-            }
-
-            // 4. 为每个待办模板创建实际的待办记录
-            int createdCount = 0;
-            for (CaseStageTodoTemplate todoTemplate : todoTemplates) {
-                TodoDTO todoDTO = new TodoDTO();
-                todoDTO.setTitle(todoTemplate.getTodoTitle());
-                todoDTO.setDescription(todoTemplate.getTodoDescription());
-                todoDTO.setPriority(todoTemplate.getPriority());
-                todoDTO.setCaseId(caseEntity.getId());
-                todoDTO.setStatus("PENDING");
-
-                // 计算截止日期（案件创建时间 + dueDays天）
-                if (todoTemplate.getDueDays() != null && todoTemplate.getDueDays() > 0) {
-                    LocalDateTime dueDate = caseEntity.getCreatedAt()
-                            .plusDays(todoTemplate.getDueDays());
-                    todoDTO.setDueDate(dueDate);
-                }
-
-                // 根据负责人类型分配待办
-                Long assigneeId = determineAssignee(todoTemplate.getAssigneeType(),
-                        caseEntity, request);
-                if (assigneeId != null) {
-                    todoDTO.setAssigneeId(assigneeId);
-
-                    // 创建待办
-                    try {
-                        todoService.createTodo(todoDTO, assigneeId);
-                        createdCount++;
-                    } catch (Exception e) {
-                        log.error("创建待办失败: {}", e.getMessage());
-                    }
-                }
-            }
-
-            log.info("根据流程模板 {} 自动生成了 {} 个待办事项", template.getTemplateName(), createdCount);
-
-            // 5. 记录到案件动态
-            if (createdCount > 0) {
-                caseTimelineService.createSystemTimeline(
-                        caseEntity.getId(),
-                        "AUTO_TODO",
-                        "根据流程模板自动生成了 " + createdCount + " 个待办事项"
-                );
-            }
-
-        } catch (Exception e) {
-            log.error("自动生成待办事项失败: {}", e.getMessage(), e);
-            // 不抛出异常，避免影响案件创建流程
-        }
-    }
-
-    /**
-     * 状态变更时自动生成待办事项
-     */
-    private void generateTodosForStatusChange(Case caseEntity, String newStatus, String oldStatus) {
-        try {
-            log.info("案件状态变更: {} → {}, 案件ID={}", oldStatus, newStatus, caseEntity.getId());
-
-            // 结案状态：生成归档提醒待办
-            if ("CLOSED".equals(newStatus)) {
-                TodoDTO archiveTodo = new TodoDTO();
-                archiveTodo.setTitle(caseEntity.getCaseNumber() + " - 归档提醒");
-                archiveTodo.setDescription("案件已结案，请在30日内完成归档工作");
-                archiveTodo.setPriority("IMPORTANT");
-                archiveTodo.setCaseId(caseEntity.getId());
-                archiveTodo.setStatus("PENDING");
-                archiveTodo.setAssigneeId(caseEntity.getOwnerId());
-                // 结案后30天需要归档
-                archiveTodo.setDueDate(LocalDateTime.now().plusDays(30));
-                archiveTodo.setReminder(true);
-
-                try {
-                    todoService.createTodo(archiveTodo, caseEntity.getOwnerId());
-                    log.info("已创建归档提醒待办: {}", archiveTodo.getTitle());
-
-                    // 记录动态
-                    caseTimelineService.createSystemTimeline(
-                        caseEntity.getId(),
-                        "STATUS_CHANGE",
-                        "案件状态变更为结案，已自动创建归档提醒待办"
-                    );
-                } catch (Exception e) {
-                    log.error("创建归档待办失败: {}", e.getMessage());
-                }
-            }
-
-            // 归档状态：生成案件卷宗整理待办
-            if ("ARCHIVED".equals(newStatus)) {
-                TodoDTO organizeTodo = new TodoDTO();
-                organizeTodo.setTitle(caseEntity.getCaseNumber() + " - 卷宗整理");
-                organizeTodo.setDescription("案件已归档，请完成卷宗材料的整理和扫描工作");
-                organizeTodo.setPriority("NORMAL");
-                organizeTodo.setCaseId(caseEntity.getId());
-                organizeTodo.setStatus("PENDING");
-                organizeTodo.setAssigneeId(caseEntity.getOwnerId());
-                // 归档后7天内完成整理
-                organizeTodo.setDueDate(LocalDateTime.now().plusDays(7));
-                organizeTodo.setReminder(false);
-
-                try {
-                    todoService.createTodo(organizeTodo, caseEntity.getOwnerId());
-                    log.info("已创建卷宗整理待办: {}", organizeTodo.getTitle());
-
-                    // 记录动态
-                    caseTimelineService.createSystemTimeline(
-                        caseEntity.getId(),
-                        "STATUS_CHANGE",
-                        "案件状态变更为归档，已自动创建卷宗整理待办"
-                    );
-                } catch (Exception e) {
-                    log.error("创建卷宗整理待办失败: {}", e.getMessage());
-                }
-            }
-
-        } catch (Exception e) {
-            log.error("状态变更自动生成待办失败: {}", e.getMessage(), e);
-            // 不抛出异常，避免影响案件更新流程
-        }
-    }
-
-    /**
-     * 阶段变更时自动生成待办事项
-     */
-    private void generateTodosForStageChange(Case caseEntity, String newStage) {
-        try {
-            log.info("案件阶段变更: 新阶段={}, 案件ID={}", newStage, caseEntity.getId());
-
-            // 根据不同阶段生成对应的待办
-            String stageTodoTitle = null;
-            String stageTodoDesc = null;
-            int dueDays = 3; // 默认3天内完成
-
-            switch (newStage) {
-                case "待立案":
-                    stageTodoTitle = caseEntity.getCaseNumber() + " - 立案准备";
-                    stageTodoDesc = "准备立案材料，包括起诉状、证据清单、授权委托书等";
-                    dueDays = 7;
-                    break;
-                case "已立案":
-                    stageTodoTitle = caseEntity.getCaseNumber() + " - 庭前准备";
-                    stageTodoDesc = "准备开庭材料，梳理案件争议焦点，准备代理词";
-                    dueDays = 5;
-                    break;
-                case "一审审理中":
-                    stageTodoTitle = caseEntity.getCaseNumber() + " - 开庭跟进";
-                    stageTodoDesc = "跟进庭审进度，根据庭审情况调整代理策略";
-                    dueDays = 3;
-                    break;
-                case "一审结案":
-                    stageTodoTitle = caseEntity.getCaseNumber() + " - 判决书领取";
-                    stageTodoDesc = "关注法院判决书送达情况，及时领取并告知当事人";
-                    dueDays = 2;
-                    break;
-                default:
-                    // 其他阶段不自动生成待办
-                    return;
-            }
-
-            if (stageTodoTitle != null) {
-                TodoDTO stageTodo = new TodoDTO();
-                stageTodo.setTitle(stageTodoTitle);
-                stageTodo.setDescription(stageTodoDesc);
-                stageTodo.setPriority("NORMAL");
-                stageTodo.setCaseId(caseEntity.getId());
-                stageTodo.setStatus("PENDING");
-                stageTodo.setAssigneeId(caseEntity.getOwnerId());
-                stageTodo.setDueDate(LocalDateTime.now().plusDays(dueDays));
-                stageTodo.setReminder(false);
-
-                try {
-                    todoService.createTodo(stageTodo, caseEntity.getOwnerId());
-                    log.info("已创建阶段变更待办: {} (截止: {} 天后)", stageTodoTitle, dueDays);
-
-                    // 记录动态
-                    caseTimelineService.createSystemTimeline(
-                        caseEntity.getId(),
-                        "STAGE_CHANGE",
-                        "案件阶段变更为【" + newStage + "】，已自动创建待办：" + stageTodoTitle
-                    );
-                } catch (Exception e) {
-                    log.error("创建阶段待办失败: {}", e.getMessage());
-                }
-            }
-
-        } catch (Exception e) {
-            log.error("阶段变更自动生成待办失败: {}", e.getMessage(), e);
-            // 不抛出异常，避免案件更新流程
-        }
-    }
-
-    /**
-     * 根据负责人类型确定待办分配给谁
-     */
-    private Long determineAssignee(String assigneeType, Case caseEntity, CaseCreateRequest request) {
-        if (assigneeType == null) {
-            assigneeType = "OWNER";
-        }
-
-        switch (assigneeType) {
-            case "OWNER":
-                return caseEntity.getOwnerId();
-            case "CO_OWNER":
-                // 如果有协办律师，分配给第一个协办律师
-                if (request.getCoOwnerIds() != null && !request.getCoOwnerIds().isEmpty()) {
-                    return request.getCoOwnerIds().get(0);
-                }
-                // 否则分配给主办律师
-                return caseEntity.getOwnerId();
-            case "ASSISTANT":
-                // 如果有律师助理，分配给第一个助理
-                if (request.getAssistantIds() != null && !request.getAssistantIds().isEmpty()) {
-                    return request.getAssistantIds().get(0);
-                }
-                // 否则分配给主办律师
-                return caseEntity.getOwnerId();
-            default:
-                return caseEntity.getOwnerId();
         }
     }
 

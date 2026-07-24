@@ -28,7 +28,7 @@ public class Party extends LogicalDeleteEntity {
     private String partyType;
 
     @NotBlank(message = "当事人属性不能为空")
-    @Column(name = "party_role", nullable = false, length = 20)
+    @Column(name = "party_role", nullable = false, length = 50)
     private String partyRole;
 
     @NotBlank(message = "姓名/单位名称不能为空")

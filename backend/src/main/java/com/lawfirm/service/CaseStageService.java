@@ -4,6 +4,7 @@ import com.lawfirm.entity.Case;
 import com.lawfirm.entity.CaseStage;
 import com.lawfirm.entity.StageTodoTemplate;
 import com.lawfirm.entity.Todo;
+import com.lawfirm.exception.InvalidParameterException;
 import com.lawfirm.repository.CaseRepository;
 import com.lawfirm.repository.CaseStageRepository;
 import com.lawfirm.repository.StageTodoTemplateRepository;
@@ -97,6 +98,8 @@ public class CaseStageService {
      */
     @Transactional
     public void changeStatus(Long caseId, String targetStage, String reason, Long operatorId) {
+        requireActiveCase(caseId);
+
         // 1. 查找当前阶段
         Optional<CaseStage> currentStageOpt = caseStageRepository.findCurrentStage(caseId);
         if (currentStageOpt.isEmpty()) {
@@ -149,48 +152,35 @@ public class CaseStageService {
      */
     @Transactional
     public void autoCreateTodos(Long caseId, String stageName) {
-        try {
-            // 获取案件信息
-            Case caseEntity = caseRepository.findById(caseId)
-                    .orElseThrow(() -> new RuntimeException("案件不存在"));
+        Case caseEntity = caseRepository.findById(caseId)
+                .orElseThrow(() -> new RuntimeException("案件不存在"));
+        String templateCaseType = "COMMERCIAL".equals(caseEntity.getCaseType())
+                ? "ARBITRATION" : caseEntity.getCaseType();
+        List<StageTodoTemplate> templates = stageTodoTemplateRepository
+                .findByStageNameAndCaseTypeAndIsEnabledAndIsDeletedFalseOrderBySortOrderAsc(
+                        stageName, templateCaseType, true
+                );
 
-            // 获取该阶段和案件类型的待办模板
-            List<StageTodoTemplate> templates = stageTodoTemplateRepository
-                    .findByStageNameAndCaseTypeAndIsEnabledAndIsDeletedFalseOrderBySortOrderAsc(
-                            stageName, caseEntity.getCaseType(), true
-                    );
-
-            if (templates.isEmpty()) {
-                log.info("案件 {} 的阶段 {} 没有配置待办模板", caseId, stageName);
-                return;
-            }
-
-            // 为每个模板创建待办事项
-            int createdCount = 0;
-            for (StageTodoTemplate template : templates) {
-                Todo todo = new Todo();
-                todo.setTitle(template.getTodoTitle());
-                todo.setDescription(template.getTodoDescription());
-                todo.setCaseId(caseId);
-                todo.setAssigneeId(caseEntity.getOwnerId());
-                todo.setPriority(mapPriorityFromTemplate(template.getPriority()));
-                todo.setStatus("PENDING");
-                todo.setDeleted(false);
-
-                // 计算到期日期（LocalDate转LocalDateTime，设为当天23:59）
-                LocalDate dueDate = LocalDate.now().plusDays(template.getRelativeDays());
-                todo.setDueDate(dueDate.atTime(23, 59, 59));
-
-                todoRepository.save(todo);
-                createdCount++;
-            }
-
-            log.info("为案件 {} 的阶段 {} 自动创建了 {} 个待办事项", caseId, stageName, createdCount);
-
-        } catch (Exception e) {
-            log.error("自动创建待办事项失败: caseId={}, stageName={}", caseId, stageName, e);
-            // 不抛出异常，避免影响状态变更流程
+        if (templates.isEmpty()) {
+            log.info("案件 {} 的阶段 {} 没有配置待办模板", caseId, stageName);
+            return;
         }
+
+        for (StageTodoTemplate template : templates) {
+            Todo todo = new Todo();
+            todo.setTitle(template.getTodoTitle());
+            todo.setDescription(template.getTodoDescription());
+            todo.setCaseId(caseId);
+            todo.setAssigneeId(caseEntity.getOwnerId());
+            todo.setPriority(mapPriorityFromTemplate(template.getPriority()));
+            todo.setStatus("PENDING");
+            todo.setDeleted(false);
+            LocalDate dueDate = LocalDate.now().plusDays(template.getRelativeDays());
+            todo.setDueDate(dueDate.atTime(23, 59, 59));
+            todoRepository.save(todo);
+        }
+
+        log.info("为案件 {} 的阶段 {} 自动创建了 {} 个待办事项", caseId, stageName, templates.size());
     }
 
     /**
@@ -237,11 +227,21 @@ public class CaseStageService {
         CaseStage currentStage = caseStageRepository.findCurrentStage(caseId)
                 .orElseThrow(() -> new RuntimeException("未找到当前进行中的阶段"));
         List<CaseStage> allStages = caseStageRepository.findByCaseIdAndDeletedFalseOrderByStageOrder(caseId);
-        int currentIndex = allStages.indexOf(currentStage);
+        int currentIndex = findStageIndex(allStages, currentStage);
         if (currentIndex < 0 || currentIndex + 1 >= allStages.size()) {
             return Optional.empty();
         }
         return Optional.ofNullable(allStages.get(currentIndex + 1).getStageName());
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<String> getStageAdvanceBlockReason(Long caseId) {
+        Case caseEntity = caseRepository.findById(caseId)
+                .orElseThrow(() -> new RuntimeException("案件不存在"));
+        if (!"ACTIVE".equals(caseEntity.getStatus())) {
+            return Optional.of("案件立案审批通过且处于办理中时才能变更办理阶段");
+        }
+        return Optional.empty();
     }
 
     /**
@@ -249,6 +249,8 @@ public class CaseStageService {
      */
     @Transactional
     public void rollbackStatus(Long caseId, String targetStage, String reason, Long operatorId) {
+        requireActiveCase(caseId);
+
         // 1. 查找当前阶段
         Optional<CaseStage> currentStageOpt = caseStageRepository.findCurrentStage(caseId);
         if (currentStageOpt.isEmpty()) {
@@ -347,10 +349,34 @@ public class CaseStageService {
      */
     private boolean isValidTransition(CaseStage currentStage, CaseStage targetStage, List<CaseStage> allStages) {
         // 允许进入下一个阶段
-        int currentIndex = allStages.indexOf(currentStage);
-        int targetIndex = allStages.indexOf(targetStage);
+        int currentIndex = findStageIndex(allStages, currentStage);
+        int targetIndex = findStageIndex(allStages, targetStage);
 
         return targetIndex == currentIndex + 1;
+    }
+
+    private int findStageIndex(List<CaseStage> stages, CaseStage target) {
+        for (int i = 0; i < stages.size(); i++) {
+            CaseStage candidate = stages.get(i);
+            if (target.getId() != null && target.getId().equals(candidate.getId())) {
+                return i;
+            }
+            if (target.getId() == null
+                    && target.getStageOrder().equals(candidate.getStageOrder())
+                    && target.getStageName().equals(candidate.getStageName())) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private Case requireActiveCase(Long caseId) {
+        Case caseEntity = caseRepository.findById(caseId)
+                .orElseThrow(() -> new RuntimeException("案件不存在"));
+        if (!"ACTIVE".equals(caseEntity.getStatus())) {
+            throw new InvalidParameterException("案件立案审批通过且处于办理中时才能变更办理阶段");
+        }
+        return caseEntity;
     }
 
     /**

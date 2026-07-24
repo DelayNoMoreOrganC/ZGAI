@@ -141,6 +141,20 @@ class AICaseCommandServiceTest {
     }
 
     @Test
+    void pendingFilingStageChangeReturnsClarificationInsteadOfProposal() {
+        when(stageService.getStageAdvanceBlockReason(7L)).thenReturn(
+                Optional.of("案件立案审批通过且处于办理中时才能变更办理阶段"));
+
+        AICaseCommandResponse response = service.submit(
+                request("本案进入签约立案阶段", "pending-filing-stage"), 3L);
+
+        assertEquals("NEEDS_CLARIFICATION", response.getStatus());
+        assertEquals("案件立案审批通过且处于办理中时才能变更办理阶段", response.getClarification());
+        verify(stageService, never()).getNextStageName(anyLong());
+        verify(stageService, never()).changeStatus(anyLong(), anyString(), anyString(), anyLong());
+    }
+
+    @Test
     void commandAuditStoresOnlyRedactedInstructionSummaryAndHash() {
         service.submit(request(
                 "记录进展：已联系13800138000，固话020-12345678，证件440101199001011234",

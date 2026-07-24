@@ -208,6 +208,8 @@ public class AICaseCommandService {
             if (!"CHANGE_STAGE".equals(action.getActionType())) {
                 continue;
             }
+            Optional<String> blockReason = caseStageService.getStageAdvanceBlockReason(action.getCaseId());
+            if (blockReason.isPresent()) return blockReason;
             Optional<String> nextStage = caseStageService.getNextStageName(action.getCaseId());
             if (nextStage.isEmpty()) {
                 return Optional.of("当前案件已处于最后办理阶段，不能继续向前变更。");

@@ -4,6 +4,7 @@ import com.lawfirm.entity.Case;
 import com.lawfirm.entity.CaseStage;
 import com.lawfirm.entity.StageTodoTemplate;
 import com.lawfirm.entity.Todo;
+import com.lawfirm.exception.InvalidParameterException;
 import com.lawfirm.repository.CaseRepository;
 import com.lawfirm.repository.CaseStageRepository;
 import com.lawfirm.repository.StageTodoTemplateRepository;
@@ -19,9 +20,11 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import org.mockito.ArgumentCaptor;
 
@@ -88,6 +91,68 @@ class CaseTypeWorkflowTest {
     }
 
     @Test
+    void stageCannotAdvanceBeforeFilingApproval() {
+        Case caseEntity = new Case();
+        caseEntity.setId(10L);
+        caseEntity.setStatus("PENDING_APPROVAL");
+        when(caseRepository.findById(10L)).thenReturn(Optional.of(caseEntity));
+
+        InvalidParameterException error = assertThrows(InvalidParameterException.class,
+                () -> service.changeStatus(10L, "签约立案", "提前推进", 21L));
+
+        assertEquals("案件立案审批通过且处于办理中时才能变更办理阶段", error.getMessage());
+        verifyNoInteractions(caseStageRepository, todoRepository);
+    }
+
+    @Test
+    void nextStageLookupUsesStableStageIdentityInsteadOfObjectEquality() {
+        CaseStage currentFromQuery = stage(101L, 11L, "接洽利冲", 1, "IN_PROGRESS");
+        CaseStage currentFromList = stage(101L, 11L, "接洽利冲", 1, "IN_PROGRESS");
+        currentFromList.setStartDate(java.time.LocalDate.now());
+        CaseStage next = stage(102L, 11L, "签约立案", 2, "PENDING");
+        when(caseStageRepository.findCurrentStage(11L)).thenReturn(Optional.of(currentFromQuery));
+        when(caseStageRepository.findByCaseIdAndDeletedFalseOrderByStageOrder(11L))
+                .thenReturn(List.of(currentFromList, next));
+
+        assertEquals(Optional.of("签约立案"), service.getNextStageName(11L));
+    }
+
+    @Test
+    void historicalCommercialCaseUsesArbitrationTodoTemplates() {
+        Case caseEntity = new Case();
+        caseEntity.setId(13L);
+        caseEntity.setOwnerId(21L);
+        caseEntity.setCaseType("COMMERCIAL");
+        when(caseRepository.findById(13L)).thenReturn(Optional.of(caseEntity));
+        when(stageTodoTemplateRepository.findByStageNameAndCaseTypeAndIsEnabledAndIsDeletedFalseOrderBySortOrderAsc(
+                "仲裁条款审查", "ARBITRATION", true)).thenReturn(List.of());
+
+        service.autoCreateTodos(13L, "仲裁条款审查");
+
+        verify(stageTodoTemplateRepository)
+                .findByStageNameAndCaseTypeAndIsEnabledAndIsDeletedFalseOrderBySortOrderAsc(
+                        "仲裁条款审查", "ARBITRATION", true);
+    }
+
+    @Test
+    void todoPersistenceFailureIsNotSwallowedDuringStageTransition() {
+        Case caseEntity = new Case();
+        caseEntity.setId(14L);
+        caseEntity.setOwnerId(21L);
+        caseEntity.setCaseType("CRIMINAL");
+        StageTodoTemplate template = new StageTodoTemplate();
+        template.setTodoTitle("完成刑事委托手续");
+        template.setPriority(1);
+        template.setRelativeDays(1);
+        when(caseRepository.findById(14L)).thenReturn(Optional.of(caseEntity));
+        when(stageTodoTemplateRepository.findByStageNameAndCaseTypeAndIsEnabledAndIsDeletedFalseOrderBySortOrderAsc(
+                "签约", "CRIMINAL", true)).thenReturn(List.of(template));
+        when(todoRepository.save(any(Todo.class))).thenThrow(new IllegalStateException("todo storage unavailable"));
+
+        assertThrows(IllegalStateException.class, () -> service.autoCreateTodos(14L, "签约"));
+    }
+
+    @Test
     void pendingConsultantCaseWithLegacyStagesIsSafelyMigrated() {
         Case caseEntity = new Case();
         caseEntity.setId(12L);
@@ -112,5 +177,16 @@ class CaseTypeWorkflowTest {
         assertTrue(legacy.getDeleted());
         assertEquals("顾问建档", caseEntity.getCurrentStage());
         verify(caseTimelineService).createSystemTimeline(eq(12L), eq("WORKFLOW_MIGRATED"), anyString());
+    }
+
+    private CaseStage stage(Long id, Long caseId, String name, int order, String status) {
+        CaseStage stage = new CaseStage();
+        stage.setId(id);
+        stage.setCaseId(caseId);
+        stage.setStageName(name);
+        stage.setStageOrder(order);
+        stage.setStatus(status);
+        stage.setDeleted(false);
+        return stage;
     }
 }

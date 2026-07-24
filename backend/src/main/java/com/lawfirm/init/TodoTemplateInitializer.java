@@ -50,6 +50,7 @@ public class TodoTemplateInitializer implements CommandLineRunner {
         add(templates, "CIVIL", "结案归档", "完成民事案件结案检查", "核对结案报告、收费、文件目录和客户交付记录", 2, 5);
 
         add(templates, "ARBITRATION", "接洽利冲", "完成仲裁主体和利益冲突检查", "核对申请人、被申请人及关联主体", 1, 0);
+        add(templates, "ARBITRATION", "签约立案", "完成仲裁委托和立案材料检查", "核对仲裁委托合同、授权、仲裁协议、收费及主体材料", 1, 2);
         add(templates, "ARBITRATION", "仲裁条款审查", "核验仲裁协议和适用规则", "确认仲裁事项、机构、仲裁地、语言和送达约定", 1, 1);
         add(templates, "ARBITRATION", "申请或答辩", "完成仲裁申请或答辩材料", "核对请求、反请求、证据和仲裁费用", 1, 3);
         add(templates, "ARBITRATION", "组庭", "登记仲裁员选定和组庭期限", "记录仲裁员意见、回避事项和组庭通知", 1, 1);
@@ -69,6 +70,7 @@ public class TodoTemplateInitializer implements CommandLineRunner {
         add(templates, "CRIMINAL", "结案归档", "完成刑事案件结案检查", "整理会见、阅卷、法律意见、庭审和裁判材料", 2, 5);
 
         add(templates, "ADMINISTRATIVE", "接洽利冲", "完成行政案件主体和利冲检查", "核对行政相对人、行政机关及关联主体", 1, 0);
+        add(templates, "ADMINISTRATIVE", "签约立案", "完成行政委托和救济材料检查", "核对委托合同、授权、行政行为文书、送达证明、收费和主体材料", 1, 2);
         add(templates, "ADMINISTRATIVE", "行政行为审查", "核验行政行为及送达日期", "确认行为内容、法律依据、送达方式和救济告知", 1, 1);
         add(templates, "ADMINISTRATIVE", "复议或起诉", "确认复议前置、管辖和期限", "形成复议申请或起诉材料清单", 1, 1);
         add(templates, "ADMINISTRATIVE", "举证", "跟踪行政机关举证期限", "维护证据目录并审查行政行为事实和程序依据", 1, 1);
