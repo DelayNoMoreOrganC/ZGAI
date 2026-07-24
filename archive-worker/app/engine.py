@@ -173,7 +173,7 @@ def _safe_case_path(value: Any, allow_missing: bool = False) -> Path:
 
 def _extract_pages(path: Path, supplied_sha: Any = None) -> list[str]:
     digest = str(supplied_sha or "").strip() or _sha256(path)
-    cache_dir = Path(os.getenv("ARCHIVE_OCR_CACHE", "/data/archive-cache")).resolve()
+    cache_dir = Path(os.getenv("ARCHIVE_OCR_CACHE", "./data/archive-cache")).resolve()
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache = cache_dir / f"{digest}-ocr-v1.json"
     if cache.is_file():

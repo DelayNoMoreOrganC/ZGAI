@@ -146,7 +146,6 @@
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item v-if="canEdit" command="close" :disabled="!canBatchClose">批量结案</el-dropdown-item>
               <el-dropdown-item v-if="canEdit" command="changeOwner" :disabled="!canBatchChangeOwner">修改主办律师</el-dropdown-item>
               <el-dropdown-item v-if="canDelete" command="delete" :disabled="!canBatchDelete" divided>批量删除</el-dropdown-item>
             </el-dropdown-menu>
@@ -323,7 +322,6 @@ import DataTable from '@/components/DataTable.vue'
 import {
   getCaseList,
   deleteCase,
-  batchCloseCases,
   batchDeleteCases,
   batchChangeOwner
 } from '@/api/case'
@@ -387,11 +385,8 @@ const hasActiveFilters = computed(() => Boolean(
   || filterForm.clientId
   || filterForm.dateRange?.length
 ))
-const selectedStatusesMatch = (status) => selectedCases.value.length > 0
-  && selectedCases.value.every(item => item.status === status)
 const selectedRowsAllow = (field) => selectedCases.value.length > 0
   && selectedCases.value.every(item => item[field] === true)
-const canBatchClose = computed(() => selectedRowsAllow('canEdit') && selectedStatusesMatch('ACTIVE'))
 const canBatchChangeOwner = computed(() => selectedRowsAllow('canEdit')
   && selectedCases.value.every(item => !['CLOSED', 'ARCHIVED'].includes(item.status)))
 const canBatchDelete = computed(() => selectedRowsAllow('canDelete'))
@@ -647,38 +642,12 @@ const handleDelete = async (row) => {
 
 // 批量操作
 const handleBatchAction = async (command) => {
-  if ((command === 'close' && !canBatchClose.value)
-    || (command === 'changeOwner' && !canBatchChangeOwner.value)
+  if ((command === 'changeOwner' && !canBatchChangeOwner.value)
     || (command === 'delete' && !canBatchDelete.value)) {
     ElMessage.warning('所选案件的状态或操作权限不满足该批量操作条件')
     return
   }
   switch (command) {
-    case 'close':
-      try {
-        await ElMessageBox.confirm(
-          `将为选中的 ${selectedCases.value.length} 个案件结案，是否继续？`,
-          '批量结案',
-          {
-            confirmButtonText: '确定',
-            cancelButtonText: '取消',
-            type: 'warning'
-          }
-        )
-
-        // 使用批量操作API
-        const caseIds = selectedCases.value.map(c => c.id)
-        await batchCloseCases(caseIds)
-
-        ElMessage.success(`成功结案 ${selectedCases.value.length} 个案件`)
-        selectedCases.value = []
-        await fetchCaseList()
-      } catch (error) {
-        if (error !== 'cancel') {
-          ElMessage.error('批量结案失败: ' + (error.message || '未知错误'))
-        }
-      }
-      break
     case 'changeOwner':
       newOwnerId.value = null
       ownerDialogVisible.value = true

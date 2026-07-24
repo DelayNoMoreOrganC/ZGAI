@@ -30,7 +30,7 @@ public class Approval extends LogicalDeleteEntity {
     private String title;
 
     @NotBlank(message = "审批内容不能为空")
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
     @Column(name = "case_id")

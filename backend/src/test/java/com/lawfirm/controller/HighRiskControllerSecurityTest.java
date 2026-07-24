@@ -65,6 +65,13 @@ class HighRiskControllerSecurityTest {
     }
 
     @Test
+    void caseClosureUsesObjectLevelCaseAuthorities() throws Exception {
+        assertPolicy(CaseClosureController.class, "create", "hasAuthority('CASE_EDIT')",
+                Long.class, com.lawfirm.dto.CaseClosureCreateRequest.class);
+        assertPolicy(CaseClosureController.class, "latest", "hasAuthority('CASE_VIEW')", Long.class);
+    }
+
+    @Test
     void statisticsReadsAndExportsUseSeparateAuthorities() throws Exception {
         assertPolicy(StatisticsController.class, "getOverview", "hasAuthority('STATISTICS_VIEW')",
                 java.time.LocalDate.class, java.time.LocalDate.class);

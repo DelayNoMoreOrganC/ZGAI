@@ -80,7 +80,8 @@ class ApprovalServiceTest {
                 caseFileLibraryService,
                 userPermissionService,
                 conflictWaiverAttachmentService,
-                sealAttachmentService);
+                sealAttachmentService,
+                mock(CaseClosureService.class));
     }
 
     @Test

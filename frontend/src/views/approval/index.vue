@@ -18,7 +18,7 @@
           <h2>{{ isDirector ? '主任审批中心' : '行政审批中心' }}</h2>
           <p>{{ isDirector
             ? '查看全所审批进度，重点处理立案终审和管理决策。'
-            : '集中处理立案申请、利冲审查、公章用印和审批流转。' }}</p>
+            : '集中处理立案申请、利冲审查、公章用印、案件结案和审批流转。' }}</p>
         </div>
         <el-tag type="warning" size="large">待处理 {{ pendingList.length }}</el-tag>
       </div>
@@ -37,7 +37,7 @@
           <div class="filing-card-actions" @click.stop>
             <el-button type="primary" plain @click="openApprovalDetail(item)">查看审批</el-button>
             <el-button
-              v-if="canHandleApproval(item) && item.approvalType !== 'SEAL'"
+              v-if="canHandleApproval(item) && !['SEAL', 'CASE_CLOSURE'].includes(item.approvalType)"
               type="success"
               class="approve-main-btn"
               @click="handleApprove(item)"
@@ -127,7 +127,7 @@
                 </el-button>
                 <template v-if="canHandleApproval(row)">
                   <el-button
-                    v-if="row.approvalType !== 'SEAL'"
+                    v-if="!['SEAL', 'CASE_CLOSURE'].includes(row.approvalType)"
                     type="success"
                     size="small"
                     class="approve-main-btn"
@@ -136,7 +136,7 @@
                     {{ getApproveActionText(row) }}
                   </el-button>
                   <el-button
-                    v-if="row.approvalType !== 'SEAL'"
+                    v-if="!['SEAL', 'CASE_CLOSURE'].includes(row.approvalType)"
                     type="warning"
                     size="small"
                     @click="handleReject(row)"
@@ -144,7 +144,7 @@
                     {{ isCaseFilingApproval(row) ? '驳回立案' : '驳回' }}
                   </el-button>
                   <el-button v-else type="warning" size="small" @click="openApprovalDetail(row)">
-                    查看文件并审批
+                    {{ row.approvalType === 'CASE_CLOSURE' ? '核对结案资料' : '查看文件并审批' }}
                   </el-button>
                   <el-button type="primary" size="small" @click="handleTransfer(row)">
                     转审
@@ -427,7 +427,7 @@ const selectedApprovalId = ref(null)
 const isCaseApprovalMode = computed(() => Boolean(route.query.caseId))
 const pendingCaseFilingCount = computed(() => pendingList.value.filter(isCaseFilingApproval).length)
 const pendingPriorityApprovals = computed(() => pendingList.value
-  .filter(item => isCaseFilingApproval(item) || item.approvalType === 'SEAL')
+  .filter(item => isCaseFilingApproval(item) || ['SEAL', 'CASE_CLOSURE'].includes(item.approvalType))
   .slice(0, 6))
 const currentUserId = computed(() => Number(userStore.userInfo?.id || userStore.userId || 0))
 const isSuperAdmin = computed(() => isDevelopmentAdmin(userStore))
@@ -443,7 +443,8 @@ const approvalTypeMap = {
   CONTRACT: '合同审批',
   OTHER: '其他审批',
   CASE_FILING: '立案审批',
-  CASE_FILING_DIRECTOR: '主任终审'
+  CASE_FILING_DIRECTOR: '主任终审',
+  CASE_CLOSURE: '案件结案复核'
 }
 
 const isSuccessResponse = (response) => response?.success || response?.code === 200
@@ -463,6 +464,7 @@ const getApproveActionText = (row) => {
   if (row?.approvalType === 'CASE_FILING_DIRECTOR') return '终审通过'
   if (row?.approvalType === 'CASE_FILING') return '同意立案'
   if (row?.approvalType === 'SEAL') return '同意用印'
+  if (row?.approvalType === 'CASE_CLOSURE') return '确认结案'
   return '同意'
 }
 const canHandleApproval = (row) => {

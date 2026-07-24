@@ -444,24 +444,6 @@ export function deleteHearing(caseId, hearingId) {
 
 // ==================== 批量操作 ====================
 
-// 批量结案
-export function batchCloseCases(caseIds) {
-  return request({
-    url: '/cases/batch/close',
-    method: 'put',
-    data: { caseIds }
-  })
-}
-
-// 批量归档
-export function batchArchiveCases(caseIds, archiveLocation) {
-  return request({
-    url: '/cases/batch/archive',
-    method: 'put',
-    data: { caseIds, archiveLocation }
-  })
-}
-
 // 批量删除
 export function batchDeleteCases(caseIds) {
   return request({
@@ -478,21 +460,6 @@ export function batchChangeOwner(caseIds, ownerId) {
     method: 'put',
     data: { caseIds, ownerId }
   })
-}
-
-// 批量更新案件状态
-export function batchUpdateCases({ ids, status }) {
-  const statusMap = {
-    'CLOSED': batchCloseCases,
-    'ARCHIVED': batchArchiveCases
-  }
-
-  const batchFn = statusMap[status]
-  if (batchFn) {
-    return batchFn(ids)
-  }
-
-  return Promise.reject(new Error(`Unsupported batch status: ${status}`))
 }
 
 // 搜索法院

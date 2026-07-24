@@ -86,10 +86,10 @@ minio:
   readTimeout: 10000
 
 file:
-  upload-path: ./uploads/
+  upload-path: ${FILE_UPLOAD_PATH:./uploads/}
   frontend-dist-path: ${FRONTEND_DIST_PATH:../frontend/dist/}
-  case-library-root: /Volumes/ZGAI/case-files
-  knowledge-library-root: /Volumes/ZGAI/knowledge-files
+  case-library-root: ${CASE_FILE_LIBRARY_ROOT:/Volumes/ZGAI/case-files}
+  knowledge-library-root: ${KNOWLEDGE_FILE_LIBRARY_ROOT:/Volumes/ZGAI/knowledge-files}
   max-size: 52428800
   allowed-types:
     - image/jpeg

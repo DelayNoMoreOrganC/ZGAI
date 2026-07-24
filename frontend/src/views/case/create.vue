@@ -338,12 +338,6 @@
             </el-col>
 
             <el-col :span="12">
-              <el-form-item label="结案/归档">
-                <el-checkbox v-model="showArchiveInfo">填写结案或归档信息</el-checkbox>
-              </el-form-item>
-            </el-col>
-
-            <el-col :span="12">
               <el-form-item label="案件主办" prop="ownerId">
                 <el-select
                   data-testid="case-owner"
@@ -842,62 +836,6 @@
           </div>
         </div>
 
-        <!-- E. 结案/归档信息 -->
-        <div class="form-section" v-if="showArchiveInfo">
-          <div class="section-header">
-            <h3>E. 结案/归档信息</h3>
-          </div>
-
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="结案状态" prop="closeStatus">
-                <el-select v-model="formData.closeStatus" placeholder="请选择结案状态" clearable>
-                  <el-option label="达成诉求" value="达成诉求" />
-                  <el-option label="部分达成" value="部分达成" />
-                  <el-option label="未达成" value="未达成" />
-                  <el-option label="未委托" value="未委托" />
-                  <el-option label="终止" value="终止" />
-                  <el-option label="其他" value="其他" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-
-            <el-col :span="12">
-              <el-form-item label="结案日期" prop="closeDate">
-                <el-date-picker
-                  v-model="formData.closeDate"
-                  type="date"
-                  placeholder="选择结案日期"
-                  value-format="YYYY-MM-DD"
-                  style="width: 100%"
-                />
-              </el-form-item>
-            </el-col>
-
-            <el-col :span="12">
-              <el-form-item label="归档日期" prop="archiveDate">
-                <el-date-picker
-                  v-model="formData.archiveDate"
-                  type="date"
-                  placeholder="选择归档日期"
-                  value-format="YYYY-MM-DD"
-                  style="width: 100%"
-                />
-              </el-form-item>
-            </el-col>
-
-            <el-col :span="12">
-              <el-form-item label="档案保管地" prop="archiveLocation">
-                <el-input
-                  v-model="formData.archiveLocation"
-                  placeholder="请输入档案保管地点"
-                  maxlength="200"
-                  show-word-limit
-                />
-              </el-form-item>
-            </el-col>
-          </el-row>
-        </div>
 
         <!-- F. 关联信息 -->
         <div class="form-section">
@@ -1207,9 +1145,6 @@ const { submitting, canSubmit, handleSubmit: handleFormSubmit } = useSubmitForm(
   }
 )
 
-// 是否显示结案/归档信息
-const showArchiveInfo = ref(false)
-
 // 表单数据
 const formData = reactive({
   // A. 基本信息
@@ -1275,13 +1210,7 @@ const formData = reactive({
   relatedClients: [],
   relatedCases: [],
   relatedProject: '',
-  remark: '',
-
-  // F. 结案/归档信息
-  closeStatus: '',
-  closeDate: '',
-  archiveDate: '',
-  archiveLocation: ''
+  remark: ''
 })
 
 // 表单验证规则
@@ -1939,12 +1868,6 @@ onMounted(async () => {
         formData.relatedCases = caseData.relatedCases
       }
 
-      // 结案/归档信息
-      if (caseData.closeDate || caseData.archiveDate) {
-        showArchiveInfo.value = true
-        formData.closeDate = caseData.closeDate || null
-        formData.archiveDate = caseData.archiveDate || null
-      }
     } catch (error) {
       ElMessage.error('加载案件数据失败')
       router.push('/case/list')

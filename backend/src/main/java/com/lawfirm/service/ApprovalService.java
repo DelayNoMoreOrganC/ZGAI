@@ -47,6 +47,7 @@ public class ApprovalService {
     private final UserPermissionService userPermissionService;
     private final ConflictWaiverAttachmentService conflictWaiverAttachmentService;
     private final SealAttachmentService sealAttachmentService;
+    private final CaseClosureService caseClosureService;
 
     /**
      * 审批类型常量
@@ -59,6 +60,7 @@ public class ApprovalService {
     public static final String TYPE_LICENSE = "LICENSE";  // 证照借用
     public static final String TYPE_CASE_FILING = "CASE_FILING";  // 立案审批
     public static final String TYPE_CASE_FILING_DIRECTOR = "CASE_FILING_DIRECTOR";  // 主任终审
+    public static final String TYPE_CASE_CLOSURE = CaseClosureService.APPROVAL_TYPE;  // 结案复核
     private static final List<String> PROCESSED_STATUSES = Arrays.asList(
             ApprovalStatus.APPROVED.getCode(),
             ApprovalStatus.REJECTED.getCode(),
@@ -72,6 +74,9 @@ public class ApprovalService {
     public ApprovalDTO createApproval(ApprovalCreateRequest request, Long currentUserId) {
         if (TYPE_SEAL.equals(request.getApprovalType())) {
             throw new InvalidParameterException("approvalType", "用印申请必须通过专用入口上传或选择用印文件");
+        }
+        if (TYPE_CASE_CLOSURE.equals(request.getApprovalType())) {
+            throw new InvalidParameterException("approvalType", "结案申请必须从案件详情的结案入口发起");
         }
         return createApprovalInternal(request, currentUserId);
     }
@@ -128,9 +133,12 @@ public class ApprovalService {
             throw new InvalidParameterException("审批单状态不正确");
         }
 
-        if ((isCaseFilingApproval(approval) || TYPE_SEAL.equals(approval.getApprovalType())) && !hasText(comments)) {
+        if ((isCaseFilingApproval(approval) || TYPE_SEAL.equals(approval.getApprovalType())
+                || TYPE_CASE_CLOSURE.equals(approval.getApprovalType())) && !hasText(comments)) {
             throw new InvalidParameterException(
-                    TYPE_SEAL.equals(approval.getApprovalType()) ? "用印审批意见不能为空" : "立案审批意见不能为空");
+                    TYPE_SEAL.equals(approval.getApprovalType()) ? "用印审批意见不能为空"
+                            : TYPE_CASE_CLOSURE.equals(approval.getApprovalType()) ? "结案复核意见不能为空"
+                            : "立案审批意见不能为空");
         }
         if (TYPE_SEAL.equals(approval.getApprovalType()) && sealAttachmentService.list(approvalId).isEmpty()) {
             throw new InvalidParameterException("用印申请缺少待审文件，请驳回并由申请人重新提交");
@@ -162,6 +170,9 @@ public class ApprovalService {
                 caseTimelineService.createSystemTimeline(approval.getCaseId(), "SEAL_APPROVAL_APPROVED",
                         "公章用印审批已通过：" + approval.getTitle());
             }
+        }
+        if (TYPE_CASE_CLOSURE.equals(approval.getApprovalType())) {
+            caseClosureService.approve(approvalId, approverId, approval.getApprovedTime(), comments);
         }
         if (!filingHandled) {
             notifyApplicant(
@@ -212,6 +223,9 @@ public class ApprovalService {
                 caseTimelineService.createSystemTimeline(approval.getCaseId(), "SEAL_APPROVAL_REJECTED",
                         "公章用印审批已驳回：" + comments);
             }
+        }
+        if (TYPE_CASE_CLOSURE.equals(approval.getApprovalType())) {
+            caseClosureService.reject(approvalId, approverId, approval.getApprovedTime(), comments);
         }
         notifyApplicant(
                 approval,
@@ -303,6 +317,9 @@ public class ApprovalService {
                         "SEAL_APPROVAL_WITHDRAWN",
                         "公章用印申请已由申请人撤回：" + approval.getTitle());
             }
+        }
+        if (TYPE_CASE_CLOSURE.equals(approval.getApprovalType())) {
+            caseClosureService.withdraw(approvalId, applicantId);
         }
 
         // 记录流程
@@ -486,6 +503,7 @@ public class ApprovalService {
         types.add(createTypeItem(TYPE_LICENSE, "证照借用"));
         types.add(createTypeItem(TYPE_CASE_FILING, "立案审批"));
         types.add(createTypeItem(TYPE_CASE_FILING_DIRECTOR, "立案主任终审"));
+        types.add(createTypeItem(TYPE_CASE_CLOSURE, "案件结案复核"));
         return types;
     }
 
@@ -626,6 +644,8 @@ public class ApprovalService {
                 return "立案审批";
             case TYPE_CASE_FILING_DIRECTOR:
                 return "主任终审";
+            case TYPE_CASE_CLOSURE:
+                return "案件结案复核";
             case TYPE_SEAL:
                 return "公章用印审批";
             case TYPE_REIMBURSEMENT:
@@ -810,6 +830,9 @@ public class ApprovalService {
         dto.setStatusDesc(getStatusDesc(approval.getStatus()));
         if (TYPE_SEAL.equals(approval.getApprovalType())) {
             dto.setSealAttachments(sealAttachmentService.list(approval.getId()));
+        }
+        if (TYPE_CASE_CLOSURE.equals(approval.getApprovalType())) {
+            dto.setClosureRequest(caseClosureService.getByApprovalId(approval.getId()));
         }
 
         if (approval.getCaseId() != null) {

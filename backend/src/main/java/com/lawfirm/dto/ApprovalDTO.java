@@ -28,4 +28,5 @@ public class ApprovalDTO {
     private String attachments;
     private List<ApprovalAttachmentDTO> sealAttachments;
     private List<ConflictCheckRecordDTO> conflictChecks;
+    private CaseClosureRequestDTO closureRequest;
 }

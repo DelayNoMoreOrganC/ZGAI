@@ -460,3 +460,42 @@ CREATE TABLE IF NOT EXISTS approval_attachment (
 );
 CREATE INDEX IF NOT EXISTS idx_approval_attachment_approval ON approval_attachment(approval_id);
 CREATE INDEX IF NOT EXISTS idx_approval_attachment_case_document ON approval_attachment(case_document_id);
+
+CREATE TABLE IF NOT EXISTS case_closure_request (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    case_id BIGINT NOT NULL,
+    approval_id BIGINT NOT NULL UNIQUE,
+    applicant_id BIGINT NOT NULL,
+    review_todo_id BIGINT,
+    closure_type VARCHAR(40) NOT NULL,
+    case_outcome VARCHAR(1000) NOT NULL,
+    closure_summary VARCHAR(5000) NOT NULL,
+    fee_status VARCHAR(40) NOT NULL,
+    client_delivery_status VARCHAR(40) NOT NULL,
+    client_delivery_notes VARCHAR(1000),
+    documents_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    requested_at TIMESTAMP NOT NULL,
+    reviewed_by BIGINT,
+    reviewed_at TIMESTAMP,
+    review_notes VARCHAR(2000)
+);
+CREATE INDEX IF NOT EXISTS idx_case_closure_case ON case_closure_request(case_id);
+CREATE INDEX IF NOT EXISTS idx_case_closure_status ON case_closure_request(status);
+
+CREATE TABLE IF NOT EXISTS case_closure_document (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    closure_request_id BIGINT NOT NULL,
+    case_document_id BIGINT NOT NULL,
+    CONSTRAINT uk_case_closure_document UNIQUE(closure_request_id, case_document_id)
+);
+CREATE INDEX IF NOT EXISTS idx_case_closure_document_request ON case_closure_document(closure_request_id);
+
+-- Structured filing, seal and closure reviews can exceed the legacy VARCHAR(255) limit.
+ALTER TABLE approval ALTER COLUMN content TYPE TEXT;

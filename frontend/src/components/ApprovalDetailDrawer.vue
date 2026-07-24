@@ -47,6 +47,42 @@
           <pre>{{ selectedApproval.content || '-' }}</pre>
         </div>
 
+        <div v-if="selectedApproval.approvalType === 'CASE_CLOSURE' && selectedApproval.closureRequest" class="closure-review-section">
+          <h3>结案复核资料</h3>
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="结案方式">{{ selectedApproval.closureRequest.closureTypeDesc }}</el-descriptions-item>
+            <el-descriptions-item label="案件结果">{{ selectedApproval.closureRequest.caseOutcome }}</el-descriptions-item>
+            <el-descriptions-item label="费用处理">{{ selectedApproval.closureRequest.feeStatusDesc }}</el-descriptions-item>
+            <el-descriptions-item label="客户交付">{{ selectedApproval.closureRequest.clientDeliveryStatusDesc }}</el-descriptions-item>
+            <el-descriptions-item v-if="selectedApproval.closureRequest.clientDeliveryNotes" label="交付说明">
+              {{ selectedApproval.closureRequest.clientDeliveryNotes }}
+            </el-descriptions-item>
+            <el-descriptions-item label="材料核对">
+              {{ selectedApproval.closureRequest.documentsConfirmed ? '申请人已确认' : '尚未确认' }}
+            </el-descriptions-item>
+          </el-descriptions>
+          <div class="approval-content closure-summary">
+            <h3>结案小结</h3>
+            <pre>{{ selectedApproval.closureRequest.closureSummary }}</pre>
+          </div>
+          <div class="closure-documents">
+            <h3>结案依据文件</h3>
+            <div v-for="document in selectedApproval.closureRequest.basisDocuments || []" :key="document.documentId" class="closure-document-row">
+              <span>{{ document.documentName }}</span>
+              <div class="closure-document-actions">
+                <el-tag size="small" effect="plain">{{ document.documentType || '案件材料' }}</el-tag>
+                <el-button link type="primary" @click="downloadClosureDocument(selectedApproval, document)">下载核对</el-button>
+              </div>
+            </div>
+            <el-alert
+              v-if="!selectedApproval.closureRequest.basisDocuments?.length"
+              type="error"
+              :closable="false"
+              title="未找到结案依据文件，请驳回申请。"
+            />
+          </div>
+        </div>
+
         <div v-if="selectedApproval.approvalType === 'SEAL'" class="seal-files-section">
           <h3>待用印文件</h3>
           <div
@@ -245,7 +281,7 @@
 
         <div v-if="canHandleSelectedApproval" class="approval-actions">
           <el-button type="warning" @click="handleReject(selectedApproval)">
-            {{ isCaseFilingApproval(selectedApproval) ? '驳回立案' : '驳回' }}
+            {{ isCaseFilingApproval(selectedApproval) ? '驳回立案' : selectedApproval.approvalType === 'CASE_CLOSURE' ? '驳回结案' : '驳回' }}
           </el-button>
           <el-button data-testid="approval-approve" type="success" @click="handleApprove(selectedApproval)">
             {{ getApproveActionText(selectedApproval) }}
@@ -268,6 +304,7 @@ import {
   downloadApprovalAttachment
 } from '@/api/approval'
 import { reviewConflictCheckRecord, uploadConflictWaiverAttachment, downloadConflictWaiverAttachment } from '@/api/client'
+import { downloadCaseDocument } from '@/api/case'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 
@@ -324,6 +361,7 @@ const getApproveActionText = (row) => {
   if (row?.approvalType === 'CASE_FILING_DIRECTOR') return '终审通过'
   if (row?.approvalType === 'CASE_FILING') return '同意立案'
   if (row?.approvalType === 'SEAL') return '同意用印'
+  if (row?.approvalType === 'CASE_CLOSURE') return '确认结案'
   return '同意'
 }
 
@@ -332,6 +370,7 @@ const formatApprovalType = (type) => {
     CASE_FILING: '立案审批',
     CASE_FILING_DIRECTOR: '主任终审',
     SEAL: '公章用印审批',
+    CASE_CLOSURE: '案件结案复核',
     REIMBURSEMENT: '费用报销',
     INVOICE: '开票申请',
     CONTRACT: '合同审批',
@@ -414,6 +453,23 @@ const downloadSealFile = async (approval, attachment) => {
     URL.revokeObjectURL(url)
   } catch (error) {
     ElMessage.error(error?.message || '下载用印文件失败')
+  }
+}
+
+const downloadClosureDocument = async (approval, closureDocument) => {
+  try {
+    const response = await downloadCaseDocument(approval.caseId, closureDocument.documentId)
+    const blob = response.data instanceof Blob ? response.data : new Blob([response.data])
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = closureDocument.documentName || '结案依据'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    ElMessage.error(error?.message || '下载结案依据失败')
   }
 }
 
@@ -551,16 +607,22 @@ const handleApprove = async (approval) => {
     const { value } = await ElMessageBox.prompt(
       isCaseFilingApproval(approval)
         ? '请填写利冲审查结论或立案审批意见'
-        : approval.approvalType === 'SEAL' ? '请填写用印审批意见' : '请输入审批意见（可选）',
+        : approval.approvalType === 'SEAL'
+          ? '请填写用印审批意见'
+          : approval.approvalType === 'CASE_CLOSURE'
+            ? '请填写案件结果、费用、客户交付和结案依据核对意见'
+            : '请输入审批意见（可选）',
       getApproveActionText(approval),
       {
         confirmButtonText: getApproveActionText(approval),
         cancelButtonText: '取消',
         inputPlaceholder: '请输入审批意见',
-        inputPattern: (isCaseFilingApproval(approval) || approval.approvalType === 'SEAL') ? /\S+/ : undefined,
+        inputPattern: (isCaseFilingApproval(approval) || ['SEAL', 'CASE_CLOSURE'].includes(approval.approvalType)) ? /\S+/ : undefined,
         inputErrorMessage: isCaseFilingApproval(approval)
           ? '立案审批意见不能为空'
-          : approval.approvalType === 'SEAL' ? '用印审批意见不能为空' : undefined,
+          : approval.approvalType === 'SEAL'
+            ? '用印审批意见不能为空'
+            : approval.approvalType === 'CASE_CLOSURE' ? '结案复核意见不能为空' : undefined,
         type: 'success'
       }
     )
@@ -568,7 +630,9 @@ const handleApprove = async (approval) => {
     if (isSuccessResponse(response)) {
       ElMessage.success(isCaseFilingApproval(approval)
         ? '立案审批已通过'
-        : approval.approvalType === 'SEAL' ? '已同意用印' : '审批已同意')
+        : approval.approvalType === 'SEAL'
+          ? '已同意用印'
+          : approval.approvalType === 'CASE_CLOSURE' ? '案件结案复核已通过' : '审批已同意')
       emit('handled')
       await loadApprovals()
     } else {
@@ -758,6 +822,39 @@ watch(
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
+}
+
+.closure-review-section {
+  margin-top: 18px;
+}
+
+.closure-summary {
+  margin-top: 14px;
+}
+
+.closure-documents {
+  margin-top: 14px;
+}
+
+.closure-document-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.closure-document-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.closure-document-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
 }
 
 .conflict-review-section {

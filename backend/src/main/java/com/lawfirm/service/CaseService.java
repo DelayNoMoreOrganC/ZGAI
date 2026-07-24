@@ -1460,26 +1460,7 @@ public class CaseService {
      */
     @Transactional
     public void batchCloseCases(List<Long> caseIds, Long operatorId) {
-        List<Case> cases = requireBatchCases(caseIds);
-        for (Case caseEntity : cases) {
-            assertCaseEditable(caseEntity.getId(), operatorId);
-            if (!CaseStatus.ACTIVE.getCode().equals(caseEntity.getStatus())) {
-                throw new InvalidParameterException("caseIds", "只有审理中的案件可以结案：" + caseEntity.getCaseName());
-            }
-        }
-        for (Case caseEntity : cases) {
-            caseEntity.setStatus(CaseStatus.CLOSED.getCode());
-            caseEntity.setCloseDate(LocalDate.now());
-            caseEntity.setUpdatedAt(LocalDateTime.now());
-            caseTimelineService.createSystemTimeline(
-                    caseEntity.getId(),
-                    "CASE_CLOSED",
-                    "案件已通过批量操作结案"
-            );
-        }
-
-        caseRepository.saveAll(cases);
-        log.info("Batch close cases completed: count={}, operator={}", caseIds.size(), operatorId);
+        throw new InvalidParameterException("closureWorkflow", "批量直接结案已停用，请逐案进入最后办理阶段并提交结案申请");
     }
 
     /**

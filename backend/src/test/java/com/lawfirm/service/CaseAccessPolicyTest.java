@@ -280,38 +280,12 @@ class CaseAccessPolicyTest {
     }
 
     @Test
-    void batchCloseRejectsUnrelatedCaseBeforeSavingAnything() {
-        Case ownCase = activeCase(201L, 20L);
-        ownCase.setCaseName("本人案件");
-        Case unrelatedCase = activeCase(202L, 30L);
-        unrelatedCase.setCaseName("无关案件");
-        User lawyer = user(20L, "律师甲", "律师", 2L);
+    void batchCloseCannotBypassClosureWorkflow() {
+        InvalidParameterException error = assertThrows(InvalidParameterException.class,
+                () -> caseService.batchCloseCases(List.of(201L), 20L));
 
-        when(caseRepository.findAllById(List.of(201L, 202L))).thenReturn(List.of(ownCase, unrelatedCase));
-        when(caseRepository.findById(201L)).thenReturn(Optional.of(ownCase));
-        when(caseRepository.findById(202L)).thenReturn(Optional.of(unrelatedCase));
-        when(userRepository.findById(20L)).thenReturn(Optional.of(lawyer));
-        when(caseMemberRepository.findByCaseIdAndDeletedFalse(202L)).thenReturn(Collections.emptyList());
-
-        assertThrows(AccessDeniedException.class,
-                () -> caseService.batchCloseCases(List.of(201L, 202L), 20L));
+        assertTrue(error.getMessage().contains("结案申请"));
         verify(caseRepository, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
-    }
-
-    @Test
-    void batchCloseRecordsCloseDateForArchiveReadiness() {
-        Case ownCase = activeCase(203L, 20L);
-        ownCase.setCaseName("待归档案件");
-        User lawyer = user(20L, "律师甲", "律师", 2L);
-        when(caseRepository.findAllById(List.of(203L))).thenReturn(List.of(ownCase));
-        when(caseRepository.findById(203L)).thenReturn(Optional.of(ownCase));
-        when(userRepository.findById(20L)).thenReturn(Optional.of(lawyer));
-
-        caseService.batchCloseCases(List.of(203L), 20L);
-
-        assertEquals("CLOSED", ownCase.getStatus());
-        assertEquals(LocalDate.now(), ownCase.getCloseDate());
-        verify(caseRepository).saveAll(List.of(ownCase));
     }
 
     @Test

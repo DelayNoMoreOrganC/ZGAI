@@ -33,6 +33,11 @@
           <el-icon><ChatDotRound /></el-icon>
           AI助手
         </el-button>
+        <CaseClosureButton
+          v-if="canRequestClosure"
+          :case-id="caseDetail.id"
+          @submitted="handleClosureSubmitted"
+        />
         <el-button v-if="canArchive" @click="openArchiveWorkflow">
           <el-icon><FolderOpened /></el-icon>
           归档
@@ -129,6 +134,7 @@ import {
 import { getCaseDetail, updateCaseStatus, rollbackCaseStatus, deleteCase, createCase } from '@/api/case'
 import { getCaseTypeWorkflow } from '@/utils/caseTypeProfiles'
 import ApprovalDetailDrawer from '@/components/ApprovalDetailDrawer.vue'
+import CaseClosureButton from '@/components/CaseClosureButton.vue'
 import { useUserStore } from '@/stores/user'
 import { formatFeeMethod } from '@/utils/feeMethod'
 
@@ -165,6 +171,11 @@ const canArchive = computed(() => caseDetail.canArchive === true)
 const canChangeStatus = computed(() => caseDetail.canChangeStatus === true)
 const canCopy = computed(() => userStore.hasPermission('CASE_CREATE'))
 const canUseCaseAI = computed(() => canEdit.value && userStore.hasPermission('CASE_EDIT'))
+const canRequestClosure = computed(() => {
+  if (!canEdit.value || caseDetail.status !== 'ACTIVE' || !caseDetail.stageProgress?.length) return false
+  const stages = caseDetail.stageProgress
+  return stages[stages.length - 1]?.status === 'IN_PROGRESS'
+})
 const statusTagType = computed(() => ({
   FILING_REVIEW: 'warning', ACTIVE: 'primary', CLOSED: 'success', ARCHIVED: 'info'
 }[caseDetail.status] || 'info'))
@@ -237,6 +248,11 @@ const handleViewApprovals = () => {
 
 const handleApprovalHandled = async () => {
   await fetchCaseDetail()
+}
+
+const handleClosureSubmitted = async () => {
+  await fetchCaseDetail()
+  approvalDrawerVisible.value = true
 }
 
 // 更多操作

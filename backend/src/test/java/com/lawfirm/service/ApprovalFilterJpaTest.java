@@ -64,7 +64,8 @@ class ApprovalFilterJpaTest {
                 mock(CaseFileLibraryService.class),
                 mock(UserPermissionService.class),
                 mock(ConflictWaiverAttachmentService.class),
-                mock(SealAttachmentService.class));
+                mock(SealAttachmentService.class),
+                mock(CaseClosureService.class));
     }
 
     @Test
@@ -101,6 +102,23 @@ class ApprovalFilterJpaTest {
 
         assertThat(result.getTotal()).isEqualTo(1);
         assertThat(result.getRecords()).extracting("title").containsExactly("普通标题");
+    }
+
+    @Test
+    void approvalContentSupportsStructuredReviewLongerThanLegacyLimit() {
+        Approval approval = new Approval();
+        approval.setApprovalType(CaseClosureService.APPROVAL_TYPE);
+        approval.setTitle("案件结案申请");
+        approval.setContent("结案复核资料".repeat(80));
+        approval.setApplicantId(lawyer.getId());
+        approval.setCurrentApproverId(administrative.getId());
+        approval.setStatus("PENDING");
+        approval.setApplyTime(LocalDateTime.now());
+
+        Approval saved = approvalRepository.saveAndFlush(approval);
+
+        assertThat(approvalRepository.findById(saved.getId()).orElseThrow().getContent())
+                .hasSizeGreaterThan(255);
     }
 
     private User user(String username, String realName, String position) {

@@ -30,7 +30,7 @@ public class CaseBatchController {
      */
     @PutMapping("/close")
     @PreAuthorize("hasAuthority('CASE_EDIT')")
-    @AuditLog(value = "批量结案", operationType = "BATCH_UPDATE", logParams = false)
+    @AuditLog(value = "拒绝旧批量结案", operationType = "BATCH_UPDATE", logParams = false)
     public Result<Void> batchCloseCases(@Valid @RequestBody BatchOperationRequest request) {
         try {
             Long currentUserId = securityUtils.getCurrentUserId();
