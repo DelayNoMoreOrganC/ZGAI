@@ -68,6 +68,8 @@ ZGAI/
 ├── ssb-repo/                省时宝独立项目（存在时由启动脚本启动）
 ├── start.sh                 一键启动
 ├── stop.sh                  停止服务
+├── 启动ZGAI.command         macOS Finder 双击启动并打开浏览器
+├── 停止ZGAI.command         macOS Finder 双击优雅停止
 ├── PRD.md                   产品与验收基线
 └── handoff.md               并行开发交接基线
 ```
@@ -82,6 +84,12 @@ ZGAI/
 - NAS：需要案件文件持久化时挂载；开发测试可使用本地目录。
 
 ## 快速启动
+
+### macOS 双击启动
+
+在 Finder 中打开项目目录，双击 `启动ZGAI.command`。脚本会补齐 Homebrew 命令路径、优雅停止旧实例、按需编译后端、启动前后端、确认两个服务均可访问，并自动打开 `http://localhost:3017`。
+
+需要关闭系统时双击 `停止ZGAI.command`。首次运行若 macOS 阻止打开，可在 Finder 中右键该文件选择“打开”并确认一次。双击入口默认使用 H2 开发模式，不启动 SSB 或 AC。
 
 ### H2 开发模式
 

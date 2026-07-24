@@ -348,6 +348,7 @@
 - 修复 RAG Playwright 依赖预置文章 `#1/#2`、空库和执行顺序的问题：每个视口自行建立公开预期知识、禁止进入共享 RAG 的案件沉淀和评价样本，按接口返回 ID 校验当前样本命中/越界结果，结束后删除样本和文章；全局历史命中率不再影响单条用例结论。
 - 清理本轮失败截图、trace、临时 H2、临时案件/知识/归档目录；复查 Git 跟踪文件未发现日志、构建产物、缓存、重复 fixture 或可确认失效的阶段报告。AC 规则文档、部署说明和 NAS/AI 预算方案仍是后续内化与部署依据，继续保留。
 - PostgreSQL 16 真实演练仍被本机 Homebrew 阻断：`brew install postgresql@16` 在读取 bottle tab 时再次触发 `Utils::Bottles.load_tab` 空值错误。本轮未重置 Homebrew、未触碰当前业务 H2，也未宣称完成 PostgreSQL 迁移、备份或恢复验收。
+- 新增 macOS Finder 双击入口 `启动ZGAI.command` 与 `停止ZGAI.command`：启动入口补齐 Homebrew PATH、复用现有密钥和优雅重启逻辑，后端及前端均通过 HTTP 健康检查后自动打开浏览器；停止入口复用 `stop.sh all`。前端启动失败时 `start.sh` 会关闭本次核心服务，不再显示虚假的“启动完成”。
 
 ## 4. 已完成能力
 

@@ -203,7 +203,11 @@ cd "$FRONTEND_DIR"
 nohup $NPM run dev > "$ROOT_DIR/logs/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 echo "  → PID: $FRONTEND_PID"
-sleep 5
+if ! wait_for_http "前端" "http://127.0.0.1:3017" 30; then
+    echo "  ✗ 前端启动失败，正在关闭本次启动的核心服务"
+    "$ROOT_DIR/stop.sh" frontend backend
+    exit 1
+fi
 
 # ── (可选) 启动 SSB 省时宝与 AC 精算 ──
 if [ "$EXTERNAL_TOOLS_ENABLED" = "true" ] && [ -f "$SSB_DIR/ssb_api.py" ]; then
