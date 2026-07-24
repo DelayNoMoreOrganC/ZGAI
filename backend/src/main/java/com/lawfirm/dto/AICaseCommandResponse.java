@@ -12,4 +12,5 @@ public class AICaseCommandResponse {
     private Long caseId;
     private String caseName;
     private List<AIActionDTO> actions = new ArrayList<>();
+    private List<AICaseCandidateDTO> candidates = new ArrayList<>();
 }

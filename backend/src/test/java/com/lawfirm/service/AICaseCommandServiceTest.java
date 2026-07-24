@@ -6,12 +6,17 @@ import com.lawfirm.dto.AICaseCommandResponse;
 import com.lawfirm.dto.CalendarDTO;
 import com.lawfirm.entity.AICaseCommand;
 import com.lawfirm.entity.Case;
+import com.lawfirm.entity.Party;
 import com.lawfirm.repository.AICaseCommandRepository;
 import com.lawfirm.repository.CaseRepository;
+import com.lawfirm.repository.ClientRepository;
+import com.lawfirm.repository.PartyRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.concurrent.atomic.AtomicLong;
 import java.time.LocalDate;
 
@@ -23,6 +28,10 @@ import static org.mockito.Mockito.*;
 
 class AICaseCommandServiceTest {
     private AICaseCommandRepository commandRepository;
+    private CaseRepository caseRepository;
+    private PartyRepository partyRepository;
+    private ClientRepository clientRepository;
+    private CaseService caseService;
     private CalendarService calendarService;
     private CalendarReminderService calendarReminderService;
     private CaseTimelineService timelineService;
@@ -33,8 +42,10 @@ class AICaseCommandServiceTest {
     @BeforeEach
     void setUp() {
         commandRepository = mock(AICaseCommandRepository.class);
-        CaseRepository caseRepository = mock(CaseRepository.class);
-        CaseService caseService = mock(CaseService.class);
+        caseRepository = mock(CaseRepository.class);
+        partyRepository = mock(PartyRepository.class);
+        clientRepository = mock(ClientRepository.class);
+        caseService = mock(CaseService.class);
         calendarService = mock(CalendarService.class);
         calendarReminderService = mock(CalendarReminderService.class);
         TodoService todoService = mock(TodoService.class);
@@ -47,6 +58,11 @@ class AICaseCommandServiceTest {
         caseEntity.setCaseName("测试案件");
         caseEntity.setStatus("ACTIVE");
         when(caseRepository.findById(7L)).thenReturn(Optional.of(caseEntity));
+        when(caseRepository.findByDeletedFalse()).thenReturn(Collections.singletonList(caseEntity));
+        when(partyRepository.findByDeletedFalse()).thenReturn(Collections.emptyList());
+        when(clientRepository.findAllById(any())).thenReturn(Collections.emptyList());
+        when(caseService.canAccessCase(7L, 3L)).thenReturn(true);
+        when(caseService.canEditCase(7L, 3L)).thenReturn(true);
         when(commandRepository.findByUserIdAndIdempotencyKeyAndDeletedFalse(anyLong(), anyString()))
                 .thenReturn(Optional.empty());
         AtomicLong ids = new AtomicLong(1);
@@ -59,7 +75,8 @@ class AICaseCommandServiceTest {
         savedCalendar.setId(20L);
         when(calendarService.createCalendar(any(CalendarDTO.class), eq(3L))).thenReturn(savedCalendar);
 
-        service = new AICaseCommandService(commandRepository, caseRepository, caseService,
+        service = new AICaseCommandService(commandRepository, caseRepository, partyRepository,
+                clientRepository, caseService,
                 calendarService, calendarReminderService, todoService, timelineService,
                 activityService, stageService, new ObjectMapper());
     }
@@ -170,6 +187,70 @@ class AICaseCommandServiceTest {
         assertFalse(command.getInstruction().contains("440101199001011234"));
         assertEquals(64, command.getInstructionHash().length());
         assertNotNull(command.getPrivacySanitizedAt());
+    }
+
+    @Test
+    void commandWithoutSelectedCaseInfersUniquePartyWithinPermissionScope() {
+        Party party = new Party();
+        party.setCaseId(7L);
+        party.setName("张三有限公司");
+        when(partyRepository.findByDeletedFalse()).thenReturn(Collections.singletonList(party));
+
+        AICaseCommandRequest request = request(
+                "记录张三有限公司案件进展：今日已提交补充证据", "infer-party");
+        request.setCaseId(null);
+        AICaseCommandResponse response = service.submit(request, 3L);
+
+        assertEquals("AUTO_EXECUTED", response.getStatus());
+        assertEquals(7L, response.getCaseId());
+        verify(activityService).create(eq(7L), eq("PROGRESS"), anyString(), anyString(),
+                any(), eq("AI_COMMAND"), anyLong(), eq(3L), isNull(), anyString());
+    }
+
+    @Test
+    void ambiguousPartyMatchReturnsCandidatesWithoutWritingCaseData() {
+        Case anotherCase = new Case();
+        anotherCase.setId(8L);
+        anotherCase.setCaseName("另一测试案件");
+        anotherCase.setStatus("ACTIVE");
+        Case firstCase = caseRepository.findById(7L).orElseThrow();
+        when(caseRepository.findByDeletedFalse()).thenReturn(Arrays.asList(firstCase, anotherCase));
+        when(caseService.canAccessCase(8L, 3L)).thenReturn(true);
+        when(caseService.canEditCase(8L, 3L)).thenReturn(true);
+        Party first = party(7L, "张三有限公司");
+        Party second = party(8L, "张三有限公司");
+        when(partyRepository.findByDeletedFalse()).thenReturn(Arrays.asList(first, second));
+
+        AICaseCommandRequest request = request("记录张三有限公司案件进展：已收材料", "ambiguous-party");
+        request.setCaseId(null);
+        AICaseCommandResponse response = service.submit(request, 3L);
+
+        assertEquals("NEEDS_CLARIFICATION", response.getStatus());
+        assertEquals(2, response.getCandidates().size());
+        assertEquals("识别到多个可能案件，请确认后再执行。", response.getClarification());
+        verifyNoInteractions(timelineService, activityService);
+    }
+
+    @Test
+    void inaccessibleCaseIsNeverReturnedAsCandidate() {
+        when(caseService.canAccessCase(7L, 3L)).thenReturn(false);
+        Party party = party(7L, "秘密项目公司");
+        when(partyRepository.findByDeletedFalse()).thenReturn(Collections.singletonList(party));
+
+        AICaseCommandRequest request = request("记录秘密项目公司案件进展：已收材料", "hidden-case");
+        request.setCaseId(null);
+        AICaseCommandResponse response = service.submit(request, 3L);
+
+        assertEquals("NEEDS_CLARIFICATION", response.getStatus());
+        assertEquals(0, response.getCandidates().size());
+        assertFalse(response.getClarification().contains("秘密项目公司"));
+    }
+
+    private Party party(Long caseId, String name) {
+        Party party = new Party();
+        party.setCaseId(caseId);
+        party.setName(name);
+        return party;
     }
 
     private AICaseCommandRequest request(String instruction, String key) {

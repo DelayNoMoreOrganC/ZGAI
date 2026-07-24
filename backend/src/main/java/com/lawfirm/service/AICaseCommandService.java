@@ -31,6 +31,8 @@ public class AICaseCommandService {
 
     private final AICaseCommandRepository commandRepository;
     private final CaseRepository caseRepository;
+    private final PartyRepository partyRepository;
+    private final ClientRepository clientRepository;
     private final CaseService caseService;
     private final CalendarService calendarService;
     private final CalendarReminderService calendarReminderService;
@@ -59,10 +61,20 @@ public class AICaseCommandService {
         command.setStatus("PARSING");
         command = commandRepository.save(command);
 
-        Case targetCase = resolveCase(request.getCaseId(), rawInstruction, userId);
-        if (targetCase == null) {
-            return clarify(command, "请先指定案件；全局指令只有在案件名称或案号能够唯一匹配时才会执行。");
+        CaseResolution resolution = resolveCase(request.getCaseId(), rawInstruction, userId);
+        if (resolution.targetCase == null) {
+            String message;
+            if (resolution.candidates.isEmpty()) {
+                message = "未能在您有权访问的案件中识别归属。请补充案件名称、案号、当事人或委托客户。";
+            } else if (resolution.candidates.size() == 1
+                    && !Boolean.TRUE.equals(resolution.candidates.get(0).getCanEdit())) {
+                message = "已识别到案件，但当前账号仅可查看，不能通过 AI 写入案件数据。";
+            } else {
+                message = "识别到多个可能案件，请确认后再执行。";
+            }
+            return clarify(command, message, resolution.candidates);
         }
+        Case targetCase = resolution.targetCase;
         command.setCaseId(targetCase.getId());
 
         List<AIActionDTO> actions = parseActions(rawInstruction, targetCase);
@@ -117,24 +129,91 @@ public class AICaseCommandService {
         return toResponse(command);
     }
 
-    private Case resolveCase(Long requestedCaseId, String instruction, Long userId) {
+    private CaseResolution resolveCase(Long requestedCaseId, String instruction, Long userId) {
         if (requestedCaseId != null) {
             caseService.assertCaseVisible(requestedCaseId, userId);
-            return caseRepository.findById(requestedCaseId)
+            Case selected = caseRepository.findById(requestedCaseId)
                     .filter(item -> !Boolean.TRUE.equals(item.getDeleted()))
                     .orElseThrow(() -> new IllegalArgumentException("案件不存在"));
+            return new CaseResolution(selected, Collections.emptyList());
         }
-        List<Case> matches = caseRepository.findByDeletedFalse().stream()
+
+        List<Case> accessibleCases = caseRepository.findByDeletedFalse().stream()
                 .filter(item -> caseService.canAccessCase(item.getId(), userId))
-                .filter(item -> containsIdentifier(instruction, item))
                 .collect(Collectors.toList());
-        return matches.size() == 1 ? matches.get(0) : null;
+        Set<Long> caseIds = accessibleCases.stream().map(Case::getId).collect(Collectors.toSet());
+        Map<Long, List<String>> partiesByCase = partyRepository.findByDeletedFalse().stream()
+                .filter(item -> caseIds.contains(item.getCaseId()))
+                .collect(Collectors.groupingBy(Party::getCaseId,
+                        Collectors.mapping(Party::getName, Collectors.toList())));
+        Set<Long> clientIds = accessibleCases.stream().map(Case::getClientId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, String> clients = clientRepository.findAllById(clientIds).stream()
+                .filter(item -> !Boolean.TRUE.equals(item.getDeleted()))
+                .collect(Collectors.toMap(Client::getId, Client::getClientName));
+
+        List<AICaseCandidateDTO> candidates = accessibleCases.stream()
+                .map(item -> scoreCandidate(instruction, item,
+                        partiesByCase.getOrDefault(item.getId(), Collections.emptyList()),
+                        clients.get(item.getClientId())))
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(AICaseCandidateDTO::getScore).reversed()
+                        .thenComparing(AICaseCandidateDTO::getCaseId))
+                .limit(5)
+                .collect(Collectors.toList());
+        candidates.forEach(candidate -> candidate.setCanEdit(
+                caseService.canEditCase(candidate.getCaseId(), userId)));
+        if (candidates.isEmpty()) return new CaseResolution(null, candidates);
+
+        AICaseCandidateDTO top = candidates.get(0);
+        boolean clearLead = candidates.size() == 1 || top.getScore() - candidates.get(1).getScore() >= 8;
+        if (top.getScore() >= 90 && clearLead && Boolean.TRUE.equals(top.getCanEdit())) {
+            Case target = accessibleCases.stream()
+                    .filter(item -> Objects.equals(item.getId(), top.getCaseId()))
+                    .findFirst().orElse(null);
+            return new CaseResolution(target, candidates);
+        }
+        return new CaseResolution(null, candidates);
     }
 
-    private boolean containsIdentifier(String instruction, Case item) {
-        return (StringUtils.hasText(item.getCaseName()) && instruction.contains(item.getCaseName()))
-                || (StringUtils.hasText(item.getCaseNumber()) && instruction.contains(item.getCaseNumber()))
-                || (StringUtils.hasText(item.getCourtCaseNumber()) && instruction.contains(item.getCourtCaseNumber()));
+    private AICaseCandidateDTO scoreCandidate(String instruction, Case item, List<String> partyNames,
+                                               String clientName) {
+        String normalizedInstruction = normalizeMatchText(instruction);
+        int score = 0;
+        List<String> reasons = new ArrayList<>();
+        score = addMatch(normalizedInstruction, item.getCaseNumber(), 100, "匹配ZGAI案号", score, reasons);
+        score = addMatch(normalizedInstruction, item.getCourtCaseNumber(), 100, "匹配法院案号", score, reasons);
+        score = addMatch(normalizedInstruction, item.getCaseName(), 98, "匹配案件名称", score, reasons);
+        score = addMatch(normalizedInstruction, item.getConsultantUnitName(), 92, "匹配顾问单位", score, reasons);
+        score = addMatch(normalizedInstruction, clientName, 92, "匹配委托客户", score, reasons);
+        for (String partyName : partyNames) {
+            score = addMatch(normalizedInstruction, partyName, 90, "匹配当事人：" + partyName, score, reasons);
+        }
+        if (score == 0) return null;
+
+        AICaseCandidateDTO candidate = new AICaseCandidateDTO();
+        candidate.setCaseId(item.getId());
+        candidate.setCaseName(item.getCaseName());
+        candidate.setCaseNumber(item.getCaseNumber());
+        candidate.setCourtCaseNumber(item.getCourtCaseNumber());
+        candidate.setScore(Math.min(100, score + Math.min(5, Math.max(0, reasons.size() - 1) * 2)));
+        candidate.setReasons(reasons);
+        return candidate;
+    }
+
+    private int addMatch(String instruction, String clue, int weight, String reason,
+                         int currentScore, List<String> reasons) {
+        String normalizedClue = normalizeMatchText(clue);
+        if (normalizedClue.length() >= 2 && instruction.contains(normalizedClue)) {
+            reasons.add(reason);
+            return Math.max(currentScore, weight);
+        }
+        return currentScore;
+    }
+
+    private String normalizeMatchText(String value) {
+        if (!StringUtils.hasText(value)) return "";
+        return value.toLowerCase(Locale.ROOT).replaceAll("[^\\p{IsHan}a-z0-9]", "");
     }
 
     private List<AIActionDTO> parseActions(String instruction, Case targetCase) {
@@ -343,10 +422,17 @@ public class AICaseCommandService {
     }
 
     private AICaseCommandResponse clarify(AICaseCommand command, String message) {
+        return clarify(command, message, Collections.emptyList());
+    }
+
+    private AICaseCommandResponse clarify(AICaseCommand command, String message,
+                                          List<AICaseCandidateDTO> candidates) {
         command.setStatus("NEEDS_CLARIFICATION");
         command.setClarification(message);
         commandRepository.save(command);
-        return toResponse(command);
+        AICaseCommandResponse response = toResponse(command);
+        response.setCandidates(candidates);
+        return response;
     }
 
     private AIActionDTO baseAction(String type, String risk, Long caseId, boolean confirmation, String reason) {
@@ -391,6 +477,16 @@ public class AICaseCommandService {
             return objectMapper.readValue(value, new TypeReference<List<AIActionDTO>>() {});
         } catch (Exception e) {
             throw new IllegalArgumentException("AI动作记录损坏", e);
+        }
+    }
+
+    private static class CaseResolution {
+        private final Case targetCase;
+        private final List<AICaseCandidateDTO> candidates;
+
+        private CaseResolution(Case targetCase, List<AICaseCandidateDTO> candidates) {
+            this.targetCase = targetCase;
+            this.candidates = candidates;
         }
     }
 }

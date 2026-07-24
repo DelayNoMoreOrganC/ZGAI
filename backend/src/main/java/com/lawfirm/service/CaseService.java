@@ -907,6 +907,13 @@ public class CaseService {
     }
 
     @Transactional(readOnly = true)
+    public boolean canEditCase(Long caseId, Long currentUserId) {
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("用户", currentUserId));
+        return isCaseEditableByUser(caseId, currentUser);
+    }
+
+    @Transactional(readOnly = true)
     public void assertCaseManageable(Long caseId, Long currentUserId) {
         Case caseEntity = caseRepository.findById(caseId)
                 .orElseThrow(() -> new ResourceNotFoundException("案件", caseId));

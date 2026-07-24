@@ -9,8 +9,8 @@
         <el-tag type="info" effect="plain">规则引擎 / 本地识别</el-tag>
         <el-select
           data-testid="ai-command-case"
-          v-model="selectedCaseId" filterable remote :remote-method="loadCases"
-          :loading="caseLoading" placeholder="选择案件" class="case-select"
+          v-model="selectedCaseId" filterable remote clearable :remote-method="loadCases"
+          :loading="caseLoading" placeholder="可选：手动指定案件" class="case-select"
         >
           <el-option
             v-for="item in caseOptions"
@@ -45,13 +45,13 @@
               maxlength="4000"
               show-word-limit
               resize="none"
-              placeholder="输入案件操作指令"
-              :disabled="commandLoading || !canOperateCase"
+              placeholder="直接说明案件名称、案号、当事人或委托客户及要执行的事项，系统会自动识别案件"
+              :disabled="commandLoading || !canOperateCommand"
             />
             <div class="command-actions">
               <div class="examples">
-                <el-button text @click="useExample('本案8月10日9:30开庭，地点三号法庭')">开庭日程</el-button>
-                <el-button text @click="useExample('本案明天下午3点开庭，地点第二审判庭')">相对日期</el-button>
+                <el-button text @click="useExample('8月10日9:30开庭，地点三号法庭')">开庭日程</el-button>
+                <el-button text @click="useExample('明天下午3点开庭，地点第二审判庭')">相对日期</el-button>
                 <el-button text @click="useExample('记录进展：今日已向法院提交补充证据')">案件进展</el-button>
               </div>
               <el-button
@@ -79,6 +79,24 @@
               <p v-if="commandResult.clarification" data-testid="ai-command-clarification" class="clarification">
                 {{ commandResult.clarification }}
               </p>
+              <div v-if="commandCandidates.length" class="command-candidates" data-testid="ai-command-candidates">
+                <button
+                  v-for="candidate in commandCandidates"
+                  :key="candidate.caseId"
+                  type="button"
+                  class="candidate-row"
+                  :disabled="candidate.canEdit !== true || commandLoading"
+                  @click="selectCandidateAndSubmit(candidate)"
+                >
+                  <span>
+                    <strong>{{ candidate.caseNumber || '未编号' }} · {{ candidate.caseName || '未命名案件' }}</strong>
+                    <small>{{ (candidate.reasons || []).join('、') }}</small>
+                  </span>
+                  <el-tag :type="candidate.canEdit === true ? 'primary' : 'info'" effect="plain">
+                    {{ candidate.canEdit === true ? `${candidate.score}% · 确认执行` : '仅可查看' }}
+                  </el-tag>
+                </button>
+              </div>
               <el-alert
                 v-if="commandResult.status === 'PROPOSED' && proposedStage"
                 data-testid="ai-stage-proposal"
@@ -135,14 +153,14 @@
             :limit="1"
             :on-change="handleFileChange"
             :on-remove="handleFileRemove"
-            :disabled="!canOperateCase"
+            :disabled="!hasCaseEditPermission"
             accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg"
             class="intake-upload"
           >
             <el-icon class="upload-icon"><UploadFilled /></el-icon>
             <div class="el-upload__text">拖入案件文书，或点击选择</div>
           </el-upload>
-          <el-button data-testid="ai-intake-analyze" type="primary" :loading="intakeLoading" :disabled="!selectedFile || !canOperateCase" @click="analyzeFile">
+          <el-button data-testid="ai-intake-analyze" type="primary" :loading="intakeLoading" :disabled="!selectedFile || !hasCaseEditPermission" @click="analyzeFile">
             <el-icon><Search /></el-icon>
             识别文书
           </el-button>
@@ -279,17 +297,20 @@ const intakeForm = reactive({
 
 const selectedCaseLabel = computed(() => {
   const item = caseOptions.value.find(caseItem => caseItem.id === selectedCaseId.value)
-  return item ? formatCase(item) : '请选择有权访问的案件'
+  return item ? formatCase(item) : '无需预选案件，AI 将在您的权限范围内识别归属'
 })
 const selectedCase = computed(() => caseOptions.value.find(caseItem => caseItem.id === selectedCaseId.value))
 const hasCaseEditPermission = computed(() => userStore.hasPermission('CASE_EDIT'))
 const canOperateCase = computed(() => hasCaseEditPermission.value && selectedCase.value?.canEdit === true)
+const canOperateCommand = computed(() => hasCaseEditPermission.value
+  && (!selectedCaseId.value || canOperateCase.value))
 const readOnlyMessage = computed(() => {
   if (!hasCaseEditPermission.value) return '当前账号仅可查看案件，AI 日程、待办、进展和智能归案需要案件编辑权限。'
   if (selectedCaseId.value && !canOperateCase.value) return '当前案件仅可查看，不能通过 AI 写入案件数据。'
   return ''
 })
-const canSubmit = computed(() => Boolean(selectedCaseId.value && canOperateCase.value && instruction.value.trim()))
+const canSubmit = computed(() => Boolean(canOperateCommand.value && instruction.value.trim()))
+const commandCandidates = computed(() => commandResult.value?.candidates || [])
 const commandExecuted = computed(() => ['AUTO_EXECUTED', 'CONFIRMED'].includes(commandResult.value?.status))
 const proposedStage = computed(() => commandResult.value?.actions
   ?.find(action => action.actionType === 'CHANGE_STAGE')?.payload?.targetStage || '')
@@ -333,15 +354,17 @@ const loadCases = async (keyword = '') => {
 }
 
 const formatCase = item => `${item.caseNumber || '未编号'} · ${item.caseName || '未命名案件'}`
-const useExample = value => { instruction.value = value }
+const useExample = value => {
+  instruction.value = `${selectedCaseId.value ? '本案' : '【案件名称或案号】'}${value}`
+}
 const newIdempotencyKey = () => globalThis.crypto?.randomUUID?.()
   || `${Date.now()}-${Math.random().toString(16).slice(2)}`
 
-const submitCommand = async () => {
+const submitCommand = async (caseIdOverride) => {
   commandLoading.value = true
   try {
     const response = await submitCaseCommand({
-      caseId: selectedCaseId.value,
+      caseId: typeof caseIdOverride === 'number' ? caseIdOverride : selectedCaseId.value,
       instruction: instruction.value.trim(),
       idempotencyKey: newIdempotencyKey()
     })
@@ -350,6 +373,20 @@ const submitCommand = async () => {
   } finally {
     commandLoading.value = false
   }
+}
+
+const selectCandidateAndSubmit = candidate => {
+  if (candidate.canEdit !== true) return
+  selectedCaseId.value = candidate.caseId
+  if (!caseOptions.value.some(item => item.id === candidate.caseId)) {
+    caseOptions.value.push({
+      id: candidate.caseId,
+      caseName: candidate.caseName,
+      caseNumber: candidate.caseNumber,
+      canEdit: true
+    })
+  }
+  submitCommand(candidate.caseId)
 }
 
 const confirmCommand = async () => {
@@ -483,6 +520,13 @@ onMounted(async () => {
 .examples { display: flex; flex-wrap: wrap; }
 .result-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; font-weight: 600; }
 .clarification { padding: 12px; margin: 0 0 16px; background: #f5f5f7; border-left: 3px solid #86868b; line-height: 1.6; }
+.command-candidates { display: grid; gap: 8px; margin: 0 0 18px; }
+.candidate-row { width: 100%; min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid #d2d2d7; border-radius: 8px; background: #fff; color: #1d1d1f; text-align: left; cursor: pointer; }
+.candidate-row:hover:not(:disabled) { border-color: #409eff; background: #f7faff; }
+.candidate-row:disabled { cursor: not-allowed; opacity: .64; }
+.candidate-row > span { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.candidate-row strong, .candidate-row small { overflow-wrap: anywhere; }
+.candidate-row small { color: #6e6e73; }
 .action-row { display: flex; gap: 10px; padding: 12px 0; border-bottom: 1px solid #ededee; }
 .action-row div { display: flex; flex-direction: column; gap: 4px; }
 .action-row span { color: #6e6e73; font-size: 13px; line-height: 1.5; }
@@ -510,6 +554,8 @@ onMounted(async () => {
   .examples { display: grid; grid-template-columns: 1fr; }
   .examples .el-button { justify-content: flex-start; width: 100%; margin-left: 0; white-space: normal; }
   .result-panel { border-left: 0; border-top: 1px solid #e5e5e7; padding-left: 0; }
+  .candidate-row { align-items: stretch; flex-direction: column; }
+  .candidate-row .el-tag { align-self: flex-start; }
   .analysis-grid, .confirm-form, .linked-action-fields { grid-template-columns: 1fr; }
   :deep(.intake-upload .el-upload),
   :deep(.intake-upload .el-upload-dragger) { width: 100%; }
